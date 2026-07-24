@@ -227,7 +227,24 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, respon
         notice.program_end_date
     );
 
-    const isAdmin = Boolean(fromAdmin || context === 'admin');
+    const isStudentUser = Boolean(
+        user?.role === 'student' || 
+        user?.user_group === '학생' ||
+        user?.is_impersonating
+    );
+
+    const isAdmin = Boolean(
+        !isStudentUser && (
+            fromAdmin ||
+            context === 'admin' ||
+            user?.role === 'admin' ||
+            user?.role === 'ADMIN' ||
+            user?.role === 'master' ||
+            user?.role === 'MASTER' ||
+            user?.is_admin ||
+            Boolean(localStorage.getItem('admin_user'))
+        )
+    );
 
     const {
         joinCount, waitlistCount,
