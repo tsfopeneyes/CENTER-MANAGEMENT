@@ -44,7 +44,8 @@ export const requestFirebaseToken = async (userId) => {
         let swRegistration;
         if ('serviceWorker' in navigator) {
             try {
-                swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                swRegistration = await navigator.serviceWorker.ready;
             } catch (swErr) {
                 swRegistration = await navigator.serviceWorker.ready.catch(() => undefined);
             }
