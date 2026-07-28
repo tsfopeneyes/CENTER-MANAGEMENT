@@ -5,8 +5,21 @@ import { supabase } from '../supabaseClient';
 /**
  * Trigger Realtime LINE / Discord Checkin Notification
  */
-export const sendCheckinNotification = async ({ userName, schoolName, locationName, isGuest = false, purposes = [] }) => {
+export const sendCheckinNotification = async ({ userName, schoolName, locationName, studentRegion, isGuest = false, purposes = [] }) => {
     try {
+        const targetLocName = locationName || (studentRegion === '강서' ? '이높플레이스' : '하이픈');
+        const locNameStr = (targetLocName || '').toString();
+
+        const isHaifnLoc = (
+            locNameStr.includes('하이픈') ||
+            locNameStr.includes('HAIFN') ||
+            locNameStr.includes('강동')
+        ) && !(
+            locNameStr.includes('이높') ||
+            locNameStr.includes('ENOUGH_PLACE') ||
+            locNameStr.includes('강서')
+        );
+
         const { data: settings } = await supabase.from('global_settings').select('*');
         let lineToken = '', lineGroupId = '', gsWebhookUrl = '', discordWebhookUrl = '';
 
@@ -29,13 +42,9 @@ export const sendCheckinNotification = async ({ userName, schoolName, locationNa
             purposeText = `\n🎯 이용 목적: ${purposes.join(', ')}`;
         }
 
-        const alertMessage = `${tag}\n💌 ${cleanName}${cleanSchool}님이 ${locationName || '하이픈'} 센터에 체크인했어요 (${timeStr})${purposeText}`;
+        const alertMessage = `${tag}\n💌 ${cleanName}${cleanSchool}님이 ${targetLocName} 센터에 체크인했어요 (${timeStr})${purposeText}`;
 
-        const locName = locationName || '';
-        const isHaifnLoc = !locName || ((locName.includes('하이픈') || locName.includes('HAIFN') || locName.includes('강동')) &&
-            !(locName.includes('이높') || locName.includes('ENOUGH_PLACE') || locName.includes('강서')));
-
-        // 1. LINE Notify via Google Apps Script Webhook
+        // 1. LINE Notify (Strictly ONLY for Haifn center)
         if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
             fetch(gsWebhookUrl, {
                 method: 'POST',
