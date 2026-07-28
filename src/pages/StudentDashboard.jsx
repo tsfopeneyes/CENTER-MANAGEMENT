@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import confetti from 'canvas-confetti';
-import { Home, Calendar, BookOpen, Award, Store, MessageSquareHeart, Menu, X, Settings, ShieldCheck, LogOut, Bell, Share2, QrCode } from 'lucide-react';
+import { Home, Calendar, BookOpen, Award, Store, MessageSquareHeart, Menu, X, Settings, ShieldCheck, LogOut, Bell, Share2, QrCode, Sparkles } from 'lucide-react';
 import { TAB_NAMES } from '../constants/appConstants';
 import { useStudentDashboard } from '../hooks/useStudentDashboard';
 
@@ -33,7 +33,11 @@ import ProgramHistoryModal from '../components/student/modals/ProgramHistoryModa
 import SignUpForm from '../components/auth/SignUpForm';
 import QRModal from '../components/student/modals/QRModal';
 import VerificationWriteModal from '../components/student/modals/VerificationWriteModal';
+import StudentCheckinSurveyModal from '../components/student/modals/StudentCheckinSurveyModal';
+import CoffeeChatModal from '../components/student/modals/CoffeeChatModal';
 import { useFCM } from '../hooks/useFCM';
+import { useCoffeeChatRealtime } from '../hooks/useCoffeeChatRealtime';
+import { supabase } from '../supabaseClient';
 import ParticipantModal from '../components/admin/board/components/modals/ParticipantModal';
 import StudentDashboardHeader from '../components/student/StudentDashboardHeader';
 import StudentDashboardNav from '../components/student/StudentDashboardNav';

@@ -156,15 +156,9 @@ const ProgramCard = ({ program, onClick, compact = false }) => {
                     {program.is_recruiting && (
                         <div className={`flex items-center text-tossGrey400 ${compact ? 'gap-2 mt-1' : 'gap-3'}`}>
                             <Users size={compact ? 14 : 18} className="shrink-0 text-tossGrey400" />
-                            <div className={`font-medium flex items-center gap-[3px] ${compact ? 'text-[11px]' : 'text-sm'}`}>
-                                <span className="text-tossGrey600">모집: </span>
-                                <span className="text-tossBlue font-bold tracking-tight">
-                                    {program.current_applicants || 0}
-                                </span>
-                                <span className="text-tossGrey400 font-medium tracking-tight">
-                                    {program.max_capacity > 0 ? `/ ${program.max_capacity}명` : '명 (제한 없음)'}
-                                </span>
-                            </div>
+                            <span className={`font-medium text-tossGrey700 ${compact ? 'text-[11px] line-clamp-1' : 'text-sm'}`}>
+                                정원: <span className="text-tossBlue font-bold">{program.max_capacity > 0 ? `${program.max_capacity}명` : '제한 없음'}</span>
+                            </span>
                         </div>
                     )}
                 </div>
