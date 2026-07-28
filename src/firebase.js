@@ -41,7 +41,21 @@ export const requestFirebaseToken = async (userId) => {
             return null;
         }
 
-        const token = await getToken(messaging, { vapidKey });
+        let swRegistration;
+        if ('serviceWorker' in navigator) {
+            try {
+                swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+            } catch (swErr) {
+                swRegistration = await navigator.serviceWorker.ready.catch(() => undefined);
+            }
+        }
+
+        const getTokenOptions = { vapidKey };
+        if (swRegistration) {
+            getTokenOptions.serviceWorkerRegistration = swRegistration;
+        }
+
+        const token = await getToken(messaging, getTokenOptions);
         
         if (token) {
             console.log("FCM Token retrieved.");
