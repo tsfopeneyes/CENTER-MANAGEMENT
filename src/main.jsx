@@ -22,17 +22,8 @@ if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('/sw.js')
                 .then(reg => {
                     console.log('SW Registered:', reg.scope);
-                    reg.update();
                 })
                 .catch(err => console.log('SW Registration Failed:', err));
-        });
-
-        let refreshing = false;
-        navigator.serviceWorker.addEventListener('controllerchange', () => {
-            if (!refreshing) {
-                refreshing = true;
-                window.location.reload();
-            }
         });
     }
 }
