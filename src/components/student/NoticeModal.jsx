@@ -995,7 +995,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                      </button>
                                  )}
 
-                                 {(notice.enable_feedback ?? notice.guest_properties?.enable_feedback ?? true) && (
+                                 {(notice.enable_feedback === true || notice.guest_properties?.enable_feedback === true) && (
                                      <button
                                          onClick={() => setShowAdminFeedbackModal(true)}
                                          className="flex-1 h-11 rounded-toss-xl font-bold text-amber-800 text-xs bg-amber-50 hover:bg-amber-100 transition transform active:scale-[0.98] flex items-center justify-center border border-amber-200 cursor-pointer px-2"
@@ -1052,7 +1052,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                      ) : isEnded ? (
                             /* 1. 프로그램 종료 상태 (종료 시간 경과 OR 관리자가 수동 종료): 피드백 작성/완료 버튼 노출 */
                             <div className="p-4 flex gap-3">
-                                {responses[notice.id] === 'JOIN' && (notice.enable_feedback ?? notice.guest_properties?.enable_feedback ?? false) ? (
+                                {responses[notice.id] === 'JOIN' && (notice.enable_feedback === true || notice.guest_properties?.enable_feedback === true) ? (
                                     <button
                                         onClick={() => setShowFeedbackModal(true)}
                                         className={`flex-1 py-3.5 rounded-toss-xl font-black text-base transition transform active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer ${
