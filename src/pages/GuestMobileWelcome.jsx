@@ -7,6 +7,7 @@ import { supabase } from '../supabaseClient';
 import { normalizeSchoolName } from '../utils/userUtils';
 import { hashPassword } from '../utils/hashUtils';
 import SignUpForm from '../components/auth/SignUpForm';
+import { sendCheckinNotification } from '../utils/integrationUtils';
 
 const VISIT_REASON_OPTIONS = [
     { id: '1', emoji: '👥', label: '친구 / 지인 추천' },
@@ -104,6 +105,14 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                     location_id: locObj.id,
                     type: 'CHECKIN'
                 }]);
+
+                sendCheckinNotification({
+                    userName: currentUser.name,
+                    schoolName: currentUser.school,
+                    locationName: locObj.name,
+                    isGuest: false,
+                    purposes: activePurposes
+                }).catch(e => console.error('Failed sendCheckinNotification:', e));
             }
 
             // 3. Save visit notes for Admin Dashboard
@@ -220,6 +229,13 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 location_id: locObj.id,
                 type: 'CHECKIN'
             }]).select('id, created_at');
+
+            sendCheckinNotification({
+                userName: currentUser.name,
+                schoolName: currentUser.school,
+                locationName: locObj.name,
+                isGuest: false
+            }).catch(e => console.error('Failed sendCheckinNotification:', e));
 
             const insertedLog = insertedLogs?.[0];
 

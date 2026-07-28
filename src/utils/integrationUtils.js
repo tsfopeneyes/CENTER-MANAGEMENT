@@ -1,5 +1,67 @@
 import { format } from 'date-fns';
 import { getWeekIdentifier, parseTimeRange } from './dateUtils';
+import { supabase } from '../supabaseClient';
+
+/**
+ * Trigger Realtime LINE / Discord Checkin Notification
+ */
+export const sendCheckinNotification = async ({ userName, schoolName, locationName, isGuest = false, purposes = [] }) => {
+    try {
+        const { data: settings } = await supabase.from('global_settings').select('*');
+        let lineToken = '', lineGroupId = '', gsWebhookUrl = '', discordWebhookUrl = '';
+
+        if (settings) {
+            settings.forEach(s => {
+                if (s.key === 'line_channel_access_token') lineToken = s.value;
+                if (s.key === 'line_group_id') lineGroupId = s.value;
+                if (s.key === 'gs_webhook_url') gsWebhookUrl = s.value;
+                if (s.key === 'discord_webhook_url') discordWebhookUrl = s.value;
+            });
+        }
+
+        const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const cleanName = userName || '알 수 없음';
+        const cleanSchool = schoolName ? `(${schoolName})` : '';
+        const tag = isGuest ? '[GUEST CHECK-IN]' : '[WEB CHECK-IN]';
+        
+        let purposeText = '';
+        if (purposes && purposes.length > 0) {
+            purposeText = `\n🎯 이용 목적: ${purposes.join(', ')}`;
+        }
+
+        const alertMessage = `${tag}\n💌 ${cleanName}${cleanSchool}님이 ${locationName || '하이픈'} 센터에 체크인했어요 (${timeStr})${purposeText}`;
+
+        const locName = locationName || '';
+        const isHaifnLoc = !locName || ((locName.includes('하이픈') || locName.includes('HAIFN') || locName.includes('강동')) &&
+            !(locName.includes('이높') || locName.includes('ENOUGH_PLACE') || locName.includes('강서')));
+
+        // 1. LINE Notify via Google Apps Script Webhook
+        if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
+            fetch(gsWebhookUrl, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({
+                    action: 'LINE_NOTIFY',
+                    token: lineToken,
+                    to: lineGroupId,
+                    message: alertMessage
+                })
+            }).catch(e => console.error('LINE Notify error:', e));
+        }
+
+        // 2. Discord Notify
+        if (discordWebhookUrl) {
+            fetch(discordWebhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: alertMessage })
+            }).catch(e => console.error('Discord Notify error:', e));
+        }
+    } catch (e) {
+        console.error('sendCheckinNotification error:', e);
+    }
+};
 
 /**
  * Generic Sync to Google Sheets

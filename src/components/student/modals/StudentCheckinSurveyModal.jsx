@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Check, X, ChevronRight, CheckCircle, MapPin } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
+import { sendCheckinNotification } from '../../../utils/integrationUtils';
 
 const DEFAULT_SURVEY_OPTIONS = [
     { id: '1', emoji: '🍽️', label: '당 충전하며 쉬고 싶어요', recommendTitle: '2F SQUARE, 3F ROUND 빈백존', recommendText: '2층 냉장고에서 간식 먹고, 3층 빈백에서 뒹굴뒹굴' },
@@ -98,6 +99,15 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                 selections: selectedLabels,
                 created_at: new Date().toISOString()
             }]);
+
+            // 2. Trigger Realtime LINE / Discord Notification
+            sendCheckinNotification({
+                userName: user.name,
+                schoolName: user.school,
+                locationName: locationName || '하이픈',
+                isGuest: false,
+                purposes: selectedLabels
+            }).catch(e => console.error('Failed to send checkin notification:', e));
 
             sessionStorage.removeItem('pending_checkin_survey');
             sessionStorage.removeItem('require_checkin_survey');
