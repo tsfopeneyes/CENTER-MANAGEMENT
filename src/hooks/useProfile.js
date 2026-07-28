@@ -111,17 +111,17 @@ export const useProfile = (initialUser) => {
             // Fetch earned manual badges
             let { data: earnedChallenges, error: badgeError } = await supabase
                 .from('user_badges')
-                .select('badge_id, challenge_id')
+                .select('*')
                 .eq('user_id', userId);
 
             if (badgeError) {
                 const { data: fallbackChallenges } = await supabase
                     .from('user_challenges')
-                    .select('challenge_id')
+                    .select('*')
                     .eq('user_id', userId);
                 earnedChallenges = fallbackChallenges;
             }
-            const earnedChallengeIds = earnedChallenges?.map(ec => ec.badge_id || ec.challenge_id) || [];
+            const earnedChallengeIds = earnedChallenges?.map(ec => ec.badge_id || ec.challenge_id || ec.id).filter(Boolean) || [];
 
             return {
                 attendedPrograms: responses?.map(r => r.notices?.title).filter(Boolean) || [],
