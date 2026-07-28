@@ -1,9 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { User } from 'lucide-react';
 
 const UserAvatar = ({ user, size = "w-8 h-8", textSize = "text-xs" }) => {
-    if (user?.profile_image_url) {
-        return <img src={user.profile_image_url} alt="Profile" className={`${size} rounded-full object-cover border border-gray-100 shadow-sm`} />;
+    const [imgError, setImgError] = useState(false);
+
+    if (user?.profile_image_url && !imgError) {
+        return (
+            <img 
+                src={user.profile_image_url} 
+                alt="Profile" 
+                onError={() => setImgError(true)}
+                className={`${size} rounded-full object-cover border border-gray-100 shadow-sm`} 
+            />
+        );
     }
 
     const initial = user?.name?.[0] || '';
