@@ -1,46 +1,9 @@
-import { supabase } from '../supabaseClient';
-
-// Key should ideally be in env, but for local testing we use a placeholder or provided public key.
-// To use real web-push, we need VAPID keys.
-const VAPID_PUBLIC_KEY = 'YOUR_VAPID_PUBLIC_KEY_HERE';
+import { requestFirebaseToken } from '../firebase';
 
 export const subscribeToPush = async (userId) => {
-    if (!('serviceWorker' in navigator)) return;
-
+    if (!userId || typeof window === 'undefined' || !('Notification' in window)) return;
     try {
-        const registration = await navigator.serviceWorker.ready;
-
-        // Request Permission
-        const permission = await Notification.requestPermission();
-        if (permission !== 'granted') {
-            console.log('Notification permission denied');
-            return;
-        }
-
-        // Check if already subscribed
-        let subscription = await registration.pushManager.getSubscription();
-
-        if (!subscription) {
-            // Subscribe - we need a real public key here for this to work in production
-            // For now, this is the structural implementation
-            subscription = await registration.pushManager.subscribe({
-                userVisibleOnly: true,
-                applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY)
-            });
-        }
-
-        // Save to Supabase
-        const { error } = await supabase
-            .from('push_subscriptions')
-            .upsert({
-                user_id: userId,
-                subscription_data: subscription,
-                updated_at: new Date()
-            }, { onConflict: 'user_id' });
-
-        if (error) throw error;
-        console.log('Push subscription saved successfully');
-
+        await requestFirebaseToken(userId);
     } catch (err) {
         console.error('Push Subscription Error:', err);
     }
