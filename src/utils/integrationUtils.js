@@ -33,16 +33,21 @@ export const sendCheckinNotification = async ({ userName, schoolName, locationNa
         }
 
         const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
-        const cleanName = userName || '알 수 없음';
-        const cleanSchool = schoolName ? `(${schoolName})` : '';
-        const tag = isGuest ? '[GUEST CHECK-IN]' : '[WEB CHECK-IN]';
-        
-        let purposeText = '';
-        if (purposes && purposes.length > 0) {
-            purposeText = `\n🎯 이용 목적: ${purposes.join(', ')}`;
-        }
 
-        const alertMessage = `${tag}\n💌 ${cleanName}${cleanSchool}님이 ${targetLocName} 센터에 체크인했어요 (${timeStr})${purposeText}`;
+        let alertMessage = '';
+        if (isGuest) {
+            const cleanGuestName = (userName || '알 수 없음').replace('(guest)', '').trim();
+            const cleanSchool = schoolName || '-';
+            const surveyText = (purposes && purposes.length > 0)
+                ? `\n🧭 방문 경로\n▪ ${purposes.join('\n▪ ')}`
+                : '';
+            alertMessage = `[GUEST CHECK-IN]\n💌 ${cleanGuestName}(${cleanSchool})님이 게스트로 ${targetLocName}에 방문했어요 (${timeStr})${surveyText}`;
+        } else {
+            const surveyText = (purposes && purposes.length > 0)
+                ? `\n▪ ${purposes.join('\n▪ ')}`
+                : '';
+            alertMessage = `[CHECK-IN]\n💌 ${userName}님이 ${targetLocName}에 방문했어요 (${timeStr})${surveyText}`;
+        }
 
         // 1. LINE Notify (Strictly ONLY for Haifn center)
         if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
