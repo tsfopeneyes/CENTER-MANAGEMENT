@@ -108,12 +108,20 @@ export const useProfile = (initialUser) => {
                 }
             }
 
-            // Fetch earned manual challenges
-            const { data: earnedChallenges } = await supabase
-                .from('user_challenges')
-                .select('challenge_id')
+            // Fetch earned manual badges
+            let { data: earnedChallenges, error: badgeError } = await supabase
+                .from('user_badges')
+                .select('badge_id, challenge_id')
                 .eq('user_id', userId);
-            const earnedChallengeIds = earnedChallenges?.map(ec => ec.challenge_id) || [];
+
+            if (badgeError) {
+                const { data: fallbackChallenges } = await supabase
+                    .from('user_challenges')
+                    .select('challenge_id')
+                    .eq('user_id', userId);
+                earnedChallenges = fallbackChallenges;
+            }
+            const earnedChallengeIds = earnedChallenges?.map(ec => ec.badge_id || ec.challenge_id) || [];
 
             return {
                 attendedPrograms: responses?.map(r => r.notices?.title).filter(Boolean) || [],
@@ -195,7 +203,10 @@ export const useProfile = (initialUser) => {
         try {
             // Clean up personal non-historical data
             await supabase.from('calling_forest_progress').delete().eq('student_id', u.id);
-            await supabase.from('user_challenges').delete().eq('user_id', u.id);
+            const { error: delBadgeErr } = await supabase.from('user_badges').delete().eq('user_id', u.id);
+            if (delBadgeErr) {
+                await supabase.from('user_challenges').delete().eq('user_id', u.id);
+            }
 
             // Anonymize user row while retaining name as '이름 (탈퇴 회원)'
             const rawName = (u.name || '').replace(/\(탈퇴 회원\)$/, '').trim();

@@ -219,8 +219,12 @@ export const useKioskManager = (navigate) => {
                 console.error("Failed to load BADGE_SYSTEM_CONFIG", e);
             }
 
-            const { data } = await supabase.from('challenges').select('*');
-            if (data) setBadges(data);
+            let { data: badgeData, error: badgeErr } = await supabase.from('badges').select('*');
+            if (badgeErr) {
+                const { data: fbData } = await supabase.from('challenges').select('*');
+                badgeData = fbData;
+            }
+            if (badgeData) setBadges(badgeData);
 
             const { data: surveyData } = await supabase
                 .from('notices')
