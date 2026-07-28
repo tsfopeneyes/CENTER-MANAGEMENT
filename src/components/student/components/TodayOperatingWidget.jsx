@@ -247,7 +247,11 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
     const today = new Date();
     const dayMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const dayOfWeekStr = dayMap[today.getDay()];
-    const todayConfig = operatingHours ? operatingHours[dayOfWeekStr] : null;
+    const currentSpaceKey = studentRegion === '강서' ? '이높플레이스' : '하이픈';
+    const activeSpaceHours = operatingHours
+        ? (operatingHours[currentSpaceKey] || (operatingHours.monday ? operatingHours : null))
+        : null;
+    const todayConfig = activeSpaceHours ? activeSpaceHours[dayOfWeekStr] : null;
 
     // Check if today is closed due to special schedule
     const isTodayClosedBySchedule = adminSchedules.some(sch => {
@@ -286,7 +290,6 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
     const isAfter6PM = currentHour >= 18;
     const isDutyTime = currentHour >= 14 && currentHour < 22; // 오후 2시 ~ 오후 10시
 
-    const currentSpaceKey = studentRegion === '강서' ? '이높플레이스' : '하이픈';
     const dutyStaffId = dutyStaff[currentSpaceKey];
 
     // Duty staff member:
@@ -341,9 +344,9 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
         dividerHeight = 'h-11';
     }
 
-    // Get current week dates (Monday to Sunday)
-    const monday = startOfWeek(today, { weekStartsOn: 1 });
-    const weekDays = Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+    // Get current week dates (Sunday to Saturday)
+    const sunday = startOfWeek(today, { weekStartsOn: 0 });
+    const weekDays = Array.from({ length: 7 }, (_, i) => addDays(sunday, i));
 
     const dayNameMap = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
     const koDayMap = ['일', '월', '화', '수', '목', '금', '토'];
@@ -384,7 +387,10 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
 
         // 2. Check regular operating config
         const dayOfWeekStr = dayNameMap[date.getDay()];
-        const dayConfig = operatingHours ? operatingHours[dayOfWeekStr] : null;
+        const spaceHours = operatingHours
+            ? (operatingHours[currentSpaceKey] || (operatingHours.monday ? operatingHours : null))
+            : null;
+        const dayConfig = spaceHours ? spaceHours[dayOfWeekStr] : null;
 
         if (dayConfig && dayConfig.isOpen) {
             return { status: 'OPEN', text: `${dayConfig.open} ~ ${dayConfig.close}` };

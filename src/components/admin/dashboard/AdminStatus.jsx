@@ -7,7 +7,6 @@ import ZoneCards from './components/ZoneCards';
 import RealtimeActiveUsers from './components/RealtimeActiveUsers';
 import ZoneDetailModal from './components/ZoneDetailModal';
 
-
 const AdminStatus = ({
     users,
     locations,
@@ -23,6 +22,7 @@ const AdminStatus = ({
     isAlertEnabled,
     handleToggleAlert,
     checkinSurveys,
+    visitNotes,
     surveyConfig
 }) => {
     const {
@@ -65,6 +65,7 @@ const AdminStatus = ({
                 activeUsersList={activeUsersList}
                 handleForceCheckout={handleForceCheckout}
                 checkinSurveys={checkinSurveys}
+                visitNotes={visitNotes}
                 surveyConfig={surveyConfig}
             />
 

@@ -187,7 +187,8 @@ export const noticesApi = {
                 const { error: pushError } = await supabase.functions.invoke('send-push', {
                     body: {
                         title: notificationTitle,
-                        body: notificationBody
+                        body: notificationBody,
+                        targetRegions: notice.target_regions || []
                     }
                 });
                 if (pushError) console.error("푸쉬 알림 전송 에러:", pushError);

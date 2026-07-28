@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
 import { Calendar, User, ArrowLeft, Share, AlertCircle, MapPin, Users, Smartphone, School, CheckCircle2, X } from 'lucide-react';
@@ -242,7 +242,7 @@ const PublicProgramDetail = () => {
     // Check existing login session on mount (do not redirect)
     useEffect(() => {
         const checkExistingLogin = async () => {
-            const storedUser = localStorage.getItem('user');
+            const storedUser = localStorage.getItem('user') || localStorage.getItem('admin_user');
             if (storedUser) {
                 try {
                     const user = JSON.parse(storedUser);

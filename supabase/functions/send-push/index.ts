@@ -18,7 +18,7 @@ serve(async (req) => {
   }
 
   try {
-    const { title, body, userIds } = await req.json()
+    const { title, body, userIds, targetRegions } = await req.json()
 
     // 1. 보안을 위해 환경변수에서 Firebase 키를 가져옵니다.
     const serviceAccountStr = Deno.env.get('FIREBASE_SERVICE_ACCOUNT');
@@ -36,16 +36,32 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch tokens based on userIds if provided, otherwise fetch all
-    let query = supabase.from('users').select('fcm_token').not('fcm_token', 'is', null);
+    // Fetch tokens based on userIds or targetRegions if provided
+    let query = supabase.from('users').select('fcm_token, school, role').not('fcm_token', 'is', null);
     if (userIds && userIds.length > 0) {
       query = query.in('id', userIds);
+    } else if (targetRegions && Array.isArray(targetRegions) && targetRegions.length > 0) {
+      // 1. Get school names associated with target regions (e.g. ['강동'] or ['강서'])
+      const { data: schools } = await supabase
+        .from('schools')
+        .select('name')
+        .in('region', targetRegions);
+
+      const targetSchoolNames = (schools || []).map((s: { name: string }) => s.name).filter(Boolean);
+
+      if (targetSchoolNames.length > 0) {
+        // Target users from those schools OR admin/staff roles
+        query = query.or(`school.in.("${targetSchoolNames.join('","')}"),role.in.(admin,staff,master)`);
+      }
     }
     
     const { data: users, error } = await query;
     if (error) throw error;
 
-    const tokens = users.map(u => u.fcm_token).filter(Boolean);
+    // Deduplicate FCM tokens to prevent duplicate pushes to the same device
+    const rawTokens = users.map(u => u.fcm_token).filter(Boolean);
+    const tokens = [...new Set(rawTokens)];
+
     if (tokens.length === 0) {
       return new Response(JSON.stringify({ message: "No valid tokens found" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }

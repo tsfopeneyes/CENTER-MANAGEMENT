@@ -72,7 +72,7 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
     const [tabConfigLoading, setTabConfigLoading] = useState(false);
 
     // 5. Operating Hours State
-    const defaultHours = {
+    const defaultSingleHours = {
         monday: { isOpen: false, open: '10:00', close: '19:00', label: '월요일' },
         tuesday: { isOpen: true, open: '10:00', close: '19:00', label: '화요일' },
         wednesday: { isOpen: true, open: '10:00', close: '19:00', label: '수요일' },
@@ -80,6 +80,10 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
         friday: { isOpen: true, open: '10:00', close: '19:00', label: '금요일' },
         saturday: { isOpen: true, open: '10:00', close: '19:00', label: '토요일' },
         sunday: { isOpen: false, open: '10:00', close: '19:00', label: '일요일' }
+    };
+    const defaultHours = {
+        "하이픈": { ...defaultSingleHours },
+        "이높플레이스": { ...defaultSingleHours }
     };
     const [operatingHours, setOperatingHours] = useState(defaultHours);
     const [hoursLoading, setHoursLoading] = useState(false);
@@ -193,7 +197,19 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
             if (hoursData?.content) {
                 try {
                     const parsed = JSON.parse(hoursData.content);
-                    setOperatingHours(prev => ({ ...prev, ...parsed }));
+                    if (parsed && typeof parsed === 'object') {
+                        if (parsed["하이픈"] || parsed["이높플레이스"]) {
+                            setOperatingHours({
+                                "하이픈": parsed["하이픈"] ? { ...defaultSingleHours, ...parsed["하이픈"] } : { ...defaultSingleHours },
+                                "이높플레이스": parsed["이높플레이스"] ? { ...defaultSingleHours, ...parsed["이높플레이스"] } : { ...defaultSingleHours }
+                            });
+                        } else if (parsed.monday || parsed.tuesday) {
+                            setOperatingHours({
+                                "하이픈": { ...defaultSingleHours, ...parsed },
+                                "이높플레이스": { ...defaultSingleHours, ...parsed }
+                            });
+                        }
+                    }
                 } catch (e) { console.error(e); }
             }
 
@@ -309,6 +325,20 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
 
             const updatedAdmin = { ...currentAdmin, ...updates };
             localStorage.setItem('admin_user', JSON.stringify(updatedAdmin));
+
+            // Also sync 'user' in localStorage if same user ID
+            try {
+                const localUser = localStorage.getItem('user');
+                if (localUser) {
+                    const parsedUser = JSON.parse(localUser);
+                    if (parsedUser && parsedUser.id === currentAdmin.id) {
+                        localStorage.setItem('user', JSON.stringify({ ...parsedUser, ...updates }));
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to sync user in localStorage:', e);
+            }
+
             alert('프로필이 업데이트되었습니다.');
             setProfileImage(null);
             setNewAdminPassword('');
@@ -660,11 +690,30 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
         }
     };
 
-    const handleUpdateOperatingHours = (day, field, value) => {
-        setOperatingHours(prev => ({
-            ...prev,
-            [day]: { ...prev[day], [field]: value }
-        }));
+    const handleUpdateOperatingHours = (arg1, arg2, arg3, arg4) => {
+        let space = '하이픈';
+        let day = arg1;
+        let field = arg2;
+        let value = arg3;
+
+        if (arg4 !== undefined) {
+            space = arg1;
+            day = arg2;
+            field = arg3;
+            value = arg4;
+        }
+
+        setOperatingHours(prev => {
+            const currentSpaceObj = (prev && prev[space]) ? prev[space] : (prev && prev.monday ? prev : defaultSingleHours);
+            const currentDayObj = (currentSpaceObj && currentSpaceObj[day]) ? currentSpaceObj[day] : (defaultSingleHours[day] || {});
+            return {
+                ...prev,
+                [space]: {
+                    ...currentSpaceObj,
+                    [day]: { ...currentDayObj, [field]: value }
+                }
+            };
+        });
     };
 
     const handleSaveOperatingHours = async () => {

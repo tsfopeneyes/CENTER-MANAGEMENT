@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import TermsConsentModal from './TermsConsentModal';
 import SignUpBasicInfo from './components/SignUpBasicInfo';
 import SignUpSecurityInfo from './components/SignUpSecurityInfo';

@@ -71,6 +71,7 @@ function App() {
             <BrowserRouter>
                 <Routes>
                     <Route path="/" element={<Landing />} />
+                    <Route path="/checkin" element={<GuestMobileWelcome />} />
                     <Route path="/guest" element={<GuestMobileWelcome />} />
                     <Route path="/welcome" element={<GuestMobileWelcome />} />
                     <Route path="/p/:id" element={<PublicProgramDetail />} />

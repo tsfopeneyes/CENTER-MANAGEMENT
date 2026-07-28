@@ -622,19 +622,25 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     let corrected = false;
                     let newPurpose = n.purpose || '';
                     if (newPurpose) {
-                        const parts = newPurpose.split(',').map(p => {
-                            let trimmed = p.trim();
-                            if (trimmed === '교재' || trimmed === '교제') {
-                                corrected = true;
-                                return '교제 및 휴식';
-                            }
-                            if (trimmed === '스처썜 만남') {
-                                corrected = true;
-                                return '스처쌤 만남';
-                            }
-                            return trimmed;
-                        });
-                        newPurpose = parts.filter(Boolean).join(', ');
+                        const checkinPhrases = ['당 충전', '놀고 싶어요', '이야기하고 싶어요', '예배하고 싶어요', '집중하고 싶어요', '잘 모르겠어요'];
+                        if (checkinPhrases.some(phrase => newPurpose.includes(phrase))) {
+                            newPurpose = '';
+                            corrected = true;
+                        } else {
+                            const parts = newPurpose.split(',').map(p => {
+                                let trimmed = p.trim();
+                                if (trimmed === '교재' || trimmed === '교제') {
+                                    corrected = true;
+                                    return '교제 및 휴식';
+                                }
+                                if (trimmed === '스처썜 만남') {
+                                    corrected = true;
+                                    return '스처쌤 만남';
+                                }
+                                return trimmed;
+                            });
+                            newPurpose = parts.filter(Boolean).join(', ');
+                        }
                     }
                     
                     if (corrected) {

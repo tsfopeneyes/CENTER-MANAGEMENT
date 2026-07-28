@@ -89,8 +89,8 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
         loadExisting();
     }, [program?.id, existingFeedback]);
 
-    const handleCustomAnswerChange = (qId, val) => {
-        setCustomAnswers(prev => ({ ...prev, [qId]: val }));
+    const handleCustomAnswerChange = (qKey, val) => {
+        setCustomAnswers(prev => ({ ...prev, [qKey]: val }));
     };
 
     const handleQ1Select = (val) => {
@@ -110,11 +110,14 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
             let payload = {};
 
             if (hasCustomQuestions) {
-                // Validate custom questions
+                // Validate custom questions using unique qKey
                 for (let i = 0; i < customQuestions.length; i++) {
                     const q = customQuestions[i];
+                    const isUniqueId = q.id && customQuestions.filter(item => item.id === q.id).length === 1;
+                    const qKey = isUniqueId ? q.id : `q_idx_${i}`;
+
                     if (q.required) {
-                        const val = customAnswers[q.id];
+                        const val = customAnswers[qKey];
                         if (val === undefined || val === null || (typeof val === 'string' && !val.trim()) || (typeof val === 'number' && val === 0)) {
                             alert(`'${q.title}' 항목에 답변해 주세요.`);
                             setSubmitting(false);
@@ -125,18 +128,28 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
 
                 // Format answers summary
                 const answersSummary = customQuestions.map((q, idx) => {
-                    const ans = customAnswers[q.id] || '';
+                    const isUniqueId = q.id && customQuestions.filter(item => item.id === q.id).length === 1;
+                    const qKey = isUniqueId ? q.id : `q_idx_${idx}`;
+                    const ans = customAnswers[qKey] || '';
                     return `Q${idx + 1}. ${q.title}: ${ans}`;
                 }).join('\n');
+
+                const getFirstAns = (idx) => {
+                    const q = customQuestions[idx];
+                    if (!q) return '';
+                    const isUniqueId = q.id && customQuestions.filter(item => item.id === q.id).length === 1;
+                    const qKey = isUniqueId ? q.id : `q_idx_${idx}`;
+                    return customAnswers[qKey] || '';
+                };
 
                 payload = {
                     notice_id: program.id,
                     user_id: user.id,
-                    q1_reason: String(customAnswers['q1'] || customAnswers[customQuestions[0]?.id] || '맞춤 설문 제출'),
-                    q2_experience: String(customAnswers['q2'] || customAnswers[customQuestions[1]?.id] || answersSummary),
-                    q3_satisfaction: typeof customAnswers['q3'] === 'number' ? customAnswers['q3'] : (typeof customAnswers[customQuestions[2]?.id] === 'number' ? customAnswers[customQuestions[2]?.id] : 5),
-                    q4_best_moment: String(customAnswers['q4'] || customAnswers[customQuestions[3]?.id] || ''),
-                    q5_disappointments: String(customAnswers['q5'] || ''),
+                    q1_reason: String(getFirstAns(0) || '맞춤 설문 제출'),
+                    q2_experience: String(getFirstAns(1) || answersSummary),
+                    q3_satisfaction: typeof getFirstAns(2) === 'number' ? getFirstAns(2) : 5,
+                    q4_best_moment: String(getFirstAns(3) || ''),
+                    q5_disappointments: String(getFirstAns(4) || ''),
                     q6_would_rejoin: 5,
                     q7_rejoin_reason: '',
                     q8_additional_comments: JSON.stringify(customAnswers)
@@ -248,6 +261,9 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
                     {hasCustomQuestions ? (
                         /* Render Custom Questions Configured by Manager */
                         customQuestions.map((q, idx) => {
+                            const isUniqueId = q.id && customQuestions.filter(item => item.id === q.id).length === 1;
+                            const qKey = isUniqueId ? q.id : `q_idx_${idx}`;
+
                             const qType = q.type || 'text';
                             const rawOpts = q.options;
                             let optsArray = [];
@@ -257,13 +273,13 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
                                 optsArray = rawOpts.split(',').map(s => s.trim()).filter(Boolean);
                             }
 
-                            const currentAns = customAnswers[q.id];
+                            const currentAns = customAnswers[qKey];
                             const isChoice = qType === 'choice' && optsArray.length > 0;
                             const isStar = qType === 'star';
                             const isShort = qType === 'short';
 
                             return (
-                                <div key={q.id || idx} className="space-y-2.5">
+                                <div key={qKey} className="space-y-2.5">
                                     <label className="block text-sm font-bold text-tossGrey900 leading-snug">
                                         {idx + 1}. {q.title} {q.required && <span className="text-tossError">*</span>}
                                     </label>
@@ -276,7 +292,7 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
                                                     <button
                                                         key={opt}
                                                         type="button"
-                                                        onClick={() => handleCustomAnswerChange(q.id, opt)}
+                                                        onClick={() => handleCustomAnswerChange(qKey, opt)}
                                                         className={`px-4 py-2.5 rounded-toss-lg text-sm font-bold border transition-colors cursor-pointer ${
                                                             currentAns === opt
                                                             ? 'bg-tossBlue border-tossBlue text-white shadow-xs' 
@@ -292,7 +308,7 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
                                         /* 별점 평가 (Star) */
                                         <StarRating 
                                             value={typeof currentAns === 'number' ? currentAns : 0} 
-                                            onChange={(val) => handleCustomAnswerChange(q.id, val)} 
+                                            onChange={(val) => handleCustomAnswerChange(qKey, val)} 
                                         />
                                     ) : isShort ? (
                                         /* 단답형 (Short) */
@@ -300,7 +316,7 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
                                             type="text"
                                             placeholder="자유롭게 작성해주세요!"
                                             value={typeof currentAns === 'string' ? currentAns : ''}
-                                            onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
+                                            onChange={e => handleCustomAnswerChange(qKey, e.target.value)}
                                             className="w-full p-4 bg-white border border-tossGrey200 rounded-toss-xl text-sm font-medium text-tossGrey900 focus:border-tossBlue focus:ring-2 focus:ring-tossBlueLight outline-none shadow-xs placeholder:text-tossGrey400"
                                         />
                                     ) : (
@@ -309,7 +325,7 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
                                             rows={3}
                                             placeholder="자유롭게 작성해주세요!"
                                             value={typeof currentAns === 'string' ? currentAns : ''}
-                                            onChange={e => handleCustomAnswerChange(q.id, e.target.value)}
+                                            onChange={e => handleCustomAnswerChange(qKey, e.target.value)}
                                             className="w-full p-4 bg-white border border-tossGrey200 rounded-toss-xl text-sm font-medium text-tossGrey900 focus:border-tossBlue focus:ring-2 focus:ring-tossBlueLight outline-none resize-none shadow-xs placeholder:text-tossGrey400"
                                         />
                                     )}

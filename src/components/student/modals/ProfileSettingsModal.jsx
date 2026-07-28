@@ -1,10 +1,11 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, User, Image as ImageIcon, ZoomIn, RotateCw } from 'lucide-react';
+import { X, User, Image as ImageIcon, ZoomIn, RotateCw, Bell } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import getCroppedImg from '../../../utils/imageUtils';
 import { hashPassword } from '../../../utils/hashUtils';
 import useModalClose from '../../../hooks/useModalClose';
+import { promptAndEnableNotification, removeFirebaseToken } from '../../../firebase';
 
 const ProfileSettingsModal = ({ 
     user, 
@@ -23,6 +24,32 @@ const ProfileSettingsModal = ({
     const [isSchoolChurch, setIsSchoolChurch] = useState(user?.preferences?.is_school_church ?? false);
     const [bio, setBio] = useState(user?.bio || '');
     const isStaff = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'staff' || user?.user_group?.toLowerCase() === 'staff' || user?.user_group === '관리자';
+
+    // Push notification toggle state
+    const [isPushEnabled, setIsPushEnabled] = useState(Boolean(user?.fcm_token));
+    const [pushLoading, setPushLoading] = useState(false);
+
+    const handleTogglePush = async () => {
+        if (!user?.id) return;
+        setPushLoading(true);
+        try {
+            if (isPushEnabled) {
+                const ok = await removeFirebaseToken(user.id);
+                if (ok) {
+                    setIsPushEnabled(false);
+                    alert('푸시 알림 수신이 해제되었습니다.');
+                }
+            } else {
+                const res = await promptAndEnableNotification(user.id);
+                if (res.success) {
+                    setIsPushEnabled(true);
+                    alert('🎉 푸시 알림이 성공적으로 설정되었습니다!');
+                }
+            }
+        } finally {
+            setPushLoading(false);
+        }
+    };
 
     const [showCropModal, setShowCropModal] = useState(false);
     const [photoURL, setPhotoURL] = useState(null);
@@ -159,6 +186,33 @@ const ProfileSettingsModal = ({
                                     아니요
                                 </button>
                             </div>
+                        </div>
+                    </div>
+
+                    {/* Push Notification Toggle Section */}
+                    <div className="space-y-3">
+                        <h4 className="font-bold text-gray-800 border-b pb-2 flex items-center gap-2">
+                            <Bell size={18} className="text-blue-600" />
+                            푸시 알림 설정
+                        </h4>
+                        <div className="flex items-center justify-between bg-gray-50 p-4 rounded-2xl border border-gray-200">
+                            <div>
+                                <p className="font-bold text-sm text-gray-800">새 프로그램 & 공지 알림</p>
+                                <p className="text-xs text-gray-500 mt-0.5">
+                                    {isPushEnabled ? '새 소식을 앱 알림으로 수신 중입니다' : '알림을 켜서 중요한 소식을 받아보세요'}
+                                </p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={handleTogglePush}
+                                disabled={pushLoading}
+                                className={`w-14 h-8 flex items-center rounded-full p-1 transition-colors duration-300 ${isPushEnabled ? 'bg-blue-600 justify-end' : 'bg-gray-300 justify-start'}`}
+                            >
+                                <motion.div
+                                    layout
+                                    className="w-6 h-6 bg-white rounded-full shadow-md"
+                                />
+                            </button>
                         </div>
                     </div>
 

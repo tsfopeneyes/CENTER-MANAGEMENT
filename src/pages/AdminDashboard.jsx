@@ -115,6 +115,22 @@ const AdminDashboard = () => {
             const { data: userData } = await supabase.from('users').select('*').order('name');
             setUsers(userData || []);
 
+            // Automatically sync currentAdmin with latest DB data
+            const storedAdminStr = localStorage.getItem('admin_user');
+            if (storedAdminStr && userData) {
+                try {
+                    const parsedAdmin = JSON.parse(storedAdminStr);
+                    const latestAdminUser = userData.find(u => u.id === parsedAdmin.id);
+                    if (latestAdminUser) {
+                        const mergedAdmin = { ...parsedAdmin, ...latestAdminUser };
+                        setCurrentAdmin(mergedAdmin);
+                        localStorage.setItem('admin_user', JSON.stringify(mergedAdmin));
+                    }
+                } catch (e) {
+                    console.error('Failed to sync currentAdmin:', e);
+                }
+            }
+
             const { data: locData } = await supabase.from('locations').select('*').order('id');
             setLocations(locData || []);
 
@@ -140,16 +156,16 @@ const AdminDashboard = () => {
             const { data: vNotesData } = await supabase.from('visit_notes').select('*');
             setVisitNotes(vNotesData || []);
 
-            const localStartOfToday = new Date(new Date().setHours(0, 0, 0, 0)).toISOString();
             let surveyDataList = [];
             try {
                 const { data: sData } = await supabase
                     .from('checkin_surveys')
                     .select('*')
-                    .gte('created_at', localStartOfToday);
+                    .order('created_at', { ascending: false })
+                    .limit(1000);
                 surveyDataList = sData || [];
             } catch (e) {
-                console.error("Failed to fetch today checkin surveys:", e);
+                console.error("Failed to fetch checkin surveys:", e);
             }
             setCheckinSurveys(surveyDataList);
 
@@ -261,6 +277,8 @@ const AdminDashboard = () => {
             .channel('public:updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'logs' }, debouncedFetch)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'notice_responses' }, debouncedFetch)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'checkin_surveys' }, debouncedFetch)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'visit_notes' }, debouncedFetch)
             .subscribe();
 
         // 100% Reliable Polling Fallback for Check-in Alerts
@@ -597,6 +615,7 @@ const AdminDashboard = () => {
                             isAlertEnabled={isAlertEnabled}
                             handleToggleAlert={handleToggleAlert}
                             checkinSurveys={checkinSurveys}
+                            visitNotes={visitNotes}
                             surveyConfig={(() => {
                                 const notice = notices.find(n => n.category === 'SYSTEM' && n.title === 'CHECKIN_SURVEY_CONFIG');
                                 if (notice?.content) {

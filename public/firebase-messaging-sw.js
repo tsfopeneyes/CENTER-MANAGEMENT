@@ -20,12 +20,15 @@ const messaging = firebase.messaging();
 
 messaging.onBackgroundMessage((payload) => {
   console.log('[firebase-messaging-sw.js] Received background message ', payload);
-  const notificationTitle = payload.notification?.title || payload.data?.title || "새 알림";
-  const notificationOptions = {
-    body: payload.notification?.body || payload.data?.body || "확인 부탁드립니다.",
-    icon: '/vite.svg', // 앱 아이콘 경로로 변경 가능
-    data: payload.data
-  };
-
-  self.registration.showNotification(notificationTitle, notificationOptions);
+  // FCM SDK는 payload에 notification 객체가 있으면 자동으로 알림을 노출하므로,
+  // data-only 메시지일 때만 수동으로 showNotification을 호출하여 중복 팝업 방지합니다.
+  if (!payload.notification) {
+    const notificationTitle = payload.data?.title || "새 알림";
+    const notificationOptions = {
+      body: payload.data?.body || "확인 부탁드립니다.",
+      icon: '/vite.svg',
+      data: payload.data
+    };
+    self.registration.showNotification(notificationTitle, notificationOptions);
+  }
 });

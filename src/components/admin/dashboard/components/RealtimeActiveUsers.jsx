@@ -5,6 +5,7 @@ const RealtimeActiveUsers = ({
     activeUsersList,
     handleForceCheckout,
     checkinSurveys = [],
+    visitNotes = {},
     surveyConfig
 }) => {
     const [currentTime, setCurrentTime] = useState(new Date());
@@ -27,6 +28,54 @@ const RealtimeActiveUsers = ({
         
         return `${formattedTime} ${durationStr}`;
     };
+
+    const DEFAULT_SURVEY_OPTIONS = [
+        { id: '1', emoji: '🍽️', label: '당 충전하며 쉬고 싶어요' },
+        { id: '2', emoji: '🎲', label: '아무 생각 없이 놀고 싶어요' },
+        { id: '3', emoji: '☕', label: '누군가와 이야기하고 싶어요' },
+        { id: '4', emoji: '🙏', label: '기도하거나 예배하고 싶어요' },
+        { id: '5', emoji: '📚', label: '조용히 집중하고 싶어요' },
+        { id: '6', emoji: '🤷', label: '아직 잘 모르겠어요' }
+    ];
+
+    const getUserSurveySelections = (user) => {
+        if (!user) return [];
+
+        const allOptions = [
+            ...(surveyConfig?.options || []),
+            ...DEFAULT_SURVEY_OPTIONS
+        ];
+
+        const formatSelection = (val) => {
+            if (!val) return '';
+            const trimmed = String(val).trim();
+            const opt = allOptions.find(o => String(o.id) === trimmed || o.label === trimmed || trimmed.includes(o.label));
+            if (opt) return `${opt.emoji} ${opt.label}`;
+            return trimmed;
+        };
+
+        // STRICTLY check checkin_surveys table created ON OR AFTER current checkInTime (KST)
+        const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+        const userCheckinTime = user.checkInTime ? new Date(user.checkInTime).getTime() : 0;
+
+        const userSurvey = checkinSurveys
+            ?.filter(s => {
+                const matchesUser = s.user_id === user.id || (user.name && (s.user_id === user.name || s.user_name === user.name));
+                if (!matchesUser) return false;
+                const surveyDateKst = new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                if (surveyDateKst !== todayKst) return false;
+                const surveyTime = new Date(s.created_at).getTime();
+                return userCheckinTime > 0 && surveyTime >= (userCheckinTime - 5000);
+            })
+            ?.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+
+        if (userSurvey?.selections && userSurvey.selections.length > 0) {
+            return userSurvey.selections.map(formatSelection).filter(Boolean);
+        }
+
+        return [];
+    };
+
     return (
         <section className="bg-white rounded-[2.5rem] shadow-sm border border-gray-100 overflow-hidden">
             <div className="p-8 border-b border-gray-100 flex justify-between items-center bg-gray-50/20">
@@ -56,13 +105,7 @@ const RealtimeActiveUsers = ({
                             </thead>
                             <tbody className="divide-y divide-gray-50 text-sm">
                                 {activeUsersList.map(user => {
-                                    const userSurvey = checkinSurveys
-                                        ?.filter(s => s.user_id === user.id)
-                                        ?.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-                                    const selectionsList = userSurvey?.selections?.map(sid => {
-                                        const opt = surveyConfig?.options?.find(o => o.id === sid);
-                                        return opt ? `${opt.emoji} ${opt.label}` : sid;
-                                    }) || [];
+                                    const selectionsList = getUserSurveySelections(user);
 
                                     return (
                                         <tr key={user.id} className="hover:bg-blue-50/20 transition-all duration-300 group">
@@ -114,36 +157,29 @@ const RealtimeActiveUsers = ({
 
                     {/* Mobile Card View */}
                     <div className="md:hidden divide-y divide-gray-100">
-                        {activeUsersList.map(user => (
-                            <div key={user.id} className="p-4 active:bg-gray-50 transition flex items-center justify-between gap-4">
-                                <UserAvatar user={user} size="w-10 h-10" textSize="text-xs" />
-                                <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                    {/* 1행: 이름 + 학교명 */}
-                                    <div className="flex items-baseline gap-2 mb-1.5 min-w-0">
-                                        <span className="font-bold text-gray-800 text-base flex-shrink-0 flex items-center gap-1">
-                                            {user.name}
-                                            {user.is_leader && <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="#FACC15" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>}
-                                        </span>
-                                        {user.school && (
-                                            <span className="text-xs text-gray-400 font-medium truncate flex-1 min-w-0">
-                                                {user.school}
+                        {activeUsersList.map(user => {
+                            const selectionsList = getUserSurveySelections(user);
+                            return (
+                                <div key={user.id} className="p-4 active:bg-gray-50 transition flex items-center justify-between gap-4">
+                                    <UserAvatar user={user} size="w-10 h-10" textSize="text-xs" />
+                                    <div className="flex-1 min-w-0 flex flex-col justify-center">
+                                        {/* 1행: 이름 + 학교명 */}
+                                        <div className="flex items-baseline gap-2 mb-1.5 min-w-0">
+                                            <span className="font-bold text-gray-800 text-base flex-shrink-0 flex items-center gap-1">
+                                                {user.name}
+                                                {user.is_leader && <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="#FACC15" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>}
                                             </span>
-                                        )}
-                                    </div>
-                                    {/* 2행: 입실 위치 + 체류 시간 */}
-                                    <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
-                                        <span className="bg-blue-50 text-blue-600 font-semibold px-2 py-0.5 rounded-lg flex-shrink-0 text-[11px]">{user.currentLocationName}</span>
-                                        <span className="font-semibold text-gray-600 whitespace-nowrap flex-shrink-0">{formatStayDuration(user.checkInTime)}</span>
-                                        {(() => {
-                                            const userSurvey = checkinSurveys
-                                                ?.filter(s => s.user_id === user.id)
-                                                ?.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-                                            const selectionsList = userSurvey?.selections?.map(sid => {
-                                                const opt = surveyConfig?.options?.find(o => o.id === sid);
-                                                return opt ? `${opt.emoji} ${opt.label}` : sid;
-                                            }) || [];
-                                            
-                                            return selectionsList.length > 0 ? (
+                                            {user.school && (
+                                                <span className="text-xs text-gray-400 font-medium truncate flex-1 min-w-0">
+                                                    {user.school}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {/* 2행: 입실 위치 + 체류 시간 */}
+                                        <div className="flex items-center gap-2 text-xs text-gray-500 flex-wrap">
+                                            <span className="bg-blue-50 text-blue-600 font-semibold px-2 py-0.5 rounded-lg flex-shrink-0 text-[11px]">{user.currentLocationName}</span>
+                                            <span className="font-semibold text-gray-600 whitespace-nowrap flex-shrink-0">{formatStayDuration(user.checkInTime)}</span>
+                                            {selectionsList.length > 0 && (
                                                 <div className="flex flex-col gap-1 w-full mt-1.5">
                                                     {selectionsList.map((sel, idx) => (
                                                         <span key={idx} className="bg-emerald-50 text-emerald-600 font-semibold px-2 py-0.5 rounded-lg text-[10px] w-fit">
@@ -151,18 +187,18 @@ const RealtimeActiveUsers = ({
                                                         </span>
                                                     ))}
                                                 </div>
-                                            ) : null;
-                                        })()}
+                                            )}
+                                        </div>
                                     </div>
+                                    <button
+                                        onClick={() => handleForceCheckout(user.id)}
+                                        className="bg-red-50 text-red-500 border border-red-100 px-3 py-2 rounded-xl transition font-bold text-xs flex-shrink-0 active:bg-red-500 active:text-white active:border-red-500 shadow-sm"
+                                    >
+                                        강제 퇴실
+                                    </button>
                                 </div>
-                                <button
-                                    onClick={() => handleForceCheckout(user.id)}
-                                    className="bg-red-50 text-red-500 border border-red-100 px-3 py-2 rounded-xl transition font-bold text-xs flex-shrink-0 active:bg-red-500 active:text-white active:border-red-500 shadow-sm"
-                                >
-                                    퇴실
-                                </button>
-                            </div>
-                        ))}
+                            );
+                        })}
                     </div>
                 </>
             )}

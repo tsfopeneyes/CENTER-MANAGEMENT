@@ -11,12 +11,12 @@ const SignUpBasicInfo = ({ formData, setFormData, handleChange, handlePhoneChang
                 {/* Row 1: Name and Gender */}
                 <div className="flex border-b border-gray-200">
                     <div className="relative flex-1 border-r border-gray-200">
-                        <User className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-gray-400'}`} size={isKiosk ? 22 : 20} />
+                        <User className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-[#8B95A1]'}`} size={isKiosk ? 22 : 20} />
                         <input
                             type="text" name="name" required
                             value={formData.name} onChange={handleChange}
                             placeholder="이름"
-                            className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                            className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold ${isKiosk ? 'sm:py-4' : ''}`}
                         />
                     </div>
                     <div className="flex w-1/3 sm:w-1/4">
@@ -50,23 +50,23 @@ const SignUpBasicInfo = ({ formData, setFormData, handleChange, handlePhoneChang
 
                 {/* School */}
                 <div className="relative border-b border-gray-200">
-                    <School className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-gray-400'}`} size={isKiosk ? 22 : 20} />
+                    <School className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-[#8B95A1]'}`} size={isKiosk ? 22 : 20} />
                     <input
                         type="text" name="school" required
                         value={formData.school} onChange={handleChange}
                         placeholder="학교 (00고등학교)"
-                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold ${isKiosk ? 'sm:py-4' : ''}`}
                     />
                 </div>
 
                 {/* Church */}
                 <div className="relative border-b border-gray-200">
-                    <User className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-gray-400'}`} size={isKiosk ? 22 : 20} />
+                    <User className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-[#8B95A1]'}`} size={isKiosk ? 22 : 20} />
                     <input
                         type="text" name="church"
                         value={formData.church} onChange={handleChange}
                         placeholder="출석교회 (00교회)"
-                        className={`w-full pl-12 pr-16 py-3 bg-transparent outline-none ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                        className={`w-full pl-12 pr-16 py-3 bg-transparent outline-none font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold ${isKiosk ? 'sm:py-4' : ''}`}
                     />
                     <button 
                         type="button" 
@@ -79,24 +79,24 @@ const SignUpBasicInfo = ({ formData, setFormData, handleChange, handlePhoneChang
 
                 {/* Birth Date */}
                 <div className="relative border-b border-gray-200">
-                    <Calendar className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-gray-400'}`} size={isKiosk ? 22 : 20} />
+                    <Calendar className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-[#8B95A1]'}`} size={isKiosk ? 22 : 20} />
                     <input
                         type="tel" pattern="[0-9]*" name="birth" required maxLength="6"
                         value={formData.birth}
                         onChange={(e) => setFormData(prev => ({ ...prev, birth: e.target.value.replace(/[^0-9]/g, '') }))}
                         inputMode="numeric" placeholder="생년월일 6자리 (YYMMDD)"
-                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none tracking-widest ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none tracking-widest font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold placeholder:tracking-normal ${isKiosk ? 'sm:py-4' : ''}`}
                     />
                 </div>
 
                 {/* Phone Number */}
                 <div className="relative">
-                    <Smartphone className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-gray-400'}`} size={isKiosk ? 22 : 20} />
+                    <Smartphone className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-[#8B95A1]'}`} size={isKiosk ? 22 : 20} />
                     <input
                         type="tel" name="phone" required
                         value={formData.phone} onChange={handlePhoneChange}
                         inputMode="numeric" placeholder="휴대폰 번호 (010-0000-0000)"
-                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none tracking-widest ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none tracking-widest font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold placeholder:tracking-normal ${isKiosk ? 'sm:py-4' : ''}`}
                     />
                 </div>
             </div>
@@ -120,14 +120,14 @@ const SignUpBasicInfo = ({ formData, setFormData, handleChange, handlePhoneChang
                                 <input
                                     type="text" name="guardianName" required
                                     value={formData.guardianName} onChange={handleChange}
-                                    placeholder="보호자  이름"
-                                    className={`w-1/2 px-4 py-3 bg-transparent border-r border-[#E63946]/20 outline-none ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                                    placeholder="보호자 이름"
+                                    className={`w-1/2 px-4 py-3 bg-transparent border-r border-[#E63946]/20 outline-none font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold ${isKiosk ? 'sm:py-4' : ''}`}
                                 />
                                 <input
                                     type="text" name="guardianRelation" required
                                     value={formData.guardianRelation} onChange={handleChange}
                                     placeholder="보호자 관계 (부, 모 등)"
-                                    className={`w-1/2 px-4 py-3 bg-transparent outline-none ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                                    className={`w-1/2 px-4 py-3 bg-transparent outline-none font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold ${isKiosk ? 'sm:py-4' : ''}`}
                                 />
                             </div>
                             <div>
@@ -135,7 +135,7 @@ const SignUpBasicInfo = ({ formData, setFormData, handleChange, handlePhoneChang
                                     type="text" name="guardianPhone" required inputMode="tel"
                                     value={formData.guardianPhone} onChange={handleGuardianPhoneChange}
                                     placeholder="보호자 휴대폰 번호 (010-0000-0000)"
-                                    className={`w-full px-4 py-3 bg-transparent outline-none tracking-widest ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                                    className={`w-full px-4 py-3 bg-transparent outline-none tracking-widest font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold placeholder:tracking-normal ${isKiosk ? 'sm:py-4' : ''}`}
                                 />
                             </div>
                         </div>

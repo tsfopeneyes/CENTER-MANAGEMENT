@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, X, Check, ClipboardList, LayoutTemplate, Share2 } from 'lucide-react';
+import { Settings, X, Check, ClipboardList, LayoutTemplate, Share2, Globe } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 
 // Custom Hooks
@@ -14,6 +14,7 @@ import DutyChecklistSettings from './components/DutyChecklistSettings';
 import OperatingHoursSettings from './components/OperatingHoursSettings';
 import StaffPresenceSettings from './components/StaffPresenceSettings';
 import CheckinSurveySettings from './components/CheckinSurveySettings';
+import WebAccessSettings from './components/WebAccessSettings';
 import AdminPageHeader from '../common/AdminPageHeader';
 
 const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, fetchData, users, allLogs, responses = [], schoolLogs = [] }) => {
@@ -118,6 +119,17 @@ const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, 
                         >
                             <LayoutTemplate size={16} />
                             <span>화면 디자인 설정</span>
+                        </button>
+                        <button
+                            onClick={() => setActiveTab('web_access')}
+                            className={`px-5 py-3 font-bold text-sm whitespace-nowrap transition-all border-b-2 -mb-px flex items-center gap-2 ${
+                                activeTab === 'web_access'
+                                    ? 'border-[#3182f6] text-[#3182f6]'
+                                    : 'border-transparent text-gray-400 hover:text-gray-600'
+                            }`}
+                        >
+                            <Globe size={16} />
+                            <span>웹 접속 현황</span>
                         </button>
                     </>
                 )}
@@ -234,6 +246,15 @@ const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, 
                             handleMoveTabConfig={handleMoveTabConfig}
                             handleUpdateTabConfig={handleUpdateTabConfig}
                             handleSaveTabConfig={handleSaveTabConfig}
+                        />
+                    </div>
+                )}
+
+                {activeTab === 'web_access' && isMaster && (
+                    <div className="w-full">
+                        <WebAccessSettings
+                            users={users}
+                            fetchData={fetchData}
                         />
                     </div>
                 )}

@@ -92,8 +92,16 @@ const ZoneDetailModal = ({
 
                                         {/* Survey Selections (if any) */}
                                         {(() => {
+                                            const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                                            const uCheckinTime = u.checkInTime ? new Date(u.checkInTime).getTime() : 0;
                                             const userSurvey = checkinSurveys
-                                                ?.filter(s => s.user_id === u.id)
+                                                ?.filter(s => {
+                                                    if (s.user_id !== u.id) return false;
+                                                    const sDateKst = new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                                                    if (sDateKst !== todayKst) return false;
+                                                    const sTime = new Date(s.created_at).getTime();
+                                                    return uCheckinTime > 0 && sTime >= (uCheckinTime - 5000);
+                                                })
                                                 ?.sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
                                             const selectionsList = userSurvey?.selections?.map(sid => {
                                                 const opt = surveyConfig?.options?.find(o => o.id === sid);

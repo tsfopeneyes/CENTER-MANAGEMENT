@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { ZoomIn, X, Calendar as CalendarIcon, User, Trash2, MapPin, Users, Upload, Clock, CheckCircle, Check, Sparkles, XCircle, ExternalLink, Dices, RefreshCw, MessageSquare } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../supabaseClient';
@@ -41,7 +41,7 @@ const seededShuffle = (array, seed) => {
 import ProgramFeedbackModal from './modals/ProgramFeedbackModal';
 import AdminFeedbackListModal from '../admin/board/components/modals/AdminFeedbackListModal';
 
-const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, responses, responseDetails = {}, onResponse, onRefresh, comments, newComment, setNewComment, onPostComment, onDeleteComment, onUpdate, onDelete, onViewParticipants, onRegisterRegularUser }) => {
+const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpersonating = false, responses, responseDetails = {}, onResponse, onRefresh, comments, newComment, setNewComment, onPostComment, onDeleteComment, onUpdate, onDelete, onViewParticipants, onRegisterRegularUser }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editedNotice, setEditedNotice] = useState({ ...notice });
     const [zoomedImage, setZoomedImage] = useState(null);
@@ -50,6 +50,14 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, respon
     const hostRef = React.useRef(null);
     const [activeTab, setActiveTab] = useState('intro');
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+
+    useEffect(() => {
+        const questions = notice?.guest_properties?.random_questions ?? notice?.random_questions;
+        if (Array.isArray(questions) && questions.length > 0) {
+            const initialRandomIndex = Math.floor(Math.random() * questions.length);
+            setCurrentQuestionIndex(initialRandomIndex);
+        }
+    }, [notice?.id]);
 
     // Challenge & Modal States
     const [challengeParticipants, setChallengeParticipants] = useState([]);
@@ -227,22 +235,25 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, respon
         notice.program_end_date
     );
 
-    const isStudentUser = Boolean(
-        user?.role === 'student' || 
+    const isStudentPreviewOrStudent = Boolean(
+        isImpersonating ||
+        user?.role === 'student' ||
         user?.user_group === '학생' ||
-        user?.is_impersonating
+        user?.is_impersonating ||
+        context === 'student_preview'
     );
 
     const isAdmin = Boolean(
-        !isStudentUser && (
-            fromAdmin ||
-            context === 'admin' ||
-            user?.role === 'admin' ||
-            user?.role === 'ADMIN' ||
-            user?.role === 'master' ||
-            user?.role === 'MASTER' ||
-            user?.is_admin ||
-            Boolean(localStorage.getItem('admin_user'))
+        fromAdmin || (
+            !isStudentPreviewOrStudent && (
+                context === 'admin' ||
+                user?.role === 'admin' ||
+                user?.role === 'ADMIN' ||
+                user?.role === 'master' ||
+                user?.role === 'MASTER' ||
+                user?.is_admin ||
+                Boolean(localStorage.getItem('admin_user'))
+            )
         )
     );
 
@@ -307,7 +318,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, respon
         const interval = setInterval(fetchParticipantsAndSeed, 2500);
         return () => clearInterval(interval);
     }, [notice?.id, responses, notice.guest_properties?.team_shuffle_seed]);
-    const { isStarted, isEnded, hasCustomFeatures } = (() => {
+    const { isStarted, isEnded, hasCustomFeatures, isProgramStartTimeReached } = (() => {
         const isManuallyEnded = (notice.guest_properties?.is_ended ?? notice.is_ended) === true;
         const pDate = notice.program_date;
         if (!pDate) return { isStarted: false, isEnded: isManuallyEnded, hasCustomFeatures: false };
@@ -360,7 +371,8 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, respon
         const isButtonEnabled = notice.guest_properties?.enable_post_program_button ?? notice.enable_post_program_button ?? true;
         const customFeatures = isButtonEnabled && (hasGroup || hasQ || hasCustomBtnName);
 
-        return { isStarted: started, isEnded: ended, hasCustomFeatures: customFeatures };
+        const programStartTimeReached = now >= startDateTime;
+        return { isStarted: started, isEnded: ended, hasCustomFeatures: customFeatures, isProgramStartTimeReached: programStartTimeReached };
     })();
 
     const isTriggered = isStarted;
@@ -369,7 +381,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, respon
         if ((notice.guest_properties?.post_program_button_name ?? notice.post_program_button_name) && (notice.guest_properties?.post_program_button_name ?? notice.post_program_button_name).trim()) return (notice.guest_properties?.post_program_button_name ?? notice.post_program_button_name);
         const hasGroup = (notice.guest_properties?.enable_group_assignment ?? notice.enable_group_assignment);
         const hasQ = (notice.guest_properties?.enable_random_questions ?? notice.enable_random_questions) && (notice.guest_properties?.random_questions ?? notice.random_questions)?.length > 0;
-        if (hasGroup && hasQ) return '팀 확인 및 질문';
+        if (hasGroup && hasQ) return '팀 확인 및 나눔 질문';
         if (hasGroup) return '팀 확인하기';
         if (hasQ) return '아이스브레이킹 질문';
         return '프로그램 안내';
@@ -1038,79 +1050,76 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, respon
                              </div>
                          </div>
                      ) : isEnded ? (
-                           /* 1. 프로그램 종료 상태 (종료 시간 경과 OR 관리자가 수동 종료): 팀 확인 버튼 대신 피드백 작성/완료 버튼 노출 */
-                           <div className="p-4 flex gap-3">
-                               {responses[notice.id] === 'JOIN' && (notice.enable_feedback ?? notice.guest_properties?.enable_feedback ?? false) ? (
-                                   <button
-                                       onClick={() => setShowFeedbackModal(true)}
-                                       className={`flex-1 py-3.5 rounded-toss-xl font-black text-base transition transform active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer ${
-                                           hasReviewed 
-                                           ? 'bg-tossGrey100 hover:bg-tossGrey200 text-tossGrey700 border border-tossGrey200' 
-                                           : 'bg-tossBlue hover:bg-tossBlueHover text-white shadow-md shadow-blue-100'
-                                       }`}
-                                   >
-                                       <Sparkles size={18} />
-                                       <span>{hasReviewed ? '피드백 작성 완료' : '피드백 작성'}</span>
-                                   </button>
-                               ) : (
-                                   <div className="flex-1 py-3.5 bg-tossGrey100 text-tossGrey400 text-center font-bold rounded-toss-xl text-sm select-none">
-                                       종료된 프로그램입니다.
-                                   </div>
-                               )}
-                           </div>
-                       ) : isStarted ? (
-                           /* 2. 프로그램 진행 중 상태 (시작 시간 경과 ~ 종료 전): 팀 확인 및 질문 버튼 노출 */
-                           <div className="p-4 flex gap-3">
-                               {responses[notice.id] === 'JOIN' && hasCustomFeatures ? (
-                                   <button
-                                        onClick={() => setShowPostProgramPopup(true)}
-                                        className="w-full py-3.5 bg-tossBlue hover:bg-tossBlueHover text-white rounded-toss-xl font-black text-base transition transform active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-md shadow-blue-100 cursor-pointer"
-                                   >
-                                       <Sparkles size={18} />
-                                       <span>{customButtonName}</span>
-                                   </button>
-                               ) : (
-                                   <button
-                                       disabled={true}
-                                       className="flex-1 py-3.5 rounded-toss-xl font-bold text-base bg-tossGrey100 text-tossGrey400 cursor-not-allowed text-center"
-                                   >
-                                       신청 마감
-                                   </button>
-                               )}
-                           </div>
-                       ) : (
-                           /* 3. 프로그램 시작 전 상태: 신청하기 / 취소 버튼 */
-                           <div className="p-4 flex gap-3">
-                               <button
-                                   disabled={(notice.recruitment_deadline && new Date(notice.recruitment_deadline) < new Date()) || (!responses[notice.id] && notice.is_leader_only && !user?.is_leader)}
-                                   onClick={() => {
-                                       if (responses[notice.id]) {
-                                           onResponse(notice.id, 'CANCEL');
-                                       } else {
-                                           onResponse(notice.id, (notice.max_capacity > 0 && joinCount >= notice.max_capacity) ? 'WAITLIST' : 'JOIN');
-                                       }
-                                   }}
-                                   className={`flex-1 py-3.5 rounded-toss-xl font-bold text-base transition transform active:scale-[0.98] flex items-center justify-center gap-1.5 ${
-                                       responses[notice.id] 
-                                           ? 'bg-red-50 text-tossError border border-red-200 hover:bg-red-100' 
-                                           : (notice.max_capacity > 0 && joinCount >= notice.max_capacity 
-                                               ? 'bg-tossWarning hover:bg-tossWarning/90 text-white' 
-                                               : 'bg-tossBlue hover:bg-tossBlueHover text-white')
-                                   }`}
-                               >
-                                   {responses[notice.id] ? (
-                                       <>
-                                           <XCircle size={18} />
-                                           <span>{responses[notice.id] === 'WAITLIST' ? '대기 신청 취소' : '신청 취소'}</span>
-                                       </>
-                                   ) : (
-                                       notice.max_capacity > 0 && joinCount >= notice.max_capacity ? '대기 신청' : '신청하기'
-                                   )}
-                               </button>
-                           </div>
-                       )}
-                   </div>
-               )}
+                            /* 1. 프로그램 종료 상태 (종료 시간 경과 OR 관리자가 수동 종료): 피드백 작성/완료 버튼 노출 */
+                            <div className="p-4 flex gap-3">
+                                {responses[notice.id] === 'JOIN' && (notice.enable_feedback ?? notice.guest_properties?.enable_feedback ?? false) ? (
+                                    <button
+                                        onClick={() => setShowFeedbackModal(true)}
+                                        className={`flex-1 py-3.5 rounded-toss-xl font-black text-base transition transform active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer ${
+                                            hasReviewed 
+                                            ? 'bg-tossGrey100 hover:bg-tossGrey200 text-tossGrey700 border border-tossGrey200' 
+                                            : 'bg-tossBlue hover:bg-tossBlueHover text-white shadow-md shadow-blue-100'
+                                        }`}
+                                    >
+                                        <Sparkles size={18} />
+                                        <span>{hasReviewed ? '피드백 작성 완료' : '피드백 작성'}</span>
+                                    </button>
+                                ) : (
+                                    <div className="flex-1 py-3.5 bg-tossGrey100 text-tossGrey400 text-center font-bold rounded-toss-xl text-sm select-none">
+                                        종료된 프로그램입니다.
+                                    </div>
+                                )}
+                            </div>
+                        ) : responses[notice.id] === 'JOIN' ? (
+                            /* 2. 신청 완료 학생: 버튼 활성화 시점(isStarted/offset) 경과 시 customButtonName 버튼으로 전환, 전이면 신청 취소 */
+                            <div className="p-4 flex gap-3">
+                                {isStarted && hasCustomFeatures ? (
+                                    <button
+                                         onClick={() => setShowPostProgramPopup(true)}
+                                         className="w-full py-3.5 bg-tossBlue hover:bg-tossBlueHover text-white rounded-toss-xl font-black text-base transition transform active:scale-[0.98] flex items-center justify-center gap-1.5 shadow-md shadow-blue-100 cursor-pointer"
+                                    >
+                                        <Sparkles size={18} />
+                                        <span>{customButtonName}</span>
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => onResponse(notice.id, 'CANCEL')}
+                                        className="flex-1 py-3.5 rounded-toss-xl font-bold text-base bg-red-50 text-tossError border border-red-200 hover:bg-red-100 flex items-center justify-center gap-1.5 transition transform active:scale-[0.98] cursor-pointer"
+                                    >
+                                        <XCircle size={18} />
+                                        <span>{responses[notice.id] === 'WAITLIST' ? '대기 신청 취소' : '신청 취소'}</span>
+                                    </button>
+                                )}
+                            </div>
+                        ) : (
+                            /* 3. 미신청 학생: 실제 마감시간(recruitment_deadline 또는 프로그램 시작시간) 전까지는 항상 '신청하기' 버튼 노출 */
+                            <div className="p-4 flex gap-3">
+                                {((notice.recruitment_deadline && new Date(notice.recruitment_deadline) < new Date()) || isProgramStartTimeReached) ? (
+                                    <button
+                                        disabled={true}
+                                        className="flex-1 py-3.5 rounded-toss-xl font-bold text-base bg-tossGrey100 text-tossGrey400 cursor-not-allowed text-center"
+                                    >
+                                        신청 마감
+                                    </button>
+                                ) : (
+                                    <button
+                                        disabled={notice.is_leader_only && !user?.is_leader}
+                                        onClick={() => {
+                                            onResponse(notice.id, (notice.max_capacity > 0 && joinCount >= notice.max_capacity) ? 'WAITLIST' : 'JOIN');
+                                        }}
+                                        className={`flex-1 py-3.5 rounded-toss-xl font-bold text-base transition transform active:scale-[0.98] flex items-center justify-center gap-1.5 cursor-pointer ${
+                                            notice.max_capacity > 0 && joinCount >= notice.max_capacity 
+                                                ? 'bg-tossWarning hover:bg-tossWarning/90 text-white' 
+                                                : 'bg-tossBlue hover:bg-tossBlueHover text-white'
+                                        }`}
+                                    >
+                                        {notice.max_capacity > 0 && joinCount >= notice.max_capacity ? '대기 신청' : '신청하기'}
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
 
               {/* Program Feedback Modal */}
               {showAdminFeedbackModal && (
@@ -1258,130 +1267,98 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, respon
                      </div>
                  );
              })()}
-            {/* Post-Program Custom Popup Modal */}
+            {/* Post-Program Custom Popup Modal (Ultra Sleek Toss Light Minimal UI) */}
             {showPostProgramPopup && (
                 <div 
-                    className="fixed inset-0 z-[300] bg-black/60 backdrop-blur-sm flex items-center justify-center p-5 animate-fade-in"
+                    className="fixed inset-0 z-[300] bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in"
                     onClick={() => setShowPostProgramPopup(false)}
                 >
                     <div 
-                        className="bg-white w-full max-w-md rounded-[2rem] p-6 shadow-2xl space-y-4 animate-scale-up border border-tossGrey100"
+                        className="bg-white w-[92vw] max-w-[340px] rounded-[2rem] p-6 shadow-2xl space-y-5 animate-scale-up border border-[#f2f4f6]"
                         onClick={e => e.stopPropagation()}
                     >
-                        <div className="flex justify-between items-center pb-3 border-b border-tossGrey100">
-                            <h3 className="font-extrabold text-tossGrey900 text-base flex items-center gap-2">
-                                <Sparkles className="text-blue-600" size={18} />
-                                <span>{(() => {
-                                    if ((notice.guest_properties?.post_program_button_name ?? notice.post_program_button_name) && (notice.guest_properties?.post_program_button_name ?? notice.post_program_button_name).trim()) return (notice.guest_properties?.post_program_button_name ?? notice.post_program_button_name);
-                                    const hasGroup = (notice.guest_properties?.enable_group_assignment ?? notice.enable_group_assignment);
-                                    const hasQ = (notice.guest_properties?.enable_random_questions ?? notice.enable_random_questions) && (notice.guest_properties?.random_questions ?? notice.random_questions)?.length > 0;
-                                    if (hasGroup && hasQ) return '팀 배치 & 질문 뽑기';
-                                    if (hasGroup) return '나의 조 배치 확인';
-                                    if (hasQ) return '아이스브레이킹 질문';
-                                    return '프로그램 맞춤 안내';
-                                })()}</span>
-                            </h3>
+                        {/* Header: Clean Title + Close Button */}
+                        <div className="flex justify-between items-center pb-0.5">
+                            <h2 className="text-xl font-black text-[#191f28] tracking-tight">
+                                {(notice.guest_properties?.post_program_button_name ?? notice.post_program_button_name) || '팀 배치 및 나눔 질문'}
+                            </h2>
                             <button 
                                 onClick={() => setShowPostProgramPopup(false)}
-                                className="p-1 text-tossGrey400 hover:text-tossGrey700 rounded-full transition-colors cursor-pointer"
+                                className="p-1 text-[#8b95a1] hover:text-[#4e5968] rounded-full transition-colors cursor-pointer"
                             >
                                 <X size={20} />
                             </button>
                         </div>
 
-                        <div className="py-1 text-sm text-tossGrey800 font-medium whitespace-pre-wrap leading-relaxed max-h-[35vh] overflow-y-auto">
-                            {(notice.guest_properties?.post_program_button_content ?? notice.post_program_button_content) || '오늘 함께할 팀원은 누구일까요? 연결의 기쁨을 누려보세요'}
-                        </div>
-
-                        {/* 1. 팀 배치 파스 / 티켓 카드 (토스 프리미엄 카드 스타일) */}
-                        {(notice.guest_properties?.enable_group_assignment ?? notice.enable_group_assignment) && (
-                            <div className="relative overflow-hidden bg-gradient-to-br from-blue-600 via-indigo-600 to-blue-700 rounded-2xl p-5 text-white shadow-xl shadow-blue-500/20 space-y-3 transform transition hover:scale-[1.01]">
-                                <div className="absolute -right-6 -bottom-6 w-28 h-28 bg-white/10 rounded-full blur-xl pointer-events-none" />
-                                <div className="absolute -left-6 -top-6 w-24 h-24 bg-blue-400/20 rounded-full blur-lg pointer-events-none" />
-
-                                <div className="flex justify-between items-center relative z-10">
-                                    <div className="flex items-center gap-1.5 bg-white/15 backdrop-blur-md px-2.5 py-1 rounded-full text-[11px] font-bold tracking-tight text-blue-100 border border-white/20">
-                                        <Sparkles size={12} className="text-yellow-300" />
-                                        <span>MY TEAM PASS</span>
-                                    </div>
-                                    <span className="text-[10px] font-bold text-blue-200/90 tracking-wider">SCI MATCH</span>
+                        {/* Content Body */}
+                        <div className="space-y-3.5">
+                            {/* 1. 오늘의 팀 */}
+                            {(notice.guest_properties?.enable_group_assignment ?? notice.enable_group_assignment) && (
+                                <div className="bg-[#f9fafb] border border-[#f2f4f6] rounded-2xl p-4 space-y-1">
+                                    <p className="text-xs font-bold text-[#8b95a1] tracking-tight">오늘의 팀</p>
+                                    {(() => {
+                                        const groupCount = (notice.guest_properties?.group_count ?? notice.group_count) || 4;
+                                        const myIndex = groupParticipants.findIndex(p => p.id === user?.id);
+                                        const groupNum = myIndex !== -1 ? (myIndex % groupCount) + 1 : 1;
+                                        return (
+                                            <div className="text-2xl font-black text-[#191f28] tracking-tight pt-0.5">
+                                                {groupNum}팀
+                                            </div>
+                                        );
+                                    })()}
                                 </div>
+                            )}
 
-                                <div className="flex items-baseline justify-between pt-1 relative z-10">
-                                    <div>
-                                        <p className="text-xs text-blue-100/90 font-medium">나의 팀 배치 정보</p>
-                                        {(() => {
-                                            const groupCount = (notice.guest_properties?.group_count ?? notice.group_count) || 4;
-                                            const myIndex = groupParticipants.findIndex(p => p.id === user?.id);
-                                            const groupNum = myIndex !== -1 ? (myIndex % groupCount) + 1 : 1;
-                                            return (
-                                                <div className="flex items-baseline gap-1.5 mt-0.5">
-                                                    <span className="text-3xl font-black text-white tracking-tight">{groupNum}팀</span>
-                                                    <span className="text-xs text-blue-200 font-semibold">배치 완료</span>
-                                                </div>
-                                            );
-                                        })()}
+                            {/* 2. 오늘의 나눔 질문 */}
+                            {(notice.guest_properties?.enable_random_questions ?? notice.enable_random_questions) && ((notice.guest_properties?.random_questions ?? notice.random_questions)?.length > 0) && (
+                                <div className="bg-[#f9fafb] border border-[#f2f4f6] rounded-2xl p-4 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                        <p className="text-xs font-bold text-[#8b95a1] tracking-tight">오늘의 나눔 질문</p>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                const questions = notice?.guest_properties?.random_questions ?? notice?.random_questions;
+                                                if (!Array.isArray(questions) || questions.length <= 1) return;
+                                                setCurrentQuestionIndex(prevIndex => {
+                                                    let nextIndex = Math.floor(Math.random() * questions.length);
+                                                    while (nextIndex === prevIndex) {
+                                                        nextIndex = Math.floor(Math.random() * questions.length);
+                                                    }
+                                                    return nextIndex;
+                                                });
+                                            }}
+                                            className="text-xs font-bold text-[#4e5968] hover:text-[#191f28] bg-white hover:bg-slate-100 px-2.5 py-0.5 rounded-full transition flex items-center gap-1 cursor-pointer active:scale-95 border border-[#e5e8eb] shadow-2xs"
+                                        >
+                                            <RefreshCw size={11} className="stroke-[2.5]" />
+                                            <span>새로 뽑기</span>
+                                        </button>
                                     </div>
-
-                                    <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md border border-white/25 flex items-center justify-center text-white shadow-inner">
-                                        <Users size={22} />
-                                    </div>
-                                </div>
-
-                                <p className="text-[11px] text-blue-100/80 font-medium pt-1 border-t border-white/15 relative z-10">
-                                    팀원들과 반갑게 인사를 나누고 소통해 보세요 🎉
-                                </p>
-                            </div>
-                        )}
-
-                        {/* 2. 랜덤 아이스브레이킹 질문 카드 (토스 뽑기 카드 스타일) */}
-                        {(notice.guest_properties?.enable_random_questions ?? notice.enable_random_questions) && ((notice.guest_properties?.random_questions ?? notice.random_questions)?.length > 0) && (
-                            <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 text-white shadow-xl space-y-3 relative overflow-hidden transform transition hover:scale-[1.01]">
-                                <div className="absolute -right-8 -top-8 w-24 h-24 bg-amber-500/10 rounded-full blur-xl pointer-events-none" />
-
-                                <div className="flex justify-between items-center relative z-10">
-                                    <div className="flex items-center gap-1.5 bg-amber-500/20 text-amber-300 px-2.5 py-1 rounded-full text-[11px] font-bold border border-amber-500/30">
-                                        <Dices size={13} className="text-amber-400 animate-spin-slow" />
-                                        <span>오늘의 나눔 질문</span>
-                                    </div>
-                                    <button
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            setCurrentQuestionIndex(prev => prev + 1);
-                                        }}
-                                        className="text-[11px] font-bold text-amber-400 hover:text-amber-300 bg-amber-400/10 hover:bg-amber-400/20 px-2.5 py-1 rounded-full transition flex items-center gap-1 cursor-pointer active:scale-95 border border-amber-400/20"
-                                    >
-                                        <RefreshCw size={11} />
-                                        <span>질문 새로 뽑기 🎲</span>
-                                    </button>
-                                </div>
-
-                                <div className="py-2.5 px-3.5 bg-slate-800/80 rounded-xl border border-slate-700/80 relative z-10">
-                                    <p className="text-sm font-extrabold text-amber-100 leading-relaxed text-center py-1">
-                                        💬 &ldquo;{(notice.guest_properties?.random_questions ?? notice.random_questions)[currentQuestionIndex % (notice.guest_properties?.random_questions ?? notice.random_questions).length]}&rdquo;
+                                    <p className="text-base font-extrabold text-[#191f28] leading-relaxed pt-0.5">
+                                        &ldquo;{(notice.guest_properties?.random_questions ?? notice.random_questions)[currentQuestionIndex % (notice.guest_properties?.random_questions ?? notice.random_questions).length]}&rdquo;
                                     </p>
                                 </div>
-                            </div>
-                        )}
+                            )}
 
-                        {(notice.guest_properties?.post_program_button_link ?? notice.post_program_button_link) && (
-                            <a
-                                href={(notice.guest_properties?.post_program_button_link ?? notice.post_program_button_link)}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="w-full py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-toss-xl flex items-center justify-center gap-2 transition shadow-md text-sm"
-                            >
-                                <span>바로가기</span>
-                                <ExternalLink size={16} />
-                            </a>
-                        )}
-
-                        <button
-                            onClick={() => setShowPostProgramPopup(false)}
-                            className="w-full py-3 bg-tossGrey100 hover:bg-tossGrey200 text-tossGrey700 font-bold rounded-toss-xl transition text-sm cursor-pointer"
-                        >
-                            닫기
-                        </button>
+                            {/* External Link or Confirm Action Button */}
+                            {(notice.guest_properties?.post_program_button_link ?? notice.post_program_button_link) ? (
+                                <a
+                                    href={(notice.guest_properties?.post_program_button_link ?? notice.post_program_button_link)}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="w-full py-3.5 bg-[#3182f6] hover:bg-[#1b64da] text-white font-extrabold rounded-2xl flex items-center justify-center gap-2 transition shadow-md shadow-blue-100 text-base mt-2 active:scale-[0.98] cursor-pointer"
+                                >
+                                    <span>바로가기</span>
+                                    <ExternalLink size={18} />
+                                </a>
+                            ) : (
+                                <button
+                                    onClick={() => setShowPostProgramPopup(false)}
+                                    className="w-full py-3.5 bg-[#3182f6] hover:bg-[#1b64da] text-white font-extrabold rounded-2xl transition shadow-md shadow-blue-100 text-base mt-2 active:scale-[0.98] cursor-pointer text-center"
+                                >
+                                    확인
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </div>
             )}

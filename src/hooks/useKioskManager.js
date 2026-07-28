@@ -39,29 +39,43 @@ const sendRealtimeNotification = async (user, type, location, metadata = {}) => 
     // 0. Check if it is Haifn branch to prevent LINE usage on ENOUGH_PLACE
     let isHaifnBranch = false;
     try {
+        let locId = location?.id;
+        let locName = location?.name || '';
         let groupId = location?.group_id;
-        if (!groupId && location?.id) {
+
+        if (locId && (!groupId || !locName)) {
             const { data: loc } = await supabase
                 .from('locations')
-                .select('group_id')
-                .eq('id', location.id)
+                .select('group_id, name')
+                .eq('id', locId)
                 .maybeSingle();
-            groupId = loc?.group_id;
+            if (loc) {
+                groupId = loc.group_id;
+                if (loc.name) locName = loc.name;
+            }
         }
+
         if (groupId) {
             const { data: grp } = await supabase
                 .from('location_groups')
                 .select('name')
                 .eq('id', groupId)
                 .maybeSingle();
-            if (grp && (grp.name.includes('하이픈') || grp.name.includes('HAIFN') || grp.name.includes('강동'))) {
-                isHaifnBranch = true;
+            if (grp?.name) {
+                const grpName = grp.name;
+                if (grpName.includes('하이픈') || grpName.includes('HAIFN') || grpName.includes('강동')) {
+                    isHaifnBranch = true;
+                } else if (grpName.includes('이높') || grpName.includes('ENOUGH_PLACE') || grpName.includes('강서')) {
+                    isHaifnBranch = false;
+                }
             }
         }
-        const locName = String(location?.name || '');
-        const locId = String(location?.id || '');
-        if (locName.includes('하이픈') || locName.includes('HAIFN') || locName.includes('강동') || locId.includes('하이픈') || locId.includes('HAIFN') || locId.includes('2F')) {
+
+        if (locName.includes('하이픈') || locName.includes('HAIFN') || locName.includes('강동')) {
             isHaifnBranch = true;
+        }
+        if (locName.includes('이높') || locName.includes('ENOUGH_PLACE') || locName.includes('강서')) {
+            isHaifnBranch = false;
         }
     } catch (err) {
         console.error("Failed to check branch for notification:", err);
@@ -810,7 +824,10 @@ export const useKioskManager = (navigate) => {
 
                 if (!isClosed) {
                     const dayOfWeekStr = dayKeys[i];
-                    const dayConfig = operatingHours ? operatingHours[dayOfWeekStr] : null;
+                    const spaceHours = operatingHours
+                        ? (operatingHours[branchKorean] || (operatingHours.monday ? operatingHours : null))
+                        : null;
+                    const dayConfig = spaceHours ? spaceHours[dayOfWeekStr] : null;
                     if (dayConfig && dayConfig.isOpen) {
                         openDays.push(dayNames[i]);
                     }

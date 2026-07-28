@@ -8,6 +8,39 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
+  <script>
+    (function() {
+      var APP_VER = '20260728_v105';
+      if (localStorage.getItem('sys_ver') !== APP_VER) {
+        localStorage.setItem('sys_ver', APP_VER);
+        sessionStorage.removeItem('ver_reloaded');
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            regs.forEach(function(r) { r.unregister(); });
+          });
+        }
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            keys.forEach(function(k) { caches.delete(k); });
+          });
+        }
+        if (!sessionStorage.getItem('ver_reloaded')) {
+          sessionStorage.setItem('ver_reloaded', 'true');
+          window.location.reload(true);
+        }
+      }
+    })();
+    window.addEventListener('error', function(e) {
+      if (e.message && (e.message.indexOf('Importing a module script failed') !== -1 || e.message.indexOf('Loading chunk') !== -1)) {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            regs.forEach(function(r) { r.unregister(); });
+          });
+        }
+        window.location.reload(true);
+      }
+    });
+  </script>
 
   <!-- Custom Icons -->
   <link rel="icon" type="image/png" href="/favicon.png" />

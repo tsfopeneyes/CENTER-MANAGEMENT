@@ -7,21 +7,21 @@ const SignUpSecurityInfo = ({ formData, setFormData, handleChange, agreements, s
             {/* Group 2: Password */}
             <div className={`border ${isKiosk ? 'border-slate-200 rounded-2xl bg-white' : 'border-gray-300 rounded-xl bg-white'} overflow-hidden focus-within:border-[#E63946] transition-colors`}>
                 <div className="relative border-b border-gray-200">
-                    <AlertCircle className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-gray-400'}`} size={isKiosk ? 22 : 20} />
+                    <AlertCircle className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-[#8B95A1]'}`} size={isKiosk ? 22 : 20} />
                     <input
                         type="password" name="password" required minLength="4"
                         value={formData.password} onChange={handleChange}
                         placeholder="비밀번호 설정 (4자리 이상)"
-                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold ${isKiosk ? 'sm:py-4' : ''}`}
                     />
                 </div>
                 <div className="relative">
-                    <CheckCircle className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-gray-400'}`} size={isKiosk ? 22 : 20} />
+                    <CheckCircle className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-[#8B95A1]'}`} size={isKiosk ? 22 : 20} />
                     <input
                         type="password" name="confirmPassword" required minLength="4"
                         value={formData.confirmPassword} onChange={handleChange}
                         placeholder="비밀번호 재입력"
-                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none ${formData.confirmPassword && formData.password !== formData.confirmPassword ? 'bg-red-50 text-red-600' : ''} ${isKiosk ? 'sm:py-4 font-bold' : ''}`}
+                        className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold ${formData.confirmPassword && formData.password !== formData.confirmPassword ? 'bg-red-50 text-red-600' : ''} ${isKiosk ? 'sm:py-4' : ''}`}
                     />
                 </div>
             </div>
@@ -41,7 +41,7 @@ const SignUpSecurityInfo = ({ formData, setFormData, handleChange, agreements, s
                     </button>
                     <button
                         type="button" onClick={() => setFormData(prev => ({ ...prev, isSchoolChurch: false }))}
-                        className={`px-4 py-2 text-sm font-bold transition-colors border-l border-[#E63946]/20 ${!formData.isSchoolChurch ? 'bg-[#E63946] text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                        className={`px-4 py-2 text-sm font-bold transition-colors border-l border-[#E63946]/20 ${!formData.isSchoolChurch ? 'bg-[#E63946] text-white' : 'text-[#8B95A1] hover:bg-gray-50'}`}
                     >
                         아니요
                     </button>

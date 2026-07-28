@@ -165,7 +165,7 @@ export const useStudentDashboard = () => {
 
 
     useEffect(() => {
-        const storedUser = localStorage.getItem('user');
+        let storedUser = localStorage.getItem('user') || localStorage.getItem('admin_user');
         if (!storedUser) {
             alert('로그인이 필요합니다.');
             const params = new URLSearchParams(window.location.search);
@@ -173,6 +173,10 @@ export const useStudentDashboard = () => {
             const suffix = noticeId ? `?noticeId=${noticeId}` : '';
             navigate('/' + suffix);
             return;
+        }
+
+        if (!localStorage.getItem('user') && localStorage.getItem('admin_user')) {
+            localStorage.setItem('user', storedUser);
         }
 
         const parsedUser = JSON.parse(storedUser);
@@ -207,12 +211,24 @@ export const useStudentDashboard = () => {
                 }
             });
 
-        // Refresh User Data (to ensure is_leader is up-to-date)
+        // Refresh User Data (to ensure profile image, is_leader, etc. are up-to-date)
         userApi.fetchUser(parsedUser.id).then(latestUser => {
             if (latestUser) {
                 const mergedUser = { ...parsedUser, ...latestUser };
                 setUser(mergedUser);
                 localStorage.setItem('user', JSON.stringify(mergedUser));
+
+                try {
+                    const localAdmin = localStorage.getItem('admin_user');
+                    if (localAdmin) {
+                        const parsedAdmin = JSON.parse(localAdmin);
+                        if (parsedAdmin && parsedAdmin.id === parsedUser.id) {
+                            localStorage.setItem('admin_user', JSON.stringify({ ...parsedAdmin, ...latestUser }));
+                        }
+                    }
+                } catch (e) {
+                    console.error('Failed to sync admin_user in StudentDashboard effect:', e);
+                }
             }
         });
 

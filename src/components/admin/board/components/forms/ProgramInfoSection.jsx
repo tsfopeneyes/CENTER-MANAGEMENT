@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
 import IntuitiveTimePicker from '../../../../common/IntuitiveTimePicker';
 import { splitDateTime, joinDateTime } from '../../utils/noticeHelpers';
@@ -1002,7 +1002,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                         type="button"
                                         onClick={() => {
                                             const questions = [...(formData.custom_feedback_config?.questions || [])];
-                                            const newId = 'q' + (questions.length + 1);
+                                            const newId = 'q_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6);
                                             questions.push({ id: newId, type: 'text', title: '', required: true });
                                             updateField('custom_feedback_config', { questions });
                                         }}
@@ -1467,7 +1467,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                             if (formData.post_program_button_name?.trim()) return '직접 입력한 이름 사용';
                                             const hasGroup = formData.enable_group_assignment;
                                             const hasQ = formData.enable_random_questions && formData.random_questions?.length > 0;
-                                            if (hasGroup && hasQ) return '자동 설정: "팀 확인 및 질문"';
+                                            if (hasGroup && hasQ) return '자동 설정: "팀 확인 및 나눔 질문"';
                                             if (hasGroup) return '자동 설정: "팀 확인하기"';
                                             if (hasQ) return '자동 설정: "아이스브레이킹 질문"';
                                             return '미입력 시 "프로그램 안내"로 노출';

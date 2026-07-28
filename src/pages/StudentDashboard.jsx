@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import confetti from 'canvas-confetti';
 import { Home, Calendar, BookOpen, Award, Store, MessageSquareHeart, Menu, X, Settings, ShieldCheck, LogOut, Bell, Share2, QrCode } from 'lucide-react';
 import { TAB_NAMES } from '../constants/appConstants';
 import { useStudentDashboard } from '../hooks/useStudentDashboard';
@@ -35,6 +36,7 @@ import VerificationWriteModal from '../components/student/modals/VerificationWri
 import { useFCM } from '../hooks/useFCM';
 import ParticipantModal from '../components/admin/board/components/modals/ParticipantModal';
 import CoffeeChatModal from '../components/student/modals/CoffeeChatModal';
+import StudentCheckinSurveyModal from '../components/student/modals/StudentCheckinSurveyModal';
 import { useCoffeeChatRealtime } from '../hooks/useCoffeeChatRealtime';
 import { supabase } from '../supabaseClient';
 
@@ -76,6 +78,66 @@ const StudentDashboard = () => {
     const [selectedStaffForChat, setSelectedStaffForChat] = useState(null);
 
     const navigate = useNavigate();
+    const location = useLocation();
+    const [checkinToastMsg, setCheckinToastMsg] = useState(null);
+    const [showCheckinSurveyModal, setShowCheckinSurveyModal] = useState(false);
+    const [checkinLocationName, setCheckinLocationName] = useState('');
+
+    useEffect(() => {
+        if (!user?.id) return;
+        const storedToast = sessionStorage.getItem('checkin_toast');
+        const isFromToastOnly = location.state?.checkinToastOnly;
+        const isForceRequireSurvey = location.state?.requireCheckinSurvey || sessionStorage.getItem('require_checkin_survey') === 'true';
+
+        // Survey modal is strictly for QR Check-in flow! Normal web logins do not trigger survey modal.
+        if (!isForceRequireSurvey) {
+            return;
+        }
+
+        const checkTodayCheckin = async () => {
+            const now = new Date();
+            const kstDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + (9 * 60 * 60 * 1000));
+            const y = kstDate.getFullYear();
+            const m = String(kstDate.getMonth() + 1).padStart(2, '0');
+            const d = String(kstDate.getDate()).padStart(2, '0');
+            const todayKst = `${y}-${m}-${d}`;
+            const startOfTodayIso = `${todayKst}T00:00:00+09:00`;
+
+            try {
+                const { data: todayLogs } = await supabase
+                    .from('logs')
+                    .select('id, created_at')
+                    .eq('user_id', user.id)
+                    .eq('type', 'CHECKIN')
+                    .gte('created_at', startOfTodayIso)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+
+                const latestCheckinTime = todayLogs?.[0]?.created_at || sessionStorage.getItem('active_checkin_time');
+
+                const userName = location.state?.userName || user?.name || '';
+                const locName = location.state?.locationName || '하이픈';
+                setCheckinLocationName(locName);
+
+                const isDismissed = latestCheckinTime ? sessionStorage.getItem(`survey_dismissed_${latestCheckinTime}`) : null;
+                if (!isDismissed) {
+                    sessionStorage.removeItem('checkin_toast');
+                    setShowCheckinSurveyModal(true);
+                } else if (storedToast || isFromToastOnly) {
+                    sessionStorage.removeItem('checkin_toast');
+                    setCheckinToastMsg({
+                        title: `${userName ? userName + '님, ' : ''}${locName} 체크인 완료!`,
+                        sub: '오늘 하루도 SCI 센터에서 즐거운 시간 보내세요 ✨'
+                    });
+                    setTimeout(() => setCheckinToastMsg(null), 6000);
+                }
+            } catch (err) {
+                console.error('Failed to verify today checkin survey status:', err);
+            }
+        };
+
+        checkTodayCheckin();
+    }, [location.state, user?.id, user?.name]);
 
     const [incomingRequest, setIncomingRequest] = useState(null);
     const [rejectionPromptOpen, setRejectionPromptOpen] = useState(false);
@@ -504,10 +566,10 @@ const StudentDashboard = () => {
 
     if (loading || !user) {
         return (
-            <div className="w-full md:max-w-lg mx-auto min-h-screen bg-tossGrey50 flex items-center justify-center">
+            <div className="w-full md:max-w-lg mx-auto min-h-screen bg-gray-50 flex items-center justify-center">
                 <div className="flex flex-col items-center gap-4">
-                    <div className="w-12 h-12 border-4 border-tossBlue border-t-transparent rounded-full animate-spin" />
-                    <p className="text-gray-400 font-bold animate-pulse">정보를 불러오는 중...</p>
+                    <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                    <p className="text-gray-600 font-bold text-sm tracking-tight animate-pulse">대시보드 정보를 불러오는 중입니다...</p>
                 </div>
             </div>
         );
@@ -524,6 +586,72 @@ const StudentDashboard = () => {
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
         >
+            <AnimatePresence>
+                {checkinToastMsg && !showCheckinSurveyModal && (
+                    <motion.div
+                        initial={{ y: -20, opacity: 0, scale: 0.95 }}
+                        animate={{ y: 0, opacity: 1, scale: 1 }}
+                        exit={{ y: -20, opacity: 0, scale: 0.95 }}
+                        transition={{ type: 'spring', damping: 20, stiffness: 300 }}
+                        className="fixed left-4 right-4 z-[350] max-w-md mx-auto bg-[#191F28]/95 backdrop-blur-md border border-gray-700/50 shadow-2xl rounded-2xl p-4 flex items-center justify-between gap-3 text-white transition-all duration-300 bottom-20"
+                    >
+                        <div className="flex items-center gap-3">
+                            <div className="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 text-xl font-bold">
+                                🎉
+                            </div>
+                            <div className="space-y-0.5">
+                                <div className="text-sm font-extrabold text-white tracking-tight">
+                                    {checkinToastMsg.title}
+                                </div>
+                                <div className="text-xs font-medium text-gray-300">
+                                    {checkinToastMsg.sub}
+                                </div>
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => setCheckinToastMsg(null)}
+                            className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-gray-300 hover:text-white flex items-center justify-center transition-colors shrink-0 cursor-pointer"
+                        >
+                            <X size={15} />
+                        </button>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Checkin Survey Modal */}
+            <StudentCheckinSurveyModal
+                isOpen={showCheckinSurveyModal}
+                user={user}
+                locationName={checkinLocationName}
+                onClose={(didComplete) => {
+                    setShowCheckinSurveyModal(false);
+                    const now = new Date();
+                    const kstDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + (9 * 60 * 60 * 1000));
+                    const y = kstDate.getFullYear();
+                    const m = String(kstDate.getMonth() + 1).padStart(2, '0');
+                    const d = String(kstDate.getDate()).padStart(2, '0');
+                    const todayKst = `${y}-${m}-${d}`;
+                    sessionStorage.setItem(`survey_dismissed_${todayKst}`, 'true');
+
+                    setCheckinToastMsg({
+                        title: `${user?.name ? user.name + '님, ' : ''}${checkinLocationName || '하이픈'} 체크인 완료!`,
+                        sub: '오늘 하루도 SCI 센터에서 즐거운 시간 보내세요 ✨'
+                    });
+                    if (didComplete) {
+                        try {
+                            confetti({
+                                particleCount: 120,
+                                spread: 70,
+                                origin: { y: 0.3 }
+                            });
+                        } catch (e) {}
+                    }
+                    setTimeout(() => {
+                        setCheckinToastMsg(null);
+                    }, 6000);
+                }}
+            />
+
             {/* 마스터 스태프 전용 학생 시점 미리보기 바 */}
             <StudentImpersonateBar
                 user={hookData.realUser || user}
@@ -559,7 +687,8 @@ const StudentDashboard = () => {
                         notice={selectedNotice}
                         context={noticeContext}
                         onClose={() => { setSelectedNotice(null); setNoticeContext(null); }}
-                        user={user}
+                        isImpersonating={Boolean(hookData.impersonatedUser)}
+                        user={hookData.effectiveUser || hookData.impersonatedUser || user}
                         responses={responses}
                         responseDetails={responseDetails}
                         onResponse={handleResponse}

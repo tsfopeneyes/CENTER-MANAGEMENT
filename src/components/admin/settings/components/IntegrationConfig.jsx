@@ -136,51 +136,104 @@ const IntegrationConfig = ({
                 </div>
             </div>
 
-            {/* Mobile Guest Check-in QR Code Card */}
-            <div className="bg-white rounded-[24px] border border-[#f2f4f6] p-6 shadow-sm space-y-4">
-                <div className="flex items-center justify-between">
+            {/* Center Specific Check-in QR Code Card */}
+            <div className="bg-white rounded-[24px] border border-[#f2f4f6] p-6 shadow-sm space-y-6">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-gray-100 pb-4">
                     <div>
                         <h4 className="text-base font-bold text-[#191f28] flex items-center gap-2">
-                            <span>📱</span> 모바일 게스트 체크인 QR 코드
+                            <span>📱</span> 센터별 현장 체크인 QR 코드
                         </h4>
                         <p className="text-xs text-gray-400 mt-1">
-                            센터 입구 포스터나 안내판에 부착하여 방문 학생들이 스마트폰으로 게스트 체크인할 수 있는 QR 코드입니다.
+                            각 센터 입구 포스터나 안내판에 부착하여 방문 학생들이 스마트폰으로 바로 체크인할 수 있는 센터 전용 QR 코드입니다.
                         </p>
                     </div>
                 </div>
 
-                <div className="p-4 bg-[#f8f9fa] rounded-2xl border border-gray-100 flex flex-col md:flex-row items-center gap-6">
-                    <div className="bg-white p-3 rounded-2xl border border-gray-200 shadow-sm flex flex-col items-center">
-                        <img
-                            src={`https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent('https://app.schoolchurchimpact.org/guest')}`}
-                            alt="Mobile Guest Checkin QR"
-                            className="w-40 h-40 object-contain rounded-lg"
-                        />
-                        <span className="text-[11px] font-bold text-gray-400 mt-2 font-mono">/guest</span>
-                    </div>
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* 1. 하이픈 (강동 센터) */}
+                    <div className="p-5 bg-[#f8f9fa] rounded-2xl border border-gray-100 space-y-4 flex flex-col justify-between">
+                        <div className="flex items-center justify-between">
+                            <span className="px-3 py-1 bg-red-50 text-[#E63946] border border-red-100 text-xs font-extrabold rounded-full">
+                                📍 하이픈 (강동 센터)
+                            </span>
+                            <span className="text-xs font-bold text-gray-400 font-mono">loc=HAIFN</span>
+                        </div>
 
-                    <div className="space-y-3 flex-1 text-center md:text-left">
-                        <div>
-                            <div className="text-xs font-bold text-gray-400">QR 연결 주소</div>
-                            <div className="text-sm font-bold text-blue-600 font-mono mt-0.5 break-all">
-                                https://app.schoolchurchimpact.org/guest
+                        <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+                            <div className="flex flex-col items-center shrink-0">
+                                <img
+                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=HAIFN')}`}
+                                    alt="HAIFN Checkin QR"
+                                    className="w-36 h-36 object-contain rounded-lg"
+                                />
+                            </div>
+                            <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
+                                <div className="text-[11px] font-bold text-gray-400">QR 연결 전용 주소</div>
+                                <div className="text-xs font-extrabold text-blue-600 font-mono break-all bg-blue-50/50 p-2 rounded-lg border border-blue-100/60">
+                                    https://app.schoolchurchimpact.org/checkin?loc=HAIFN
+                                </div>
                             </div>
                         </div>
-                        <div className="flex flex-wrap gap-2 justify-center md:justify-start">
+
+                        <div className="flex flex-wrap gap-2 pt-1">
                             <a
-                                href={`https://api.qrserver.com/v1/create-qr-code/?size=500x500&data=${encodeURIComponent('https://app.schoolchurchimpact.org/guest')}`}
+                                href={`https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=HAIFN')}`}
                                 target="_blank"
                                 rel="noreferrer"
-                                download="haifn_guest_qr.png"
-                                className="px-4 py-2 bg-[#191f28] text-white text-xs font-bold rounded-xl hover:bg-black transition shadow-sm inline-flex items-center gap-1.5"
+                                download="haifn_checkin_qr.png"
+                                className="flex-1 min-w-[140px] px-3.5 py-2.5 bg-[#191f28] text-white text-xs font-bold rounded-xl hover:bg-black transition shadow-sm inline-flex items-center justify-center gap-1.5"
                             >
-                                <span>📥 QR 코드 원본 다운로드</span>
+                                <span>📥 QR 원본 다운로드</span>
                             </a>
                             <button
-                                onClick={() => window.open('/guest', '_blank')}
-                                className="px-4 py-2 bg-blue-50 text-blue-600 border border-blue-200 text-xs font-bold rounded-xl hover:bg-blue-100 transition inline-flex items-center gap-1.5"
+                                onClick={() => window.open('/checkin?loc=HAIFN', '_blank')}
+                                className="px-3.5 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 text-xs font-bold rounded-xl hover:bg-blue-100 transition inline-flex items-center justify-center gap-1.5 shrink-0"
                             >
-                                <span>🔗 페이지 미리보기</span>
+                                <span>🔗 미리보기</span>
+                            </button>
+                        </div>
+                    </div>
+
+                    {/* 2. 이높플레이스 (강서 센터) */}
+                    <div className="p-5 bg-[#f8f9fa] rounded-2xl border border-gray-100 space-y-4 flex flex-col justify-between">
+                        <div className="flex items-center justify-between">
+                            <span className="px-3 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 text-xs font-extrabold rounded-full">
+                                📍 이높플레이스 (강서 센터)
+                            </span>
+                            <span className="text-xs font-bold text-gray-400 font-mono">loc=ENOUGH_PLACE</span>
+                        </div>
+
+                        <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
+                            <div className="flex flex-col items-center shrink-0">
+                                <img
+                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=ENOUGH_PLACE')}`}
+                                    alt="ENOUGH PLACE Checkin QR"
+                                    className="w-36 h-36 object-contain rounded-lg"
+                                />
+                            </div>
+                            <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
+                                <div className="text-[11px] font-bold text-gray-400">QR 연결 전용 주소</div>
+                                <div className="text-xs font-extrabold text-blue-600 font-mono break-all bg-blue-50/50 p-2 rounded-lg border border-blue-100/60">
+                                    https://app.schoolchurchimpact.org/checkin?loc=ENOUGH_PLACE
+                                </div>
+                            </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-2 pt-1">
+                            <a
+                                href={`https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=ENOUGH_PLACE')}`}
+                                target="_blank"
+                                rel="noreferrer"
+                                download="enough_place_checkin_qr.png"
+                                className="flex-1 min-w-[140px] px-3.5 py-2.5 bg-[#191f28] text-white text-xs font-bold rounded-xl hover:bg-black transition shadow-sm inline-flex items-center justify-center gap-1.5"
+                            >
+                                <span>📥 QR 원본 다운로드</span>
+                            </a>
+                            <button
+                                onClick={() => window.open('/checkin?loc=ENOUGH_PLACE', '_blank')}
+                                className="px-3.5 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 text-xs font-bold rounded-xl hover:bg-blue-100 transition inline-flex items-center justify-center gap-1.5 shrink-0"
+                            >
+                                <span>🔗 미리보기</span>
                             </button>
                         </div>
                     </div>

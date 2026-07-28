@@ -103,8 +103,13 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
                 }
             }
 
-            // LINE Webhook
-            if (lineToken && lineGroupId && gsWebhookUrl) {
+            // LINE Webhook (Only for Haifn branch students/staff)
+            const studentSchool = student?.school || '';
+            const staffGroup = staff?.user_group || '';
+            const isEnoughPlace = studentSchool.includes('강서') || studentSchool.includes('이높') || staffGroup.includes('이높') || staffGroup.includes('강서');
+            const isHaifnUser = !isEnoughPlace;
+
+            if (isHaifnUser && lineToken && lineGroupId && gsWebhookUrl) {
                 try {
                     await fetch(gsWebhookUrl, {
                         method: 'POST',

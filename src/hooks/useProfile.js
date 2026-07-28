@@ -22,10 +22,16 @@ export const useProfile = (initialUser) => {
 
             // Helper to get local YYYY-MM-DD
             const getLocalDateKey = (dateStr) => {
-                const d = new Date(dateStr);
-                const offset = d.getTimezoneOffset() * 60000;
-                const local = new Date(d.getTime() - offset);
-                return local.toISOString().split('T')[0];
+                if (!dateStr) return '';
+                try {
+                    const d = new Date(dateStr);
+                    if (isNaN(d.getTime())) return '';
+                    const offset = d.getTimezoneOffset() * 60000;
+                    const local = new Date(d.getTime() - offset);
+                    return local.toISOString().split('T')[0];
+                } catch (e) {
+                    return '';
+                }
             };
 
             // 1. Visit Count (Unique Days)
@@ -157,6 +163,20 @@ export const useProfile = (initialUser) => {
             const updatedUser = { ...user, ...finalUpdates };
             setUser(updatedUser);
             localStorage.setItem('user', JSON.stringify(updatedUser));
+
+            // Also sync 'admin_user' in localStorage if same user ID
+            try {
+                const localAdmin = localStorage.getItem('admin_user');
+                if (localAdmin) {
+                    const parsedAdmin = JSON.parse(localAdmin);
+                    if (parsedAdmin && parsedAdmin.id === user.id) {
+                        localStorage.setItem('admin_user', JSON.stringify({ ...parsedAdmin, ...finalUpdates }));
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to sync admin_user in localStorage:', e);
+            }
+
             return { success: true, user: updatedUser };
         } catch (err) {
             console.error('Error updating profile:', err);

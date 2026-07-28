@@ -1,10 +1,11 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, User, School, ArrowRight, CheckCircle2, ChevronRight, X, LogOut, Clock } from 'lucide-react';
+import { Sparkles, User, School, ArrowRight, CheckCircle2, ChevronRight, X, LogOut, Clock, LogIn, Lock, AlertCircle, Phone, ShieldCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { supabase } from '../supabaseClient';
 import { normalizeSchoolName } from '../utils/userUtils';
+import { hashPassword } from '../utils/hashUtils';
 import SignUpForm from '../components/auth/SignUpForm';
 
 const VISIT_REASON_OPTIONS = [
@@ -14,8 +15,12 @@ const VISIT_REASON_OPTIONS = [
     { id: '4', emoji: '🚶', label: '지나가다가 궁금해서' }
 ];
 
-const GuestMobileWelcome = () => {
+const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     const navigate = useNavigate();
+    const location = useLocation();
+    const searchParams = new URLSearchParams(location.search);
+    const locParam = searchParams.get('loc');
+
     const [step, setStep] = useState('HOME'); // 'HOME' | 'FORM' | 'SUCCESS' | 'ACTIVE_CHECKIN' | 'CHECKOUT_SUCCESS'
     const [name, setName] = useState('');
     const [school, setSchool] = useState('');
@@ -25,6 +30,14 @@ const GuestMobileWelcome = () => {
     const [showSignupModal, setShowSignupModal] = useState(false);
     const [activeSession, setActiveSession] = useState(null);
 
+    // Login Modal States
+    const [showLoginModal, setShowLoginModal] = useState(false);
+    const [loginName, setLoginName] = useState('');
+    const [loginPassword, setLoginPassword] = useState('');
+    const [loginLoading, setLoginLoading] = useState(false);
+    const [loginDuplicates, setLoginDuplicates] = useState([]);
+    const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
+
     const toggleReason = (label) => {
         setSelectedReasons(prev =>
             prev.includes(label)
@@ -33,12 +46,257 @@ const GuestMobileWelcome = () => {
         );
     };
 
-    // Check for active guest checkin session on mount
-    useEffect(() => {
-        const saved = localStorage.getItem('guest_active_session');
-        if (saved) {
+    // Helper: update last_web_login_at in preferences
+    const updateWebSessionPreferences = async (currentUser) => {
+        try {
+            const nowIso = new Date().toISOString();
+            const updatedPrefs = { ...(currentUser.preferences || {}), last_web_login_at: nowIso };
+            await supabase.from('users').update({ preferences: updatedPrefs }).eq('id', currentUser.id);
+            const updatedUser = { ...currentUser, preferences: updatedPrefs };
+
+            if (currentUser.user_group === '관리자' || currentUser.role === 'admin') {
+                localStorage.setItem('admin_user', JSON.stringify(updatedUser));
+            } else {
+                localStorage.setItem('user', JSON.stringify(updatedUser));
+            }
+            return updatedUser;
+        } catch (e) {
+            console.error('Failed to update web session preferences:', e);
+            return currentUser;
+        }
+    };
+
+    // Perform Auto Check-in & Navigate to Student Dashboard Home Tab (Only for QR Checkin)
+    const performAutoCheckin = async (currentUser, targetLocParam, selectedPurposes = null) => {
+        const defaultPurpose = dynamicSurveyOptions?.[0]?.label || '당 충전하며 쉬고 싶어요';
+        const activePurposes = selectedPurposes && selectedPurposes.length > 0 ? selectedPurposes : [defaultPurpose];
+        if (!currentUser?.id) return;
+        try {
+            // 1. Fetch location info
+            const { data: locations } = await supabase.from('locations').select('*');
+            let locObj = null;
+            if (targetLocParam) {
+                locObj = (locations || []).find(l =>
+                    l.id === targetLocParam ||
+                    l.name.includes(targetLocParam) ||
+                    (targetLocParam === 'HAIFN' && l.name.includes('하이픈')) ||
+                    (targetLocParam === 'ENOUGH_PLACE' && l.name.includes('이높플레이스'))
+                );
+            }
+            if (!locObj) {
+                locObj = (locations || []).find(l => l.name.includes('하이픈')) || locations?.[0] || { id: null, name: '하이픈' };
+            }
+
+            // 2. Check if user already checked in today (within today KST)
+            const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            const { data: existingLogs } = await supabase
+                .from('logs')
+                .select('id, created_at')
+                .eq('user_id', currentUser.id)
+                .eq('type', 'CHECKIN')
+                .gte('created_at', `${todayKst}T00:00:00`)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (!existingLogs || existingLogs.length === 0) {
+                await supabase.from('logs').insert([{
+                    user_id: currentUser.id,
+                    location_id: locObj.id,
+                    type: 'CHECKIN'
+                }]);
+            }
+
+            // 3. Save visit notes for Admin Dashboard
             try {
-                const parsed = JSON.parse(saved);
+                const { data: existingNote } = await supabase
+                    .from('visit_notes')
+                    .select('id')
+                    .eq('user_id', currentUser.id)
+                    .eq('visit_date', todayKst)
+                    .maybeSingle();
+
+                if (existingNote?.id) {
+                    await supabase.from('visit_notes').update({
+                        remarks: '모바일 QR 체크인'
+                    }).eq('id', existingNote.id);
+                } else {
+                    await supabase.from('visit_notes').insert([{
+                        user_id: currentUser.id,
+                        visit_date: todayKst,
+                        remarks: '모바일 QR 체크인'
+                    }]);
+                }
+            } catch (vErr) {
+                console.error('Failed to save visit notes in auto checkin:', vErr);
+            }
+
+            // 4. Track web session time in user preferences
+            const updatedUser = await updateWebSessionPreferences(currentUser);
+
+            // 5. Set toast & survey signals, then navigate to student dashboard
+            sessionStorage.removeItem('pending_checkin_survey');
+            sessionStorage.setItem('checkin_toast', JSON.stringify({
+                name: updatedUser.name,
+                locationName: locObj.name,
+                time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
+            }));
+
+            navigate('/student', { replace: true, state: { checkinToastOnly: true, userName: updatedUser.name, locationName: locObj.name } });
+        } catch (err) {
+            console.error('Auto check-in failed:', err);
+            navigate('/student', { replace: true });
+        }
+    };
+
+    const DEFAULT_CHECKIN_OPTIONS = [
+        { id: '1', emoji: '🍽️', label: '당 충전하며 쉬고 싶어요', sub: '간식 먹고 편안하게 쉬어가기' },
+        { id: '2', emoji: '🎲', label: '아무 생각 없이 놀고 싶어요', sub: '보드게임 및 자유 놀이' },
+        { id: '3', emoji: '☕', label: '누군가와 이야기하고 싶어요', sub: '선생님이나 친구와 대화 나누기' },
+        { id: '4', emoji: '🙏', label: '기도하거나 예배하고 싶어요', sub: '조용한 방에서 기도와 묵상' },
+        { id: '5', emoji: '📚', label: '조용히 집중하고 싶어요', sub: '해야 하는 공부나 할 일에 집중' },
+        { id: '6', emoji: '🤷', label: '아직 잘 모르겠어요', sub: '센터에 들어와서 천천히 정하기' }
+    ];
+
+    const [selectedPurposes, setSelectedPurposes] = useState([DEFAULT_CHECKIN_OPTIONS[0].label]);
+    const [activeUserForSurvey, setActiveUserForSurvey] = useState(null);
+    const [surveyQuestion, setSurveyQuestion] = useState('오늘 센터에서 무엇을 하고 싶나요?');
+    const [dynamicSurveyOptions, setDynamicSurveyOptions] = useState(DEFAULT_CHECKIN_OPTIONS);
+    const [isRedirecting, setIsRedirecting] = useState(false);
+
+    useEffect(() => {
+        const fetchSurveyConfig = async () => {
+            try {
+                const { data } = await supabase
+                    .from('notices')
+                    .select('content')
+                    .eq('category', 'SYSTEM')
+                    .eq('title', 'CHECKIN_SURVEY_CONFIG')
+                    .maybeSingle();
+
+                if (data?.content) {
+                    const parsed = JSON.parse(data.content);
+                    if (parsed.question) setSurveyQuestion(parsed.question);
+                    if (parsed.options && parsed.options.length > 0) {
+                        setDynamicSurveyOptions(parsed.options);
+                        setSelectedPurposes([parsed.options[0].label]);
+                    }
+                }
+            } catch (e) {
+                console.error('Failed to fetch checkin survey config:', e);
+            }
+        };
+        fetchSurveyConfig();
+    }, []);
+
+    const getSafeKSTDate = () => {
+        const now = new Date();
+        const kstDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + (9 * 60 * 60 * 1000));
+        const y = kstDate.getFullYear();
+        const m = String(kstDate.getMonth() + 1).padStart(2, '0');
+        const d = String(kstDate.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
+    const ensureCheckinLogAndNavigate = useCallback(async (currentUser) => {
+        try {
+            const todayKst = getSafeKSTDate();
+
+            const { data: locations } = await supabase.from('locations').select('*');
+            let locObj = null;
+            if (locParam) {
+                locObj = (locations || []).find(l =>
+                    l.id === locParam ||
+                    l.name.includes(locParam) ||
+                    (locParam === 'HAIFN' && l.name.includes('하이픈')) ||
+                    (locParam === 'ENOUGH_PLACE' && l.name.includes('이높플레이스'))
+                );
+            }
+            if (!locObj) {
+                locObj = (locations || []).find(l => l.name.includes('하이픈')) || locations?.[0] || { id: null, name: '하이픈' };
+            }
+
+            const { data: insertedLogs } = await supabase.from('logs').insert([{
+                user_id: currentUser.id,
+                location_id: locObj.id,
+                type: 'CHECKIN'
+            }]).select('id, created_at');
+
+            const insertedLog = insertedLogs?.[0];
+
+            try {
+                await supabase.from('visit_notes').insert([{
+                    user_id: currentUser.id,
+                    visit_date: todayKst,
+                    remarks: '모바일 QR 체크인'
+                }]);
+            } catch (vErr) {}
+
+            sessionStorage.setItem('require_checkin_survey', 'true');
+            if (insertedLog?.created_at) {
+                sessionStorage.setItem('active_checkin_time', insertedLog.created_at);
+            }
+
+            updateWebSessionPreferences(currentUser).catch(() => {});
+            navigate('/student', {
+                replace: true,
+                state: {
+                    requireCheckinSurvey: true,
+                    checkinTime: insertedLog?.created_at,
+                    locationName: locObj.name
+                }
+            });
+        } catch (err) {
+            console.error('ensureCheckinLogAndNavigate error:', err);
+            sessionStorage.setItem('require_checkin_survey', 'true');
+            navigate('/student', { replace: true, state: { requireCheckinSurvey: true } });
+        }
+    }, [locParam, navigate]);
+
+    // On mount effect
+    useEffect(() => {
+
+        const savedUser = localStorage.getItem('user');
+        if (savedUser) {
+            try {
+                const parsedUser = JSON.parse(savedUser);
+                if (parsedUser?.id) {
+                    const isAdmin = parsedUser.user_group === '관리자' || parsedUser.role === 'admin';
+                    if (isAdmin) {
+                        navigate('/admin', { replace: true });
+                        return;
+                    }
+
+                    setIsRedirecting(true);
+                    if (isQRCheckin) {
+                        ensureCheckinLogAndNavigate(parsedUser);
+                    } else {
+                        // Normal Web App access: navigate straight to student dashboard
+                        updateWebSessionPreferences(parsedUser);
+                        navigate('/student', { replace: true });
+                    }
+                    return;
+                }
+            } catch (e) {
+                console.error('Failed to parse saved user:', e);
+            }
+        }
+
+        const savedAdmin = localStorage.getItem('admin_user');
+        if (savedAdmin) {
+            try {
+                const parsedAdmin = JSON.parse(savedAdmin);
+                if (parsedAdmin?.id) {
+                    navigate('/admin', { replace: true });
+                    return;
+                }
+            } catch (e) {}
+        }
+
+        // Check for active guest checkin session if not logged in
+        const savedGuestSession = localStorage.getItem('guest_active_session');
+        if (savedGuestSession) {
+            try {
+                const parsed = JSON.parse(savedGuestSession);
                 const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
                 if (parsed.date === todayKst && parsed.userId) {
                     setActiveSession(parsed);
@@ -50,9 +308,9 @@ const GuestMobileWelcome = () => {
                 console.error('Failed to parse guest active session', e);
             }
         }
-    }, []);
+    }, [isQRCheckin, locParam, navigate, ensureCheckinLogAndNavigate]);
 
-    // Trigger confetti on success
+    // Trigger confetti on guest success
     useEffect(() => {
         if (step === 'SUCCESS') {
             confetti({
@@ -63,6 +321,120 @@ const GuestMobileWelcome = () => {
         }
     }, [step]);
 
+    // Login Handler
+    const handleLoginSubmit = async (e) => {
+        e.preventDefault();
+        if (!loginName.trim() || !loginPassword.trim()) {
+            alert('이름과 비밀번호를 모두 입력해주세요.');
+            return;
+        }
+
+        setLoginLoading(true);
+        try {
+            const hashedPassword = await hashPassword(loginPassword);
+
+            let { data: candidates, error: rpcError } = await supabase
+                .rpc('get_login_candidates', { p_name: loginName.trim() });
+
+            if (rpcError) throw rpcError;
+
+            if (!candidates || candidates.length === 0) {
+                const { data: guestCandidates } = await supabase
+                    .rpc('get_login_candidates', { p_name: `${loginName.trim()}(guest)` });
+
+                if (guestCandidates && guestCandidates.length > 0) {
+                    candidates = guestCandidates;
+                } else {
+                    alert('가입된 이름이 없습니다. 이름을 다시 확인해주세요.');
+                    setLoginLoading(false);
+                    return;
+                }
+            }
+
+            if (candidates.length === 1) {
+                await attemptLoginAuth(candidates[0], hashedPassword, loginPassword);
+            } else {
+                setLoginDuplicates(candidates);
+                setShowDuplicatesModal(true);
+            }
+        } catch (err) {
+            console.error('Login submit error:', err);
+            alert('로그인 중 오류가 발생했습니다: ' + (err.message || '다시 시도해주세요.'));
+        } finally {
+            setLoginLoading(false);
+        }
+    };
+
+    const attemptLoginAuth = async (userCandidate, hashedPw, rawPassword) => {
+        try {
+            let matchedUser = null;
+
+            const { data: dbUser } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', userCandidate.id)
+                .maybeSingle();
+
+            const fullUser = dbUser ? { ...userCandidate, ...dbUser } : userCandidate;
+
+            if (fullUser && (fullUser.password === hashedPw || fullUser.password === rawPassword)) {
+                matchedUser = fullUser;
+            } else if (userCandidate?.email) {
+                try {
+                    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+                        email: userCandidate.email,
+                        password: rawPassword
+                    });
+
+                    if (!authError && authData?.user) {
+                        matchedUser = fullUser;
+                    }
+                } catch (e) {
+                    console.error('Supabase Auth attempt failed:', e);
+                }
+            }
+
+            if (!matchedUser) {
+                alert('비밀번호가 일치하지 않습니다. 다시 확인해 주세요.');
+                return false;
+            }
+
+            setShowLoginModal(false);
+
+            // Handle Admin Login
+            if (matchedUser.user_group === '관리자' || matchedUser.role === 'admin') {
+                localStorage.setItem('admin_user', JSON.stringify(matchedUser));
+                localStorage.setItem('user', JSON.stringify(matchedUser));
+                updateWebSessionPreferences(matchedUser).catch(() => {});
+                navigate('/admin', { replace: true });
+                return true;
+            }
+
+            // Handle Student Login
+            localStorage.setItem('user', JSON.stringify(matchedUser));
+
+            if (isQRCheckin) {
+                await ensureCheckinLogAndNavigate(matchedUser);
+            } else {
+                updateWebSessionPreferences(matchedUser).catch(() => {});
+                navigate('/student', { replace: true });
+            }
+            return true;
+        } catch (err) {
+            console.error('Login auth error:', err);
+            alert('로그인 시도 중 오류가 발생했습니다: ' + (err.message || '다시 시도해주세요.'));
+            return false;
+        }
+    };
+
+    const handleDuplicateSelect = (selectedUser) => {
+        setShowDuplicatesModal(false);
+        hashPassword(loginPassword).then(hashedPw => {
+            attemptLoginAuth(selectedUser, hashedPw, loginPassword);
+        });
+    };
+
+    // Guest Check-in Submission
     const handleGuestCheckinSubmit = async (e) => {
         e.preventDefault();
         if (!name.trim() || !school.trim()) {
@@ -79,11 +451,11 @@ const GuestMobileWelcome = () => {
                 ? `${reasonBase} (${customReason.trim()})`
                 : reasonBase;
 
-            // 1. Fetch Location Info (Default to Haifn or first location)
+            // 1. Fetch Location Info
             const { data: locations } = await supabase.from('locations').select('*');
             const haifnLoc = (locations || []).find(l => l.name.includes('하이픈')) || locations?.[0] || { id: null, name: '하이픈' };
 
-            // 2. Find or create guest user in users table with unique phone number
+            // 2. Find or create guest user
             let guestUserId = null;
             try {
                 const targetName = cleanName.includes('(guest)') ? cleanName : `${cleanName}(guest)`;
@@ -146,25 +518,38 @@ const GuestMobileWelcome = () => {
                 console.error('Failed to create/lookup guest user:', gErr);
             }
 
-            // 3. Insert CHECKIN log into logs table
-            const { error: logErr } = await supabase.from('logs').insert([{
-                user_id: guestUserId,
-                location_id: haifnLoc.id,
-                type: 'CHECKIN'
-            }]);
+            // 3. Insert CHECKIN log into logs table ONLY for QR checkin route
+            if (isQRCheckin) {
+                const { error: logErr } = await supabase.from('logs').insert([{
+                    user_id: guestUserId,
+                    location_id: haifnLoc.id,
+                    type: 'CHECKIN'
+                }]);
+                if (logErr) throw logErr;
+            }
 
-            if (logErr) throw logErr;
-
-            // 4. Save visit reason to visit_notes and checkin_surveys table
+            // 4. Save visit reason to visit_notes and checkin_surveys
             const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
             if (guestUserId) {
                 try {
-                    await supabase.from('visit_notes').upsert({
-                        user_id: guestUserId,
-                        visit_date: todayKst,
-                        purpose: finalVisitReason,
-                        remarks: '게스트 체크인'
-                    }, { onConflict: 'user_id,visit_date' });
+                    const { data: existingNote } = await supabase
+                        .from('visit_notes')
+                        .select('id')
+                        .eq('user_id', guestUserId)
+                        .eq('visit_date', todayKst)
+                        .maybeSingle();
+
+                    if (existingNote?.id) {
+                        await supabase.from('visit_notes').update({
+                            remarks: '게스트 체크인'
+                        }).eq('id', existingNote.id);
+                    } else {
+                        await supabase.from('visit_notes').insert([{
+                            user_id: guestUserId,
+                            visit_date: todayKst,
+                            remarks: '게스트 체크인'
+                        }]);
+                    }
 
                     if (finalVisitReason) {
                         await supabase.from('checkin_surveys').insert([{
@@ -215,8 +600,17 @@ const GuestMobileWelcome = () => {
                     });
                 }
 
-                // LINE via Google Apps Script Webhook
-                if (lineToken && lineGroupId && gsWebhookUrl) {
+                const isHaifnLoc = haifnLoc && (
+                    haifnLoc.name?.includes('하이픈') ||
+                    haifnLoc.name?.includes('HAIFN') ||
+                    haifnLoc.name?.includes('강동')
+                ) && !(
+                    haifnLoc.name?.includes('이높') ||
+                    haifnLoc.name?.includes('ENOUGH_PLACE') ||
+                    haifnLoc.name?.includes('강서')
+                );
+
+                if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
                     fetch(gsWebhookUrl, {
                         method: 'POST',
                         mode: 'no-cors',
@@ -230,7 +624,6 @@ const GuestMobileWelcome = () => {
                     }).catch(e => console.error('LINE Notify error:', e));
                 }
 
-                // Discord Webhook
                 if (discordWebhookUrl) {
                     fetch(discordWebhookUrl, {
                         method: 'POST',
@@ -251,6 +644,7 @@ const GuestMobileWelcome = () => {
         }
     };
 
+    // Guest Checkout Submission
     const handleGuestCheckoutSubmit = async () => {
         if (!activeSession) return;
         setLoading(true);
@@ -263,7 +657,6 @@ const GuestMobileWelcome = () => {
 
             if (error) throw error;
 
-            // LINE / Discord Checkout Alert
             const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
             const alertMessage = `[GUEST CHECK-OUT]\n👋 ${activeSession.name}(${activeSession.school}) 게스트님이 ${activeSession.locationName} 공간에서 퇴실하셨어요 (${timeStr})`;
 
@@ -280,7 +673,11 @@ const GuestMobileWelcome = () => {
                     });
                 }
 
-                if (lineToken && lineGroupId && gsWebhookUrl) {
+                const locName = activeSession.locationName || '';
+                const isHaifnLoc = (locName.includes('하이픈') || locName.includes('HAIFN') || locName.includes('강동')) &&
+                    !(locName.includes('이높') || locName.includes('ENOUGH_PLACE') || locName.includes('강서'));
+
+                if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
                     fetch(gsWebhookUrl, {
                         method: 'POST',
                         mode: 'no-cors',
@@ -316,34 +713,49 @@ const GuestMobileWelcome = () => {
         }
     };
 
+    if (isRedirecting) {
+        return (
+            <div className="min-h-screen bg-[#F8F9FA] flex flex-col items-center justify-center p-6 text-center select-none font-sans">
+                <div className="w-12 h-12 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mb-4" />
+                <p className="text-gray-700 font-extrabold text-base tracking-tight mb-1">입실 체크인을 처리하고 있습니다...</p>
+                <p className="text-gray-400 font-medium text-xs">잠시만 기다려 주세요 ✨</p>
+            </div>
+        );
+    }
+
     return (
         <div className="h-screen bg-[#F8F9FA] text-[#191F28] flex flex-col justify-between relative overflow-hidden select-none font-sans bg-[radial-gradient(rgba(148,163,184,0.12)_1.5px,transparent_0)] bg-[size:32px_32px]">
-            {/* Subtle Background Glow Accents */}
+            {/* Background Glow Accents */}
             <div className="absolute inset-0 overflow-hidden -z-10 pointer-events-none">
                 <motion.div animate={{ scale: [1, 1.2, 1], x: [0, 30, 0] }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }} className="absolute -top-32 left-1/2 -translate-x-1/2 w-[480px] h-[480px] bg-gradient-to-b from-[#E63946]/10 to-orange-500/5 rounded-full blur-[100px]" />
                 <motion.div animate={{ scale: [1.1, 1, 1.1], x: [0, -30, 0] }} transition={{ duration: 25, repeat: Infinity, ease: "linear" }} className="absolute -bottom-20 -right-20 w-80 h-80 bg-blue-500/5 rounded-full blur-[90px]" />
             </div>
 
-            {/* Repeated Background Branding Typography Pattern (Kiosk Watermark Style) */}
+            {/* Background Branding Typography */}
             <div className="absolute inset-0 overflow-hidden opacity-[0.035] z-0 select-none pointer-events-none flex flex-col justify-around rotate-[-12deg] scale-150 origin-center">
                 {Array.from({ length: 8 }).map((_, rIdx) => (
-                    <div 
-                        key={rIdx} 
+                    <div
+                        key={rIdx}
                         className={`text-[8vw] font-black uppercase tracking-[0.2em] whitespace-nowrap leading-none flex gap-12 ${rIdx % 2 === 0 ? 'justify-start' : 'justify-end'}`}
                         style={{ WebkitTextStroke: '2px #191F28' }}
                     >
                         {Array.from({ length: 6 }).map((_, cIdx) => (
-                            <span key={cIdx}>HAIFN</span>
+                            <span key={cIdx}>SCI CENTER</span>
                         ))}
                     </div>
                 ))}
             </div>
 
             {/* Header Brand */}
-            <header className="px-6 pt-3 pb-0 relative z-10 flex items-center justify-between max-w-md mx-auto w-full shrink-0">
-                <span className="font-black tracking-tight text-xl text-[#191F28]">
-                    HAIFN
+            <header className="px-6 pt-4 pb-0 relative z-10 flex items-center justify-between max-w-md mx-auto w-full shrink-0">
+                <span className="font-black tracking-tight text-lg sm:text-xl text-[#191F28]">
+                    SCHOOL CHURCH IMPACT
                 </span>
+                {isQRCheckin && (
+                    <span className="text-[11px] font-bold px-2.5 py-1 bg-red-50 text-[#E63946] border border-red-100 rounded-full shrink-0">
+                        QR 체크인 모드
+                    </span>
+                )}
             </header>
 
             {/* Main Content Areas */}
@@ -356,56 +768,170 @@ const GuestMobileWelcome = () => {
                             animate={{ opacity: 1, y: 0 }}
                             exit={{ opacity: 0, y: -16 }}
                             transition={{ duration: 0.25 }}
-                            className="space-y-8 my-auto"
+                            className="space-y-7 my-auto"
                         >
                             {/* Welcome Typography Header */}
-                            <div className="space-y-6">
+                            <div className="space-y-5">
                                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#E63946]/10 text-[#E63946] text-[12px] font-bold">
                                     <Sparkles size={13} className="animate-pulse" />
-                                    <span>Welcome to HAIFN</span>
+                                    <span>Welcome to SCHOOL CHURCH IMPACT</span>
                                 </div>
 
                                 <h1 className="text-[30px] sm:text-[34px] font-black text-[#191F28] leading-[1.25] tracking-tight">
-                                    하이픈에 오신 걸<br />
+                                    SCI 센터에 오신 걸<br />
                                     <span className="text-[#E63946]">
                                         환영합니다!
                                     </span>
                                 </h1>
 
-                                {/* Mission Text */}
                                 <p className="text-[#4E5968] text-[14px] leading-[1.6] font-medium">
                                     SCI 센터는 일상 속 그리스도인을 꿈꾸는 모든 청소년을 위한 공간으로, 하나님과 이웃, 그리고 세상과의 연결을 지향합니다.
                                 </p>
 
-                                <p className="text-[#191F28] text-[15px] font-bold tracking-tight pt-1">
-                                    가볍게 둘러보고 싶다면 <span className="text-[#E63946] font-extrabold">게스트 체크인</span>을 진행해 주세요!
+                                <p className="text-[#191F28] text-[14px] font-bold tracking-tight pt-0.5">
+                                    원하시는 접속 방식을 선택해 주세요!
                                 </p>
                             </div>
 
-                            {/* Action Buttons */}
-                            <div className="space-y-3 pt-2">
+                            {/* Primary Action Buttons: 로그인 / 게스트(QR전용) / 센터 등록 */}
+                            <div className="space-y-3 pt-1">
+                                {/* 1. 로그인 (Primary Accent Button) */}
                                 <button
-                                    onClick={() => setStep('FORM')}
-                                    className="w-full h-14 px-6 bg-[#E63946] hover:bg-[#D62839] text-white font-bold rounded-2xl border-0 outline-none shadow-[0_8px_20px_-4px_rgba(230,57,70,0.35)] active:scale-[0.98] transition-all flex items-center justify-between group text-[16px] tracking-tight"
+                                    onClick={() => setShowLoginModal(true)}
+                                    className="w-full h-14 px-6 bg-[#E63946] hover:bg-[#D62839] text-white font-bold rounded-2xl border-0 outline-none shadow-[0_8px_20px_-4px_rgba(230,57,70,0.35)] active:scale-[0.98] transition-all flex items-center justify-between group text-[16px] tracking-tight cursor-pointer"
                                 >
-                                    <span>게스트 체크인</span>
+                                    <div className="flex items-center gap-2.5">
+                                        <LogIn size={20} />
+                                        <span>로그인</span>
+                                    </div>
                                     <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center group-hover:translate-x-0.5 transition-transform">
                                         <ArrowRight size={18} className="text-white" />
                                     </div>
                                 </button>
 
+                                {/* 2. 게스트 (Secondary Slate Button - QR 체크인 접속 전용) */}
+                                {isQRCheckin && (
+                                    <button
+                                        onClick={() => setStep('FORM')}
+                                        className="w-full h-14 px-6 bg-[#EAECEF] hover:bg-[#DFE2E6] text-[#191F28] font-bold rounded-2xl border-0 outline-none active:scale-[0.98] transition-all flex items-center justify-between group text-[16px] tracking-tight cursor-pointer"
+                                    >
+                                        <div className="flex items-center gap-2.5">
+                                            <User size={20} className="text-[#4E5968]" />
+                                            <span>게스트</span>
+                                        </div>
+                                        <ChevronRight size={20} className="text-[#8B95A1] group-hover:translate-x-0.5 transition-transform" />
+                                    </button>
+                                )}
+
+                                {/* 3. 센터 등록 (Sub Light Button) */}
                                 <button
                                     onClick={() => setShowSignupModal(true)}
-                                    className="w-full h-14 px-6 bg-[#EAECEF] hover:bg-[#DFE2E6] text-[#191F28] font-bold rounded-2xl border-0 outline-none active:scale-[0.98] transition-all flex items-center justify-between group text-[16px] tracking-tight"
+                                    className="w-full h-14 px-6 bg-white hover:bg-gray-50 text-[#4E5968] font-bold rounded-2xl border border-[#E5E8EB] outline-none active:scale-[0.98] transition-all flex items-center justify-between group text-[16px] tracking-tight shadow-xs cursor-pointer"
                                 >
-                                    <span>하이픈 등록</span>
+                                    <div className="flex items-center gap-2.5">
+                                        <School size={20} className="text-[#8B95A1]" />
+                                        <span>센터 등록</span>
+                                    </div>
                                     <ChevronRight size={20} className="text-[#8B95A1] group-hover:translate-x-0.5 transition-transform" />
                                 </button>
                             </div>
                         </motion.div>
                     )}
 
-                    {/* ACTIVE CHECKIN VIEW (Re-visiting page while currently checked in) */}
+                    {/* GUEST FORM STEP */}
+                    {step === 'FORM' && (
+                        <motion.div
+                            key="form"
+                            initial={{ opacity: 0, x: 20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: -20 }}
+                            transition={{ duration: 0.25 }}
+                            className="bg-white border border-[#E5E8EB] rounded-3xl p-6 shadow-xl space-y-4 my-auto max-h-[85vh] overflow-y-auto"
+                        >
+                            <div className="flex justify-between items-center border-b border-[#F2F4F6] pb-3">
+                                <div>
+                                    <h2 className="text-lg font-extrabold text-[#191F28]">게스트 방문 작성</h2>
+                                    <p className="text-[12px] text-[#8B95A1] mt-0.5 font-medium">간단한 정보 입력 후 둘러보실 수 있어요</p>
+                                </div>
+                                <button onClick={() => setStep('HOME')} className="p-2 text-[#8B95A1] hover:text-[#191F28] rounded-full bg-[#F2F4F6]">
+                                    <X size={18} />
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleGuestCheckinSubmit} className="space-y-4 pt-1">
+                                <div>
+                                    <label className="block text-[12px] font-bold text-[#4E5968] mb-1 ml-1">이름</label>
+                                    <div className="relative">
+                                        <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8B95A1]" />
+                                        <input
+                                            type="text"
+                                            required
+                                            value={name}
+                                            onChange={(e) => setName(e.target.value)}
+                                            placeholder="이름을 입력해주세요"
+                                            className="w-full pl-9 pr-3 py-2.5 bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl text-[#191F28] placeholder-[#B0B8C1] outline-none focus:bg-white focus:border-[#E63946] font-bold text-sm"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-[12px] font-bold text-[#4E5968] mb-1 ml-1">학교</label>
+                                    <div className="relative">
+                                        <School size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8B95A1]" />
+                                        <input
+                                            type="text"
+                                            required
+                                            value={school}
+                                            onChange={(e) => setSchool(e.target.value)}
+                                            placeholder="학교 이름 (예: 하이픈고등학교)"
+                                            className="w-full pl-9 pr-3 py-2.5 bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl text-[#191F28] placeholder-[#B0B8C1] outline-none focus:bg-white focus:border-[#E63946] font-bold text-sm"
+                                        />
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label className="block text-[12px] font-bold text-[#4E5968] mb-1 ml-1">
+                                        방문 계기
+                                    </label>
+                                    <div className="space-y-2 mt-1.5">
+                                        <div className="grid grid-cols-2 gap-1.5">
+                                            {VISIT_REASON_OPTIONS.map(opt => {
+                                                const isSelected = selectedReasons.includes(opt.label);
+                                                return (
+                                                    <button
+                                                        key={opt.id}
+                                                        type="button"
+                                                        onClick={() => toggleReason(opt.label)}
+                                                        className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${isSelected ? 'bg-[#E63946]/10 border-[#E63946] text-[#E63946] font-bold' : 'bg-[#F9FAFB] border-[#E5E8EB] text-[#4E5968] hover:bg-white'}`}
+                                                    >
+                                                        <span className="text-base shrink-0">{opt.emoji}</span>
+                                                        <span className="text-[11.5px] leading-snug font-medium line-clamp-1">{opt.label}</span>
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                        <input
+                                            type="text"
+                                            value={customReason}
+                                            onChange={(e) => setCustomReason(e.target.value)}
+                                            placeholder="상세 내용을 직접 적어주세요"
+                                            className="w-full px-3 py-2 bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl text-[#191F28] placeholder-[#B0B8C1] outline-none focus:bg-white focus:border-[#E63946] font-bold text-xs"
+                                        />
+                                    </div>
+                                </div>
+
+                                <button
+                                    type="submit"
+                                    disabled={loading}
+                                    className="w-full h-14 bg-[#E63946] hover:bg-[#D62839] text-white font-bold rounded-2xl transition shadow-md shadow-[#E63946]/25 active:scale-[0.98] disabled:opacity-50 mt-3 text-[16px] tracking-tight flex items-center justify-center"
+                                >
+                                    {loading ? (isQRCheckin ? '체크인 처리 중...' : '접속 처리 중...') : (isQRCheckin ? '게스트 체크인 완료' : '게스트 접속')}
+                                </button>
+                            </form>
+                        </motion.div>
+                    )}
+
+                    {/* ACTIVE GUEST CHECKIN VIEW */}
                     {step === 'ACTIVE_CHECKIN' && activeSession && (
                         <motion.div
                             key="active_checkin"
@@ -447,110 +973,85 @@ const GuestMobileWelcome = () => {
                                     onClick={() => setShowSignupModal(true)}
                                     className="w-full h-14 bg-[#EAECEF] hover:bg-[#DFE2E6] text-[#191F28] font-bold rounded-2xl border-0 outline-none active:scale-[0.98] transition-all flex items-center justify-between px-6 group text-[16px] tracking-tight"
                                 >
-                                    <span>하이픈 등록</span>
-                                    <ChevronRight size={20} className="text-[#8B95A1] group-hover:translate-x-0.5 transition-transform" />
+                                    <span>센터 등록</span>
+                                    <ChevronRight size={20} className="text-[#8B95A1]" />
                                 </button>
                             </div>
                         </motion.div>
                     )}
 
-                    {step === 'FORM' && (
+                    {/* CHECKIN SURVEY SELECTION STEP */}
+                    {step === 'SURVEY' && (
                         <motion.div
-                            key="form"
+                            key="survey"
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
                             exit={{ opacity: 0, scale: 0.95 }}
                             transition={{ duration: 0.25 }}
-                            className="bg-white border border-[#E5E8EB] rounded-3xl p-5 shadow-xl space-y-4 my-auto"
+                            className="bg-white border border-[#E5E8EB] rounded-3xl p-6 shadow-xl space-y-6 my-auto"
                         >
-                            <div className="flex justify-between items-center border-b border-[#F2F4F6] pb-3">
-                                <div>
-                                    <h2 className="text-lg font-extrabold text-[#191F28]">
-                                        게스트 체크인
-                                    </h2>
-                                    <p className="text-[12px] text-[#8B95A1] mt-0.5 font-medium">방문 정보를 간단히 입력해 주세요</p>
-                                </div>
-                                <button onClick={() => setStep('HOME')} className="p-2 text-[#8B95A1] hover:text-[#191F28] rounded-full bg-[#F2F4F6]">
-                                    <X size={18} />
-                                </button>
+                            <div className="text-center space-y-2">
+                                <span className="inline-flex items-center gap-1.5 px-3.5 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-black uppercase tracking-wider border border-blue-100">
+                                    📍 {locParam === 'ENOUGH_PLACE' ? '이높플레이스' : '하이픈'} 입실 체크인
+                                </span>
+                                <h2 className="text-2xl font-black text-gray-900 tracking-tight">
+                                    {surveyQuestion}
+                                </h2>
+                                <p className="text-xs font-semibold text-gray-500">
+                                    원하시는 방문 목적을 선택해 주시면 체크인이 완료됩니다 ✨
+                                </p>
                             </div>
 
-                            <form onSubmit={handleGuestCheckinSubmit} className="space-y-3.5">
-                                <div>
-                                    <label className="block text-[12px] font-bold text-[#4E5968] mb-1 ml-1">이름</label>
-                                    <div className="relative">
-                                        <User className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8B95A1]" size={16} />
-                                        <input
-                                            type="text"
-                                            required
-                                            value={name}
-                                            onChange={(e) => setName(e.target.value)}
-                                            placeholder="이름 입력 (예: 김연결)"
-                                            className="w-full pl-9 pr-3 py-2.5 bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl text-[#191F28] placeholder-[#B0B8C1] outline-none focus:bg-white focus:border-[#E63946] font-bold text-sm"
-                                        />
-                                    </div>
-                                </div>
+                            <div className="space-y-2.5">
+                                {dynamicSurveyOptions.map(opt => {
+                                    const isSelected = selectedPurposes.includes(opt.label);
+                                    return (
+                                        <button
+                                            key={opt.id}
+                                            type="button"
+                                            onClick={() => {
+                                                if (isSelected) {
+                                                    setSelectedPurposes(selectedPurposes.filter(p => p !== opt.label));
+                                                } else {
+                                                    setSelectedPurposes([...selectedPurposes, opt.label]);
+                                                }
+                                            }}
+                                            className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all ${
+                                                isSelected
+                                                    ? 'bg-blue-50/80 border-blue-500 text-blue-700 shadow-sm'
+                                                    : 'bg-gray-50/50 border-gray-100 text-gray-700 hover:bg-white'
+                                            }`}
+                                        >
+                                            <div className="flex items-center gap-3.5">
+                                                <span className="text-2xl">{opt.emoji}</span>
+                                                <span className="font-extrabold text-sm text-gray-800">{opt.label}</span>
+                                            </div>
+                                            <div className={`w-5 h-5 rounded-full border flex items-center justify-center ${
+                                                isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-gray-300'
+                                            }`}>
+                                                {isSelected && <Check size={12} strokeWidth={3} />}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
 
-                                <div>
-                                    <label className="block text-[12px] font-bold text-[#4E5968] mb-1 ml-1">학교</label>
-                                    <div className="relative">
-                                        <School className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8B95A1]" size={16} />
-                                        <input
-                                            type="text"
-                                            required
-                                            value={school}
-                                            onChange={(e) => setSchool(e.target.value)}
-                                            placeholder="학교 이름 (예: 하이픈고등학교)"
-                                            className="w-full pl-9 pr-3 py-2.5 bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl text-[#191F28] placeholder-[#B0B8C1] outline-none focus:bg-white focus:border-[#E63946] font-bold text-sm"
-                                        />
-                                    </div>
-                                </div>
-
-                                <div>
-                                    <label className="block text-[12px] font-bold text-[#4E5968] mb-1 ml-1">
-                                        하이픈에는 어떻게 방문하게 됐나요?
-                                        <span className="block text-[11px] font-normal text-[#8B95A1] mt-0.5">
-                                            (추천인, 방문하게 된 계기 등)
-                                        </span>
-                                    </label>
-                                    <div className="space-y-2 mt-1.5">
-                                        <div className="grid grid-cols-2 gap-1.5">
-                                            {VISIT_REASON_OPTIONS.map(opt => {
-                                                const isSelected = selectedReasons.includes(opt.label);
-                                                return (
-                                                    <button
-                                                        key={opt.id}
-                                                        type="button"
-                                                        onClick={() => toggleReason(opt.label)}
-                                                        className={`p-2.5 rounded-xl border text-left flex items-center gap-2 transition-all ${isSelected ? 'bg-[#E63946]/10 border-[#E63946] text-[#E63946] font-bold' : 'bg-[#F9FAFB] border-[#E5E8EB] text-[#4E5968] hover:bg-white'}`}
-                                                    >
-                                                        <span className="text-base shrink-0">{opt.emoji}</span>
-                                                        <span className="text-[11.5px] leading-snug font-medium line-clamp-1">{opt.label}</span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
-                                        <input
-                                            type="text"
-                                            value={customReason}
-                                            onChange={(e) => setCustomReason(e.target.value)}
-                                            placeholder="상세 내용을 직접 적어주세요 (예: 2학년 김00 추천)"
-                                            className="w-full px-3 py-2 bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl text-[#191F28] placeholder-[#B0B8C1] outline-none focus:bg-white focus:border-[#E63946] font-bold text-xs"
-                                        />
-                                    </div>
-                                </div>
-
-                                <button
-                                    type="submit"
-                                    disabled={loading}
-                                    className="w-full h-14 bg-[#E63946] hover:bg-[#D62839] text-white font-bold rounded-2xl transition shadow-md shadow-[#E63946]/25 active:scale-[0.98] disabled:opacity-50 mt-3 text-[16px] tracking-tight flex items-center justify-center"
-                                >
-                                    {loading ? '체크인 처리 중...' : '체크인 완료'}
-                                </button>
-                            </form>
+                            <button
+                                onClick={() => {
+                                    const fallbackLabel = dynamicSurveyOptions?.[0]?.label || '당 충전하며 쉬고 싶어요';
+                                    const finalPurposes = selectedPurposes.length > 0 ? selectedPurposes : [fallbackLabel];
+                                    performAutoCheckin(activeUserForSurvey, locParam, finalPurposes);
+                                }}
+                                disabled={loading}
+                                className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl transition shadow-lg shadow-blue-500/25 active:scale-[0.98] disabled:opacity-50 text-base tracking-tight flex items-center justify-center gap-2"
+                            >
+                                <span>{loading ? '체크인 처리 중...' : '입실 체크인 완료'}</span>
+                                <ArrowRight size={18} />
+                            </button>
                         </motion.div>
                     )}
 
+                    {/* GUEST SUCCESS STEP */}
                     {step === 'SUCCESS' && (
                         <motion.div
                             key="success"
@@ -564,17 +1065,13 @@ const GuestMobileWelcome = () => {
                             </div>
 
                             <div className="space-y-2">
-                                <h2 className="text-2xl font-extrabold text-[#191F28]">체크인 완료!</h2>
+                                <h2 className="text-2xl font-extrabold text-[#191F28]">
+                                    {isQRCheckin ? '체크인 완료!' : '게스트 접속 완료!'}
+                                </h2>
                                 <p className="text-[#4E5968] text-sm leading-relaxed font-medium">
                                     <strong className="text-[#E63946] font-bold">{name}</strong>님, 환영합니다!<br />
-                                    하이픈에서 즐거운 연결을 누려보세요
+                                    SCI 센터에서 즐거운 연결을 누려보세요
                                 </p>
-                            </div>
-
-                            <div className="p-4 bg-[#F9FAFB] border border-[#E5E8EB] rounded-2xl text-xs text-[#4E5968] space-y-1 text-left">
-                                <div className="font-bold text-[#191F28]">📌 이용 안내</div>
-                                <div>• 보드게임과 간식, 다양한 프로그램이 준비되어 있어요</div>
-                                <div>• 궁금한 점은 언제든 스처쌤에게 편하게 말해주세요!</div>
                             </div>
 
                             <button
@@ -586,6 +1083,7 @@ const GuestMobileWelcome = () => {
                         </motion.div>
                     )}
 
+                    {/* CHECKOUT SUCCESS STEP */}
                     {step === 'CHECKOUT_SUCCESS' && (
                         <motion.div
                             key="checkout_success"
@@ -617,6 +1115,98 @@ const GuestMobileWelcome = () => {
                 </AnimatePresence>
             </main>
 
+            {/* Mobile Login Modal Overlay */}
+            {showLoginModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-[#E5E8EB] space-y-4"
+                    >
+                        <div className="flex justify-between items-center border-b border-[#F2F4F6] pb-3">
+                            <div>
+                                <h2 className="text-lg font-extrabold text-[#191F28] flex items-center gap-2">
+                                    <LogIn size={20} className="text-[#E63946]" />
+                                    로그인
+                                </h2>
+                                <p className="text-[12px] text-[#8B95A1] mt-0.5 font-medium">
+                                    {isQRCheckin ? '로그인 시 자동으로 체크인이 진행됩니다' : '아이디(이름)와 비밀번호를 입력해 주세요'}
+                                </p>
+                            </div>
+                            <button onClick={() => setShowLoginModal(false)} className="p-2 text-[#8B95A1] hover:text-[#191F28] rounded-full bg-[#F2F4F6]">
+                                <X size={18} />
+                            </button>
+                        </div>
+
+                        <form onSubmit={handleLoginSubmit} className="space-y-4 pt-1">
+                            <div>
+                                <label className="block text-[12px] font-bold text-[#4E5968] mb-1 ml-1">이름</label>
+                                <div className="relative">
+                                    <User size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8B95A1]" />
+                                    <input
+                                        type="text"
+                                        required
+                                        value={loginName}
+                                        onChange={(e) => setLoginName(e.target.value)}
+                                        placeholder="이름 입력 (예: 홍길동)"
+                                        className="w-full pl-9 pr-3 py-3 bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl text-[#191F28] placeholder-[#B0B8C1] outline-none focus:bg-white focus:border-[#E63946] font-bold text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <div>
+                                <label className="block text-[12px] font-bold text-[#4E5968] mb-1 ml-1">비밀번호</label>
+                                <div className="relative">
+                                    <Lock size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8B95A1]" />
+                                    <input
+                                        type="password"
+                                        required
+                                        value={loginPassword}
+                                        onChange={(e) => setLoginPassword(e.target.value)}
+                                        placeholder="비밀번호 입력"
+                                        className="w-full pl-9 pr-3 py-3 bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl text-[#191F28] placeholder-[#B0B8C1] outline-none focus:bg-white focus:border-[#E63946] font-bold text-sm"
+                                    />
+                                </div>
+                            </div>
+
+                            <button
+                                type="submit"
+                                disabled={loginLoading}
+                                className="w-full h-14 bg-[#E63946] hover:bg-[#D62839] text-white font-bold rounded-2xl transition shadow-md shadow-[#E63946]/25 active:scale-[0.98] disabled:opacity-50 mt-4 text-[16px] tracking-tight flex items-center justify-center gap-2"
+                            >
+                                {loginLoading ? '로그인 중...' : (isQRCheckin ? '로그인 및 자동 체크인' : '로그인')}
+                                <ArrowRight size={18} />
+                            </button>
+                        </form>
+                    </motion.div>
+                </div>
+            )}
+
+            {/* Duplicate User Selection Modal Overlay */}
+            {showDuplicatesModal && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-[#E5E8EB] space-y-4">
+                        <h2 className="text-lg font-extrabold text-[#191F28]">동명이인 선택</h2>
+                        <p className="text-xs text-[#4E5968]">동일한 이름을 가진 계정이 여러 개 존재합니다. 자신의 계정을 선택해주세요.</p>
+                        <div className="space-y-2 max-h-60 overflow-y-auto">
+                            {loginDuplicates.map((cand) => (
+                                <button
+                                    key={cand.id}
+                                    onClick={() => handleDuplicateSelect(cand)}
+                                    className="w-full p-3.5 bg-gray-50 hover:bg-red-50 border border-gray-200 hover:border-red-200 rounded-xl text-left flex justify-between items-center transition"
+                                >
+                                    <div>
+                                        <div className="font-bold text-sm text-[#191F28]">{cand.name}</div>
+                                        <div className="text-xs text-gray-500">{cand.school || '학교 미설정'}</div>
+                                    </div>
+                                    <ChevronRight size={16} className="text-gray-400" />
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
             {/* In-Page Direct Signup Modal Overlay */}
             {showSignupModal && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
@@ -624,9 +1214,11 @@ const GuestMobileWelcome = () => {
                         <div className="flex justify-between items-center border-b border-[#F2F4F6] pb-3">
                             <div>
                                 <h2 className="text-lg font-extrabold text-[#191F28]">
-                                    하이픈 정식 등록
+                                    센터 정식 등록
                                 </h2>
-                                <p className="text-[12px] text-[#8B95A1] mt-0.5 font-medium">회원가입 정보를 입력해 주세요</p>
+                                <p className="text-[12px] text-[#8B95A1] mt-0.5 font-medium">
+                                    {isQRCheckin ? '회원가입 완료 시 자동으로 체크인됩니다' : '회원가입 후 이용이 가능합니다'}
+                                </p>
                             </div>
                             <button onClick={() => setShowSignupModal(false)} className="p-2 text-[#8B95A1] hover:text-[#191F28] rounded-full bg-[#F2F4F6]">
                                 <X size={18} />
@@ -639,9 +1231,20 @@ const GuestMobileWelcome = () => {
                                 school: activeSession?.school || school || ''
                             }}
                             guestUserId={activeSession?.userId}
-                            onSuccess={() => {
+                            onSuccess={async (newSignedUser) => {
                                 setShowSignupModal(false);
-                                alert('회원가입이 성공적으로 완료되었습니다!');
+                                if (newSignedUser) {
+                                    if (isQRCheckin) {
+                                        localStorage.setItem('user', JSON.stringify(newSignedUser));
+                                        await performAutoCheckin(newSignedUser, locParam);
+                                    } else {
+                                        localStorage.setItem('user', JSON.stringify(newSignedUser));
+                                        await updateWebSessionPreferences(newSignedUser);
+                                        navigate('/student', { replace: true });
+                                    }
+                                } else {
+                                    alert('회원가입이 완료되었습니다! 로그인해 주세요.');
+                                }
                             }}
                         />
                     </div>
@@ -650,7 +1253,7 @@ const GuestMobileWelcome = () => {
 
             {/* Footer */}
             <footer className="py-4 text-center text-xs text-[#8B95A1] relative z-10 font-medium shrink-0">
-                © SCI CENTER • HAIFN Youth Space
+                © SCI CENTER • HAIFN & ENOUGH PLACE
             </footer>
         </div>
     );
