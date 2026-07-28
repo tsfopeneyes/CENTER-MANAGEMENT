@@ -629,7 +629,6 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
                     fetch(gsWebhookUrl, {
                         method: 'POST',
-                        mode: 'no-cors',
                         headers: { 'Content-Type': 'text/plain' },
                         body: JSON.stringify({
                             action: 'LINE_NOTIFY',
@@ -696,7 +695,6 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
                     fetch(gsWebhookUrl, {
                         method: 'POST',
-                        mode: 'no-cors',
                         headers: { 'Content-Type': 'text/plain' },
                         body: JSON.stringify({
                             action: 'LINE_NOTIFY',

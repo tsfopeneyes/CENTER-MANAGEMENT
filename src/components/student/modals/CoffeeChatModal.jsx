@@ -113,7 +113,6 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
                 try {
                     await fetch(gsWebhookUrl, {
                         method: 'POST',
-                        mode: 'no-cors',
                         headers: { 'Content-Type': 'text/plain' },
                         body: JSON.stringify({
                             action: 'LINE_NOTIFY',

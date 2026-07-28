@@ -48,7 +48,6 @@ export const sendCheckinNotification = async ({ userName, schoolName, locationNa
         if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
             fetch(gsWebhookUrl, {
                 method: 'POST',
-                mode: 'no-cors',
                 headers: { 'Content-Type': 'text/plain' },
                 body: JSON.stringify({
                     action: 'LINE_NOTIFY',
