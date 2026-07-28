@@ -35,10 +35,8 @@ import QRModal from '../components/student/modals/QRModal';
 import VerificationWriteModal from '../components/student/modals/VerificationWriteModal';
 import { useFCM } from '../hooks/useFCM';
 import ParticipantModal from '../components/admin/board/components/modals/ParticipantModal';
-import CoffeeChatModal from '../components/student/modals/CoffeeChatModal';
-import StudentCheckinSurveyModal from '../components/student/modals/StudentCheckinSurveyModal';
-import { useCoffeeChatRealtime } from '../hooks/useCoffeeChatRealtime';
-import { supabase } from '../supabaseClient';
+import StudentDashboardHeader from '../components/student/StudentDashboardHeader';
+import StudentDashboardNav from '../components/student/StudentDashboardNav';
 
 const StudentDashboard = () => {
     const hookData = useStudentDashboard();
