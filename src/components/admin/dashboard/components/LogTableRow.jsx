@@ -70,9 +70,19 @@ const LogTableRow = React.memo(({
                 </span>
             </td>
             <td className="p-3 font-mono text-xs text-blue-600 font-bold">{summary.durationStr}</td>
-            <td className="p-3 pr-6">
+            <td className="p-3">
                 <span className="text-xs text-gray-800 font-extrabold line-clamp-2 leading-tight" title={localPurpose}>
                     {localPurpose || '-'}
+                </span>
+            </td>
+            <td className="p-3">
+                <span className="text-xs text-emerald-800 font-bold line-clamp-2 leading-tight" title={initialNote.checkoutFeedback || '-'}>
+                    {initialNote.checkoutFeedback || '-'}
+                </span>
+            </td>
+            <td className="p-3 pr-6">
+                <span className="text-xs text-gray-500 font-medium line-clamp-1 leading-tight" title={localRemarks}>
+                    {localRemarks || '-'}
                 </span>
             </td>
         </tr>

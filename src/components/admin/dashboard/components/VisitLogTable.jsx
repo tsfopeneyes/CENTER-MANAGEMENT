@@ -127,7 +127,7 @@ const VisitLogTable = ({ hookData }) => {
                 <div>검색 결과: <span className="text-blue-600 font-extrabold text-sm">{filteredVisitSummaries.length}</span>건</div>
             </div>
 
-            <table className="w-full text-left border-collapse min-w-[1300px]">
+            <table className="w-full text-left border-collapse min-w-[1450px]">
                 <LogTableHeader
                     filteredVisitSummaries={filteredVisitSummaries}
                     selectedRows={selectedRows}

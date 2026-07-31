@@ -649,13 +649,18 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     } catch (e) {}
                 }
 
-                // Map checkin surveys by `${user_id}_${date}`
-                const surveyMap = {};
+                // Separate checkin surveys (CHECKIN) and checkout surveys (CHECKOUT) by `${user_id}_${date}`
+                const checkinSurveyMap = {};
+                const checkoutSurveyMap = {};
+
                 surveys.forEach(s => {
                     if (s.user_id && s.created_at) {
                         const kstDate = new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
                         const key = `${s.user_id}_${kstDate}`;
-                        if (!surveyMap[key]) {
+                        const isCheckout = s.survey_type === 'CHECKOUT';
+                        const targetMap = isCheckout ? checkoutSurveyMap : checkinSurveyMap;
+
+                        if (!targetMap[key]) {
                             let textParts = [];
                             if (Array.isArray(s.selections) && s.selections.length > 0) {
                                 const formattedSel = s.selections.map(item => {
@@ -667,63 +672,95 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                                 }
                             }
                             if (s.text_answer) {
-                                const prefix = s.mode === 'QUESTION_QA'
-                                    ? '[질문답변]'
-                                    : (s.mode === 'CHAT_SHOUTOUT' ? '[한마디]' : '[입력]');
+                                const prefix = isCheckout
+                                    ? '[퇴실소감]'
+                                    : (s.mode === 'QUESTION_QA' ? '[질문답변]' : (s.mode === 'CHAT_SHOUTOUT' ? '[한마디]' : '[입력]'));
                                 textParts.push(`${prefix} ${s.text_answer}`);
                             }
                             if (textParts.length > 0) {
-                                surveyMap[key] = textParts.join(' | ');
+                                targetMap[key] = textParts.join(' | ');
                             }
                         }
                     }
                 });
+
+                // Legacy Checkout Option Mapping Dictionary
+                const LEGACY_CHECKOUT_MAP = {
+                    '1': '교제 및 휴식',
+                    '2': '개인 할 일',
+                    '3': '프로그램 참여',
+                    '4': '스처쌤 만남',
+                    '5': '맛있는 거 먹기',
+                    '교제': '교제 및 휴식',
+                    '교재': '교제 및 휴식',
+                    '교제 및 휴식': '교제 및 휴식',
+                    '개인 할 일': '개인 할 일',
+                    '프로그램 참여': '프로그램 참여',
+                    '스처쌤 만남': '스처쌤 만남',
+                    '스처썜 만남': '스처쌤 만남',
+                    '맛있는 거 먹기': '맛있는 거 먹기'
+                };
+
+                const parseLegacyCheckoutFeedback = (str) => {
+                    if (!str) return '';
+                    const items = String(str).split(',').map(s => s.trim()).filter(Boolean);
+                    const converted = items.map(item => LEGACY_CHECKOUT_MAP[item]).filter(Boolean);
+                    if (converted.length === items.length && items.length > 0) {
+                        return [...new Set(converted)].join(', ');
+                    }
+                    return '';
+                };
 
                 const mapped = {};
                 for (const n of data) {
                     let corrected = false;
                     let newPurpose = n.purpose || '';
                     let newRemarks = n.remarks || '';
+                    let newCheckoutFeedback = checkoutText || n.checkout_feedback || '';
 
-                    const surveyText = surveyMap[`${n.user_id}_${n.visit_date}`];
-                    if (surveyText) {
-                        if (!newPurpose || newPurpose === '1' || newPurpose === '2' || newPurpose === '3' || newPurpose === '4' || newPurpose === '5' || newPurpose === '6') {
-                            newPurpose = surveyText;
-                            corrected = true;
+                    // 1. Populate Check-in Purpose from checkinSurveys if present or missing
+                    const checkinText = checkinSurveyMap[`${n.user_id}_${n.visit_date}`];
+                    if (checkinText) {
+                        newPurpose = checkinText;
+                    }
+
+                    // 2. Check if newRemarks or n.purpose contains LEGACY CHECKOUT survey data (e.g. "2", "2,1", "교제 및 휴식")
+                    const legacyCheckoutFromRemarks = parseLegacyCheckoutFeedback(newRemarks);
+                    const legacyCheckoutFromPurpose = parseLegacyCheckoutFeedback(n.purpose);
+
+                    if (legacyCheckoutFromRemarks) {
+                        if (!newCheckoutFeedback) {
+                            newCheckoutFeedback = legacyCheckoutFromRemarks;
                         }
-                        if (!newRemarks || newRemarks === '게스트 체크인' || newRemarks === '모바일 QR 체크인') {
-                            newRemarks = surveyText;
-                            corrected = true;
+                        newRemarks = '';
+                        corrected = true;
+                    }
+
+                    if (legacyCheckoutFromPurpose && !checkinText) {
+                        if (!newCheckoutFeedback) {
+                            newCheckoutFeedback = legacyCheckoutFromPurpose;
+                        }
+                        if (newPurpose === n.purpose) {
+                            newPurpose = '';
                         }
                     }
 
-                    if (newPurpose) {
-                        const parts = newPurpose.split(',').map(p => {
-                            let trimmed = p.trim();
-                            if (optionMap[trimmed]) {
-                                corrected = true;
-                                return optionMap[trimmed];
-                            }
-                            if (trimmed === '1') return '🍽️ 당 충전하며 쉬고 싶어요';
-                            if (trimmed === '2') return '🎲 아무 생각 없이 놀고 싶어요';
-                            if (trimmed === '3') return '☕ 누군가와 이야기하고 싶어요';
-                            if (trimmed === '4') return '🙏 기도하거나 예배하고 싶어요';
-                            if (trimmed === '5') return '📚 조용히 집중하고 싶어요';
-                            if (trimmed === '6') return '🤷 아직 잘 모르겠어요';
-                            if (trimmed === '교재' || trimmed === '교제') {
-                                corrected = true;
-                                return '교제 및 휴식';
-                            }
-                            if (trimmed === '스처썜 만남') {
-                                corrected = true;
-                                return '스처쌤 만남';
-                            }
-                            return trimmed;
-                        });
-                        newPurpose = parts.filter(Boolean).join(', ');
+                    // 3. Clear newRemarks if it duplicates checkinText or is an internal flag / raw number
+                    if (newRemarks && checkinText && newRemarks.includes(checkinText)) {
+                        newRemarks = '';
+                        corrected = true;
+                    }
+                    if (newRemarks === '모바일 QR 체크인' || newRemarks === '게스트 체크인') {
+                        newRemarks = '';
+                        corrected = true;
+                    }
+                    if (/^\d+(\s*,\s*\d+)*$/.test(newRemarks?.trim())) {
+                        newRemarks = '';
+                        corrected = true;
                     }
 
                     n.purpose = newPurpose;
+                    n.checkoutFeedback = newCheckoutFeedback;
                     n.remarks = newRemarks;
                     
                     if (corrected) {
@@ -733,9 +770,17 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                 }
 
                 // Also populate for survey entries that don't have a visit_note record yet
-                Object.entries(surveyMap).forEach(([key, surveyText]) => {
+                Object.entries(checkinSurveyMap).forEach(([key, surveyText]) => {
                     if (!mapped[key]) {
-                        mapped[key] = { purpose: surveyText, remarks: surveyText };
+                        mapped[key] = { purpose: surveyText, checkoutFeedback: checkoutSurveyMap[key] || '', remarks: '' };
+                    }
+                });
+
+                Object.entries(checkoutSurveyMap).forEach(([key, surveyText]) => {
+                    if (!mapped[key]) {
+                        mapped[key] = { purpose: checkinSurveyMap[key] || '', checkoutFeedback: surveyText, remarks: '' };
+                    } else if (!mapped[key].checkoutFeedback) {
+                        mapped[key].checkoutFeedback = surveyText;
                     }
                 });
 
