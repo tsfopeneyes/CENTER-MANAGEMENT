@@ -616,13 +616,38 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
     useEffect(() => {
         const fetchNotes = async () => {
             try {
-                const [notesRes, surveysRes] = await Promise.all([
+                const [notesRes, surveysRes, configRes] = await Promise.all([
                     supabase.from('visit_notes').select('*'),
-                    supabase.from('checkin_surveys').select('*').order('created_at', { ascending: false })
+                    supabase.from('checkin_surveys').select('*').order('created_at', { ascending: false }),
+                    supabase.from('notices').select('content').eq('category', 'SYSTEM').eq('title', 'CHECKIN_SURVEY_CONFIG').maybeSingle()
                 ]);
 
                 const data = notesRes.data || [];
                 const surveys = surveysRes.data || [];
+
+                // Default option ID to Label mapping dictionary
+                const optionMap = {
+                    '1': '🍽️ 당 충전하며 쉬고 싶어요',
+                    '2': '🎲 아무 생각 없이 놀고 싶어요',
+                    '3': '☕ 누군가와 이야기하고 싶어요',
+                    '4': '🙏 기도하거나 예배하고 싶어요',
+                    '5': '📚 조용히 집중하고 싶어요',
+                    '6': '🤷 아직 잘 모르겠어요'
+                };
+
+                // Merge custom admin settings from CHECKIN_SURVEY_CONFIG if present
+                if (configRes.data?.content) {
+                    try {
+                        const parsed = JSON.parse(configRes.data.content);
+                        if (Array.isArray(parsed.options)) {
+                            parsed.options.forEach(opt => {
+                                if (opt.id && opt.label) {
+                                    optionMap[String(opt.id)] = opt.emoji ? `${opt.emoji} ${opt.label}` : opt.label;
+                                }
+                            });
+                        }
+                    } catch (e) {}
+                }
 
                 // Map checkin surveys by `${user_id}_${date}`
                 const surveyMap = {};
@@ -633,10 +658,19 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                         if (!surveyMap[key]) {
                             let textParts = [];
                             if (Array.isArray(s.selections) && s.selections.length > 0) {
-                                textParts.push(s.selections.join(', '));
+                                const formattedSel = s.selections.map(item => {
+                                    const strItem = String(item).trim();
+                                    return optionMap[strItem] || strItem;
+                                }).filter(Boolean);
+                                if (formattedSel.length > 0) {
+                                    textParts.push(formattedSel.join(', '));
+                                }
                             }
                             if (s.text_answer) {
-                                textParts.push(`[입력] ${s.text_answer}`);
+                                const prefix = s.mode === 'QUESTION_QA'
+                                    ? '[질문답변]'
+                                    : (s.mode === 'CHAT_SHOUTOUT' ? '[한마디]' : '[입력]');
+                                textParts.push(`${prefix} ${s.text_answer}`);
                             }
                             if (textParts.length > 0) {
                                 surveyMap[key] = textParts.join(' | ');
@@ -653,7 +687,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
 
                     const surveyText = surveyMap[`${n.user_id}_${n.visit_date}`];
                     if (surveyText) {
-                        if (!newPurpose) {
+                        if (!newPurpose || newPurpose === '1' || newPurpose === '2' || newPurpose === '3' || newPurpose === '4' || newPurpose === '5' || newPurpose === '6') {
                             newPurpose = surveyText;
                             corrected = true;
                         }
@@ -666,6 +700,16 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     if (newPurpose) {
                         const parts = newPurpose.split(',').map(p => {
                             let trimmed = p.trim();
+                            if (optionMap[trimmed]) {
+                                corrected = true;
+                                return optionMap[trimmed];
+                            }
+                            if (trimmed === '1') return '🍽️ 당 충전하며 쉬고 싶어요';
+                            if (trimmed === '2') return '🎲 아무 생각 없이 놀고 싶어요';
+                            if (trimmed === '3') return '☕ 누군가와 이야기하고 싶어요';
+                            if (trimmed === '4') return '🙏 기도하거나 예배하고 싶어요';
+                            if (trimmed === '5') return '📚 조용히 집중하고 싶어요';
+                            if (trimmed === '6') return '🤷 아직 잘 모르겠어요';
                             if (trimmed === '교재' || trimmed === '교제') {
                                 corrected = true;
                                 return '교제 및 휴식';
