@@ -106,13 +106,12 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                     type: 'CHECKIN'
                 }]);
 
-                sendCheckinNotification({
+                sessionStorage.setItem('pending_checkin_notif', JSON.stringify({
                     userName: currentUser.name,
                     schoolName: currentUser.school,
                     locationName: locObj.name,
-                    isGuest: false,
-                    purposes: activePurposes
-                }).catch(e => console.error('Failed sendCheckinNotification:', e));
+                    isGuest: false
+                }));
             }
 
             // 3. Save visit notes for Admin Dashboard
@@ -230,12 +229,12 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 type: 'CHECKIN'
             }]).select('id, created_at');
 
-            sendCheckinNotification({
+            sessionStorage.setItem('pending_checkin_notif', JSON.stringify({
                 userName: currentUser.name,
                 schoolName: currentUser.school,
                 locationName: locObj.name,
                 isGuest: false
-            }).catch(e => console.error('Failed sendCheckinNotification:', e));
+            }));
 
             const insertedLog = insertedLogs?.[0];
 

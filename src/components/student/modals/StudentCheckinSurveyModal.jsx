@@ -76,9 +76,29 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
         }
     };
 
+    const handleCloseWithoutSubmitting = () => {
+        try {
+            const pendingNotif = sessionStorage.getItem('pending_checkin_notif');
+            if (pendingNotif) {
+                const parsed = JSON.parse(pendingNotif);
+                sendCheckinNotification({
+                    userName: parsed.userName || user?.name,
+                    schoolName: parsed.schoolName || user?.school,
+                    locationName: parsed.locationName || locationName || '하이픈',
+                    isGuest: parsed.isGuest || false,
+                    purposes: []
+                }).catch(e => console.error('Failed fallback checkin notification:', e));
+                sessionStorage.removeItem('pending_checkin_notif');
+            }
+        } catch (e) {
+            console.error('Failed handling fallback checkin notification on close:', e);
+        }
+        onClose(false);
+    };
+
     const handleConfirmSelection = async () => {
         if (!user?.id) {
-            onClose(false);
+            handleCloseWithoutSubmitting();
             return;
         }
 
@@ -125,29 +145,51 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
             }]);
 
             // 2. If Live Chat Shoutout is present & enabled, post to center_daily_chats
-            if ((mode === 'CHAT_SHOUTOUT' || mode === 'HYBRID') && shareToLiveChat && chatShoutoutText.trim()) {
-                const centerCode = (locationName && locationName.includes('이높')) ? '이높플레이스' : '하이픈';
-                await supabase.from('center_daily_chats').insert([{
+            const shoutoutText = chatShoutoutText.trim();
+            if (shoutoutText && shareToLiveChat) {
+                const centerCode = (locationName && (locationName.includes('이높') || locationName.includes('강서')))
+                    ? '이높플레이스'
+                    : (user?.school?.includes('강서') ? '이높플레이스' : '하이픈');
+                const validUserId = (user?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id))
+                    ? user.id
+                    : null;
+
+                const { error: chatErr } = await supabase.from('center_daily_chats').insert([{
                     center_code: centerCode,
-                    user_id: user.id,
+                    user_id: validUserId,
                     user_name: user.name || '익명',
                     user_avatar: user.profile_image_url || null,
                     user_role: '학생',
-                    message: `[👋 체크인 한마디] ${chatShoutoutText.trim()}`,
+                    message: `[👋 체크인 한마디] ${shoutoutText}`,
                     is_hidden: false,
                     report_count: 0
-                }]).catch(err => console.error('Failed to auto-post checkin shoutout to live chat:', err));
+                }]);
+
+                if (chatErr) {
+                    console.error('Failed to auto-post checkin shoutout to live chat:', chatErr);
+                }
             }
 
-            // 3. Trigger Realtime LINE / Discord Notification
+            // 3. Trigger Realtime LINE / Discord Notification with completed answer/shoutout/survey
+            let notifPurposes = [];
+            if (mode === 'SURVEY' || mode === 'HYBRID') {
+                notifPurposes = [...selectedLabels];
+            }
+            if ((mode === 'CHAT_SHOUTOUT' || mode === 'HYBRID') && chatShoutoutText.trim()) {
+                notifPurposes.push(`[체크인 한마디] ${chatShoutoutText.trim()}`);
+            } else if (mode === 'QUESTION_QA' && userAnswerText.trim()) {
+                notifPurposes.push(`[오늘의 질문 답변] ${userAnswerText.trim()}`);
+            }
+
             sendCheckinNotification({
                 userName: user.name,
                 schoolName: user.school,
                 locationName: locationName || '하이픈',
                 isGuest: false,
-                purposes: (mode === 'SURVEY' || mode === 'HYBRID') ? selectedLabels : [textAnswer || '입실']
+                purposes: notifPurposes
             }).catch(e => console.error('Failed to send checkin notification:', e));
 
+            sessionStorage.removeItem('pending_checkin_notif');
             sessionStorage.removeItem('pending_checkin_survey');
             sessionStorage.removeItem('require_checkin_survey');
             
@@ -200,7 +242,7 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                                 </p>
                             </div>
                             <button
-                                onClick={() => onClose(false)}
+                                onClick={handleCloseWithoutSubmitting}
                                 className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-400 hover:text-[#191F28] transition-colors shrink-0 cursor-pointer"
                             >
                                 <X size={16} />
