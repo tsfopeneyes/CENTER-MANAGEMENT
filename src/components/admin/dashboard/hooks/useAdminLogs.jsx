@@ -684,89 +684,57 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     }
                 });
 
-                // Legacy Checkout Option Mapping Dictionary
                 const LEGACY_CHECKOUT_MAP = {
                     '1': '교제 및 휴식',
                     '2': '개인 할 일',
                     '3': '프로그램 참여',
                     '4': '스처쌤 만남',
-                    '5': '맛있는 거 먹기',
-                    '교제': '교제 및 휴식',
-                    '교재': '교제 및 휴식',
-                    '교제 및 휴식': '교제 및 휴식',
-                    '개인 할 일': '개인 할 일',
-                    '프로그램 참여': '프로그램 참여',
-                    '스처쌤 만남': '스처쌤 만남',
-                    '스처썜 만남': '스처쌤 만남',
-                    '맛있는 거 먹기': '맛있는 거 먹기'
-                };
-
-                const parseLegacyCheckoutFeedback = (str) => {
-                    if (!str) return '';
-                    const items = String(str).split(',').map(s => s.trim()).filter(Boolean);
-                    const converted = items.map(item => LEGACY_CHECKOUT_MAP[item]).filter(Boolean);
-                    if (converted.length === items.length && items.length > 0) {
-                        return [...new Set(converted)].join(', ');
-                    }
-                    return '';
+                    '5': '맛있는 거 먹기'
                 };
 
                 const mapped = {};
                 for (const n of data) {
-                    let corrected = false;
-                    let newPurpose = n.purpose || '';
-                    let newRemarks = n.remarks || '';
-                    let newCheckoutFeedback = checkoutText || n.checkout_feedback || '';
+                    const key = `${n.user_id}_${n.visit_date}`;
+                    const checkinText = checkinSurveyMap[key];
+                    const checkoutText = checkoutSurveyMap[key];
 
-                    // 1. Populate Check-in Purpose from checkinSurveys if present or missing
-                    const checkinText = checkinSurveyMap[`${n.user_id}_${n.visit_date}`];
-                    if (checkinText) {
-                        newPurpose = checkinText;
+                    let purpose = checkinText || n.purpose || '';
+                    if (purpose && optionMap[purpose.trim()]) {
+                        purpose = optionMap[purpose.trim()];
                     }
 
-                    // 2. Check if newRemarks or n.purpose contains LEGACY CHECKOUT survey data (e.g. "2", "2,1", "교제 및 휴식")
-                    const legacyCheckoutFromRemarks = parseLegacyCheckoutFeedback(newRemarks);
-                    const legacyCheckoutFromPurpose = parseLegacyCheckoutFeedback(n.purpose);
+                    let checkoutFeedback = checkoutText || n.checkout_feedback || '';
+                    let remarks = n.remarks || '';
 
-                    if (legacyCheckoutFromRemarks) {
-                        if (!newCheckoutFeedback) {
-                            newCheckoutFeedback = legacyCheckoutFromRemarks;
+                    // If remarks contains raw legacy numbers like '2' or '5, 1', map them to checkoutFeedback
+                    if (remarks && /^\d+(\s*,\s*\d+)*$/.test(remarks.trim())) {
+                        const nums = remarks.split(',').map(s => s.trim());
+                        const mappedCheckout = nums.map(num => LEGACY_CHECKOUT_MAP[num]).filter(Boolean);
+                        if (mappedCheckout.length > 0 && !checkoutFeedback) {
+                            checkoutFeedback = mappedCheckout.join(', ');
                         }
-                        newRemarks = '';
-                        corrected = true;
+                        remarks = '';
                     }
 
-                    if (legacyCheckoutFromPurpose && !checkinText) {
-                        if (!newCheckoutFeedback) {
-                            newCheckoutFeedback = legacyCheckoutFromPurpose;
-                        }
-                        if (newPurpose === n.purpose) {
-                            newPurpose = '';
-                        }
+                    // Clean up remarks if it duplicates checkin purpose or internal flags
+                    if (remarks && purpose && (remarks === purpose || remarks.includes(purpose))) {
+                        remarks = '';
+                    }
+                    if (remarks === '모바일 QR 체크인' || remarks === '게스트 체크인') {
+                        remarks = '';
                     }
 
-                    // 3. Clear newRemarks if it duplicates checkinText or is an internal flag / raw number
-                    if (newRemarks && checkinText && newRemarks.includes(checkinText)) {
-                        newRemarks = '';
-                        corrected = true;
-                    }
-                    if (newRemarks === '모바일 QR 체크인' || newRemarks === '게스트 체크인') {
-                        newRemarks = '';
-                        corrected = true;
-                    }
-                    if (/^\d+(\s*,\s*\d+)*$/.test(newRemarks?.trim())) {
-                        newRemarks = '';
-                        corrected = true;
+                    // If purpose is guest referral path like '친구 / 지인 추천', move to remarks column
+                    if (purpose && (purpose.includes('지인 추천') || purpose.includes('추천'))) {
+                        remarks = purpose;
+                        purpose = '';
                     }
 
-                    n.purpose = newPurpose;
-                    n.checkoutFeedback = newCheckoutFeedback;
-                    n.remarks = newRemarks;
-                    
-                    if (corrected) {
-                        await supabase.from('visit_notes').update({ purpose: newPurpose, remarks: newRemarks }).eq('id', n.id);
-                    }
-                    mapped[`${n.user_id}_${n.visit_date}`] = n;
+                    n.purpose = purpose;
+                    n.checkoutFeedback = checkoutFeedback;
+                    n.remarks = remarks;
+
+                    mapped[key] = n;
                 }
 
                 // Also populate for survey entries that don't have a visit_note record yet
