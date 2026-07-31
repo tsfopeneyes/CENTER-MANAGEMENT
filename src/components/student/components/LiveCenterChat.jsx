@@ -754,12 +754,12 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                     return (
                                         <span
                                             key={index}
-                                            className={`font-bold ${
+                                            className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-black mx-0.5 align-baseline leading-none transition-colors ${
                                                 isMentioningMe
-                                                    ? 'text-amber-400 font-extrabold underline'
+                                                    ? 'bg-amber-400 text-slate-950 shadow-2xs'
                                                     : isMe
-                                                        ? 'text-blue-100 font-extrabold'
-                                                        : 'text-tossBlue font-extrabold'
+                                                        ? 'bg-white/25 text-white border border-white/40'
+                                                        : 'bg-blue-100/90 text-blue-700 border border-blue-200/80'
                                             }`}
                                         >
                                             {part}
@@ -772,7 +772,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
 
                         return (
                             <div
-                                className={`p-1.5 rounded-2xl text-[12px] leading-relaxed break-words font-medium shrink-0 max-w-full flex flex-col gap-1 ${
+                                className={`px-3 py-2 rounded-2xl text-[13px] leading-relaxed break-words font-medium shrink-0 max-w-full flex flex-col gap-1.5 overflow-visible ${
                                     isStaffOrMaster
                                         ? isMe
                                             ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-br-2xs shadow-toss-subtle'
@@ -791,7 +791,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                     />
                                 )}
                                 {m.message && (
-                                    <div className="px-1.5 py-0.5 whitespace-pre-wrap break-words">
+                                    <div className="px-0.5 py-0.5 whitespace-pre-wrap break-words leading-relaxed">
                                         {renderFormattedMessageText(m.message)}
                                     </div>
                                 )}

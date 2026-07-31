@@ -331,7 +331,7 @@ const AdminRentals = () => {
                                                 <span className="text-[11px] font-black text-[#3182f6] bg-[#3182f6]/10 px-2 py-0.5 rounded-md shrink-0">
                                                     {regionName}
                                                 </span>
-                                                <span className="text-xs font-bold text-gray-700 truncate max-w-[120px] flex items-center gap-1">
+                                                <span className="text-xs font-bold text-gray-700 flex items-center gap-1 shrink-0">
                                                     <MapPin size={12} className="text-gray-400" /> {spaceName}
                                                 </span>
                                             </div>
@@ -348,8 +348,8 @@ const AdminRentals = () => {
 
                                             <div className="hidden md:block text-gray-300">|</div>
 
-                                            <div className="flex-1 min-w-0 flex items-center gap-2">
-                                                <h4 className="text-sm font-black text-[#191f28] truncate">
+                                            <div className="flex-1 min-w-0 flex flex-wrap items-center gap-2">
+                                                <h4 className="text-sm font-black text-[#191f28] break-words">
                                                     {meetingName || '모임명 미지정'}
                                                 </h4>
                                                 <span className="text-xs text-gray-400 font-semibold shrink-0">
@@ -445,9 +445,9 @@ const AdminRentals = () => {
                                             
                                             <div className="space-y-2">
                                                 {notes && (
-                                                    <div className="p-3 bg-[#f8f9fa] rounded-xl text-[11px] text-[#4e5968] leading-relaxed border border-[#f2f4f6]">
-                                                        <strong className="text-[#333d4b] block mb-1 font-bold">기타 요청 사항</strong>
-                                                        {notes}
+                                                    <div className="p-3.5 bg-slate-50 rounded-2xl text-xs text-[#333d4b] leading-relaxed border border-slate-200/80">
+                                                        <strong className="text-slate-800 block mb-1 font-bold">기타 요청 사항</strong>
+                                                        <p className="whitespace-pre-wrap break-words">{notes}</p>
                                                     </div>
                                                 )}
                                                 {booking.status === 'PENDING' && rejectReason && (
