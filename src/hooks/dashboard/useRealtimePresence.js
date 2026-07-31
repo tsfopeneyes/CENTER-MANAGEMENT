@@ -33,11 +33,25 @@ export const useRealtimePresence = () => {
                 u.name === 'admin' || u.user_group === '관리자' || u.role === 'admin'
             ).map(u => u.id));
 
+            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            const nowKSTHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit' }));
+            const isPast22 = nowKSTHour >= 22;
+
             const userCurrentLocation = {};
             fetchedLogs.forEach(log => {
                 const key = log.user_id || `guest_${log.id}`;
-                if (log.type === 'CHECKIN' || log.type === 'MOVE') userCurrentLocation[key] = log.location_id;
-                else if (log.type === 'CHECKOUT') userCurrentLocation[key] = null;
+                const logDateStr = new Date(log.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                const isToday = logDateStr === todayStr;
+
+                if (log.type === 'CHECKIN' || log.type === 'MOVE') {
+                    if (isToday && !isPast22) {
+                        userCurrentLocation[key] = log.location_id;
+                    } else {
+                        userCurrentLocation[key] = null;
+                    }
+                } else if (log.type === 'CHECKOUT') {
+                    userCurrentLocation[key] = null;
+                }
             });
 
             const groupCounts = {};

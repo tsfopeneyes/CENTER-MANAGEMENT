@@ -615,12 +615,43 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
     // Auto-fetch notes on mount/change
     useEffect(() => {
         const fetchNotes = async () => {
-            const { data } = await supabase.from('visit_notes').select('*');
-            if (data) {
+            try {
+                const [notesRes, surveysRes] = await Promise.all([
+                    supabase.from('visit_notes').select('*'),
+                    supabase.from('checkin_surveys').select('*').order('created_at', { ascending: false })
+                ]);
+
+                const data = notesRes.data || [];
+                const surveys = surveysRes.data || [];
+
+                // Map checkin surveys by `${user_id}_${date}`
+                const surveyMap = {};
+                surveys.forEach(s => {
+                    if (s.user_id && s.created_at) {
+                        const kstDate = new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                        const key = `${s.user_id}_${kstDate}`;
+                        if (!surveyMap[key] && Array.isArray(s.selections) && s.selections.length > 0) {
+                            surveyMap[key] = s.selections.join(', ');
+                        }
+                    }
+                });
+
                 const mapped = {};
                 for (const n of data) {
                     let corrected = false;
                     let newPurpose = n.purpose || '';
+                    let newRemarks = n.remarks || '';
+
+                    const surveyText = surveyMap[`${n.user_id}_${n.visit_date}`];
+                    if (surveyText && (!newRemarks || newRemarks === '게스트 체크인' || newRemarks === '모바일 QR 체크인')) {
+                        newRemarks = surveyText;
+                        corrected = true;
+                    }
+                    if (surveyText && !newPurpose) {
+                        newPurpose = surveyText;
+                        corrected = true;
+                    }
+
                     if (newPurpose) {
                         const checkinPhrases = ['당 충전', '놀고 싶어요', '이야기하고 싶어요', '예배하고 싶어요', '집중하고 싶어요', '잘 모르겠어요'];
                         if (checkinPhrases.some(phrase => newPurpose.includes(phrase))) {
@@ -642,15 +673,26 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                             newPurpose = parts.filter(Boolean).join(', ');
                         }
                     }
+
+                    n.purpose = newPurpose;
+                    n.remarks = newRemarks;
                     
                     if (corrected) {
-                        n.purpose = newPurpose;
-                        // Perform DB correction asynchronously in the background
-                        await supabase.from('visit_notes').update({ purpose: newPurpose }).eq('id', n.id);
+                        await supabase.from('visit_notes').update({ purpose: newPurpose, remarks: newRemarks }).eq('id', n.id);
                     }
                     mapped[`${n.user_id}_${n.visit_date}`] = n;
                 }
+
+                // Also populate for survey entries that don't have a visit_note record yet
+                Object.entries(surveyMap).forEach(([key, surveyText]) => {
+                    if (!mapped[key]) {
+                        mapped[key] = { purpose: surveyText, remarks: surveyText };
+                    }
+                });
+
                 setVisitNotes(mapped);
+            } catch (err) {
+                console.error('Failed to fetch visit notes/surveys:', err);
             }
         };
         fetchNotes();

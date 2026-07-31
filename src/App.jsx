@@ -11,6 +11,8 @@ import PublicProgramDetail from './pages/PublicProgramDetail'
 import GuestMobileWelcome from './pages/GuestMobileWelcome'
 import { supabase } from './supabaseClient'
 
+import StandaloneLiveChat from './pages/StandaloneLiveChat'
+
 function App() {
     const [isLoading, setIsLoading] = useState(() => {
         // Only show splash screen if it hasn't been shown in this session
@@ -82,6 +84,10 @@ function App() {
                     </Route>
                     <Route path="admin" element={<AdminDashboard />} />
                     <Route path="kiosk" element={<Kiosk />} />
+                    <Route path="/live-chat" element={<StandaloneLiveChat />} />
+                    <Route path="/live-chat/:center" element={<StandaloneLiveChat />} />
+                    <Route path="/chat" element={<StandaloneLiveChat />} />
+                    <Route path="/chat/:center" element={<StandaloneLiveChat />} />
                 </Routes>
             </BrowserRouter>
         </>

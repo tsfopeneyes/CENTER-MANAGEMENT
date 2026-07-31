@@ -555,15 +555,18 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         .eq('visit_date', todayKst)
                         .maybeSingle();
 
+                    const noteText = finalVisitReason || '친구 / 지인 추천';
                     if (existingNote?.id) {
                         await supabase.from('visit_notes').update({
-                            remarks: '게스트 체크인'
+                            remarks: noteText,
+                            purpose: noteText
                         }).eq('id', existingNote.id);
                     } else {
                         await supabase.from('visit_notes').insert([{
                             user_id: guestUserId,
                             visit_date: todayKst,
-                            remarks: '게스트 체크인'
+                            remarks: noteText,
+                            purpose: noteText
                         }]);
                     }
 
@@ -672,8 +675,20 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
 
             if (error) throw error;
 
-            const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
-            const alertMessage = `[GUEST CHECK-OUT]\n👋 ${activeSession.name}(${activeSession.school}) 게스트님이 ${activeSession.locationName} 공간에서 퇴실하셨어요 (${timeStr})`;
+            let durationText = '';
+            if (activeSession.checkInTime) {
+                const checkinTime = new Date(activeSession.checkInTime).getTime();
+                const checkoutTime = new Date().getTime();
+                const durationMinutes = Math.max(1, Math.floor((checkoutTime - checkinTime) / (1000 * 60)));
+                const hours = Math.floor(durationMinutes / 60);
+                const mins = durationMinutes % 60;
+                const durationStr = hours > 0 ? `${hours}시간 ${mins}분` : `${mins}분`;
+                durationText = `\n🕑 ${durationStr} 이용`;
+            }
+
+            const schoolStr = activeSession.school || '-';
+            const locNameStr = activeSession.locationName || '공간';
+            const alertMessage = `[GUEST CHECK-OUT]\n👋 ${activeSession.name}(${schoolStr})님이 ${locNameStr}에서 나갔어요${durationText}`;
 
             try {
                 const { data: settings } = await supabase.from('global_settings').select('*');

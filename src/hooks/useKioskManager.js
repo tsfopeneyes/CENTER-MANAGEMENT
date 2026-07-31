@@ -100,11 +100,18 @@ const sendRealtimeNotification = async (user, type, location, metadata = {}) => 
             message = `[CHECK-IN]\n💌 ${user.name}님이 ${location.name}에 방문했어요 (${timeStr})${surveyText}`;
         }
     } else if (type === 'CHECKOUT') {
+        const isGuest = user.user_group === '게스트' || user.name?.includes('(guest)');
         const durationText = metadata.duration ? `\n🕑 ${metadata.duration} 이용` : '';
-        const purposeText = metadata.purpose 
-            ? `\n▪ ${metadata.purpose.split(', ').join('\n▪ ')}` 
-            : '';
-        message = `[CHECK-OUT]\n💙 ${user.name}님이 ${location.name}에서 나갔어요 (${timeStr})${durationText}${purposeText}`;
+        if (isGuest) {
+            const cleanName = user.name.replace('(guest)', '').trim();
+            const cleanSchool = user.school || '-';
+            message = `[GUEST CHECK-OUT]\n👋 ${cleanName}(${cleanSchool})님이 ${location.name}에서 나갔어요${durationText}`;
+        } else {
+            const purposeText = metadata.purpose 
+                ? `\n▪ ${metadata.purpose.split(', ').join('\n▪ ')}` 
+                : '';
+            message = `[CHECK-OUT]\n💙 ${user.name}님이 ${location.name}에서 나갔어요 (${timeStr})${durationText}${purposeText}`;
+        }
     } else {
         message = `🔔 [이동] ${user.name}님이 ${location.name}에 이동했습니다. (${timeStr})`;
     }
@@ -131,8 +138,8 @@ const sendRealtimeNotification = async (user, type, location, metadata = {}) => 
         }
     }
 
-    // 2. Send LINE Message via Google Apps Script Webhook (Only for CHECKIN at Haifn branch!)
-    if (type === 'CHECKIN' && lineToken && lineGroupId && gsWebhookUrl && isHaifnBranch) {
+    // 2. Send LINE Message via Google Apps Script Webhook (For CHECKIN & CHECKOUT at Haifn branch)
+    if ((type === 'CHECKIN' || type === 'CHECKOUT') && lineToken && lineGroupId && gsWebhookUrl && isHaifnBranch) {
         try {
             await fetch(gsWebhookUrl, {
                 method: 'POST',

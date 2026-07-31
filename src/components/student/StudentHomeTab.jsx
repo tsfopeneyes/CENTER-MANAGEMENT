@@ -9,6 +9,7 @@ import { startOfDay } from 'date-fns';
 import { TAB_NAMES, CATEGORIES } from '../../constants/appConstants';
 import { stripHtml } from '../../utils/textUtils';
 import TodayOperatingWidget from './components/TodayOperatingWidget';
+import LiveCenterChat from './components/LiveCenterChat';
 import CoffeeChatModal from './modals/CoffeeChatModal';
 import { supabase } from '../../supabaseClient';
 
@@ -363,12 +364,18 @@ const StudentHomeTab = ({
 
                 {/* 1. Today Operating Widget (includes weekly calendar and staff) */}
                 {!isGuest && (
-                    <TodayOperatingWidget 
-                        studentRegion={studentRegion} 
-                        adminSchedules={adminSchedules} 
-                        calendarCategories={calendarCategories} 
-                        onStaffClick={onStaffClick}
-                    />
+                    <>
+                        <TodayOperatingWidget 
+                            studentRegion={studentRegion} 
+                            adminSchedules={adminSchedules} 
+                            calendarCategories={calendarCategories} 
+                            onStaffClick={onStaffClick}
+                        />
+                        <LiveCenterChat 
+                            currentUser={user} 
+                            studentRegion={studentRegion} 
+                        />
+                    </>
                 )}
 
                 {/* 2. Notices (공지사항) */}

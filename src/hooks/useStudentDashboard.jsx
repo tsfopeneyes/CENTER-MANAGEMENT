@@ -185,31 +185,7 @@ export const useStudentDashboard = () => {
             setUser(parsedUser);
         }
 
-        // Fetch staff configuration to determine initial landing tab for staff
-        supabase
-            .from('notices')
-            .select('content')
-            .eq('category', 'SYSTEM')
-            .eq('title', 'STAFF_PRESENCE_CONFIG')
-            .maybeSingle()
-            .then(({ data }) => {
-                if (data && data.content) {
-                    try {
-                        const parsed = JSON.parse(data.content);
-                        if (parsed && typeof parsed === 'object') {
-                            if (parsedUser.is_master) {
-                                setActiveTab(TAB_NAMES.HOME);
-                            } else if (parsed["하이픈"]?.includes(parsedUser.id)) {
-                                setActiveTab(TAB_NAMES.HAIFN);
-                            } else if (parsed["이높플레이스"]?.includes(parsedUser.id)) {
-                                setActiveTab(TAB_NAMES.CENTER);
-                            }
-                        }
-                    } catch (e) {
-                        console.error('Failed to parse staff config for landing tab', e);
-                    }
-                }
-            });
+
 
         // Refresh User Data (to ensure profile image, is_leader, etc. are up-to-date)
         userApi.fetchUser(parsedUser.id).then(latestUser => {

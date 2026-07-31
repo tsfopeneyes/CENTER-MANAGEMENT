@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 
 export const useDashboardNotifications = (user) => {
@@ -60,6 +60,37 @@ export const useDashboardNotifications = (user) => {
             console.error('Error marking notifications read:', err);
         }
     }, [user, unreadNotificationCount, notifications]);
+
+    // Realtime subscription for incoming mention notifications
+    useEffect(() => {
+        if (!user?.id) return;
+
+        fetchNotifications(user);
+
+        const channelName = `app_notifs:${user.id}`;
+        const subscription = supabase
+            .channel(channelName)
+            .on('postgres_changes', {
+                event: 'INSERT',
+                schema: 'public',
+                table: 'app_notifications'
+            }, (payload) => {
+                const targetGroup = payload.new?.target_group;
+                if (
+                    targetGroup === '전체' ||
+                    targetGroup === user.user_group ||
+                    targetGroup === `USER_${user.id}` ||
+                    ((user.role === 'admin' || user.user_group === 'STAFF') && targetGroup === 'STAFF')
+                ) {
+                    fetchNotifications(user);
+                }
+            })
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(subscription);
+        };
+    }, [user?.id, fetchNotifications]);
 
     return {
         notifications,

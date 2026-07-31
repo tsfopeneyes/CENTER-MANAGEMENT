@@ -174,17 +174,32 @@ const AdminDashboard = () => {
             const { data: rawLogs } = await supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(logLimit);
             const logs = rawLogs ? [...rawLogs].reverse() : [];
 
+            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            const nowKSTHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit' }));
+            const isPast22 = nowKSTHour >= 22;
+
             const userCurrentLocation = {};
             logs?.forEach(log => {
                 const key = log.user_id || `guest_${log.id}`;
+                const logDateStr = new Date(log.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+                const isToday = logDateStr === todayStr;
+
                 if (log.type === 'CHECKIN') {
-                    userCurrentLocation[key] = { locId: log.location_id, checkInTime: log.created_at, isGuest: !log.user_id };
+                    if (isToday && !isPast22) {
+                        userCurrentLocation[key] = { locId: log.location_id, checkInTime: log.created_at, isGuest: !log.user_id };
+                    } else {
+                        userCurrentLocation[key] = null;
+                    }
                 } else if (log.type === 'MOVE') {
-                    userCurrentLocation[key] = { 
-                        locId: log.location_id, 
-                        checkInTime: userCurrentLocation[key]?.checkInTime || log.created_at,
-                        isGuest: !log.user_id
-                    };
+                    if (isToday && !isPast22) {
+                        userCurrentLocation[key] = { 
+                            locId: log.location_id, 
+                            checkInTime: userCurrentLocation[key]?.checkInTime || log.created_at,
+                            isGuest: !log.user_id
+                        };
+                    } else {
+                        userCurrentLocation[key] = null;
+                    }
                 } else if (log.type === 'CHECKOUT') {
                     userCurrentLocation[key] = null;
                 }

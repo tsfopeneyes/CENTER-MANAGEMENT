@@ -98,6 +98,13 @@ export const aggregateVisitSessions = (allLogs, users, locations, startDate = ''
 
         sessions.forEach(sessionLogs => {
             const firstCheckIn = sessionLogs.find(l => l.type === 'CHECKIN');
+            const hasMove = sessionLogs.some(l => l.type === 'MOVE');
+
+            // Skip orphan sessions that consist solely of a CHECKOUT log without any prior CHECKIN or MOVE
+            if (!firstCheckIn && !hasMove) {
+                return;
+            }
+
             const startAt = firstCheckIn ? new Date(firstCheckIn.created_at) : new Date(sessionLogs[0].created_at);
             
             const date = getKSTDateString(startAt);
@@ -112,11 +119,14 @@ export const aggregateVisitSessions = (allLogs, users, locations, startDate = ''
                 endAt = new Date(lastCheckOut.created_at);
             } else {
                 const todayStr = getKSTDateString(new Date().toISOString());
-                if (date === todayStr) {
+                const nowKSTHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit' }));
+                const isPast22Today = date === todayStr && nowKSTHour >= 22;
+
+                if (date === todayStr && !isPast22Today) {
                     endAt = new Date();
                     isActiveNow = true;
                 } else {
-                    // If checkout is missing on a past day, default to 22:00 of the same day (KST)
+                    // If checkout is missing on a past day or after 22:00, default to 22:00 of the check-in day (KST)
                     const startLocal = new Date(startAt);
                     const fallbackEnd = new Date(startLocal.getFullYear(), startLocal.getMonth(), startLocal.getDate(), 22, 0, 0, 0);
                     
