@@ -692,6 +692,16 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     '5': '맛있는 거 먹기'
                 };
 
+                const CHECKIN_PHRASES = [
+                    '당 충전', '놀고 싶어요', '이야기하고 싶어요', '예배하고 싶어요', '기도하거나',
+                    '집중하고 싶어요', '잘 모르겠어요', '🍽️', '🎲', '☕', '🙏', '📚', '🤷',
+                    '[질문답변]', '[한마디]', '[입력]'
+                ];
+
+                const LEGACY_CHECKOUT_PHRASES = [
+                    '교제 및 휴식', '교제', '교재', '개인 할 일', '프로그램 참여', '스처쌤 만남', '스처썜 만남', '맛있는 거 먹기'
+                ];
+
                 const mapped = {};
                 for (const n of data) {
                     const key = `${n.user_id}_${n.visit_date}`;
@@ -706,7 +716,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     let checkoutFeedback = checkoutText || n.checkout_feedback || '';
                     let remarks = n.remarks || '';
 
-                    // If remarks contains raw legacy numbers like '2' or '5, 1', map them to checkoutFeedback
+                    // 1. If remarks contains raw legacy numbers like '2' or '5, 1', map them to checkoutFeedback
                     if (remarks && /^\d+(\s*,\s*\d+)*$/.test(remarks.trim())) {
                         const nums = remarks.split(',').map(s => s.trim());
                         const mappedCheckout = nums.map(num => LEGACY_CHECKOUT_MAP[num]).filter(Boolean);
@@ -716,7 +726,26 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                         remarks = '';
                     }
 
-                    // Clean up remarks if it duplicates checkin purpose or internal flags
+                    // 2. Separate checkin phrases vs legacy checkout phrases inside purpose string
+                    const hasCheckinPhrase = CHECKIN_PHRASES.some(p => purpose.includes(p));
+                    const hasCheckoutPhrase = LEGACY_CHECKOUT_PHRASES.some(p => purpose.includes(p)) || /^[1-5](\s*,\s*[1-5])*$/.test(purpose.trim());
+
+                    if (hasCheckoutPhrase && !hasCheckinPhrase) {
+                        if (!checkoutFeedback) {
+                            checkoutFeedback = purpose;
+                        }
+                        purpose = ''; // Move out of checkin purpose column completely!
+                    } else if (hasCheckoutPhrase && hasCheckinPhrase) {
+                        const parts = purpose.split(',').map(s => s.trim());
+                        const checkinParts = parts.filter(p => CHECKIN_PHRASES.some(cp => p.includes(cp)));
+                        const checkoutParts = parts.filter(p => LEGACY_CHECKOUT_PHRASES.some(cop => p.includes(cop)));
+                        purpose = checkinParts.join(', ');
+                        if (!checkoutFeedback && checkoutParts.length > 0) {
+                            checkoutFeedback = checkoutParts.join(', ');
+                        }
+                    }
+
+                    // 3. Clean remarks column
                     if (remarks && purpose && (remarks === purpose || remarks.includes(purpose))) {
                         remarks = '';
                     }
