@@ -688,8 +688,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     '1': '교제 및 휴식',
                     '2': '개인 할 일',
                     '3': '프로그램 참여',
-                    '4': '스처쌤 만남',
-                    '5': '맛있는 거 먹기'
+                    '4': '스처쌤 만남'
                 };
 
                 const CHECKIN_PHRASES = [
@@ -699,7 +698,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                 ];
 
                 const LEGACY_CHECKOUT_PHRASES = [
-                    '교제 및 휴식', '교제', '교재', '개인 할 일', '프로그램 참여', '스처쌤 만남', '스처썜 만남', '맛있는 거 먹기'
+                    '개인 할 일', '프로그램 참여', '교제 및 휴식', '교제', '교재', '스처쌤 만남', '스처썜 만남'
                 ];
 
                 const mapped = {};
@@ -913,10 +912,16 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                 .eq('visit_date', updatedData.date)
                 .maybeSingle();
 
+            const notePayload = {
+                purpose: updatedData.purpose,
+                checkout_feedback: updatedData.checkoutFeedback,
+                remarks: updatedData.remarks
+            };
+
             if (existingNote) {
                 const { error } = await supabase
                     .from('visit_notes')
-                    .update({ purpose: updatedData.purpose, remarks: updatedData.remarks })
+                    .update(notePayload)
                     .eq('id', existingNote.id);
                 if (error) throw error;
             } else {
@@ -925,8 +930,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     .insert({
                         user_id: updatedData.userId,
                         visit_date: updatedData.date,
-                        purpose: updatedData.purpose,
-                        remarks: updatedData.remarks
+                        ...notePayload
                     });
                 if (error) throw error;
             }
@@ -936,6 +940,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                 [noteKey]: {
                     ...prev[noteKey],
                     purpose: updatedData.purpose,
+                    checkoutFeedback: updatedData.checkoutFeedback,
                     remarks: updatedData.remarks,
                     user_id: updatedData.userId,
                     visit_date: updatedData.date

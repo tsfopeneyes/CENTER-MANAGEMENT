@@ -1,6 +1,22 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Clock, BookOpen, AlertCircle, Map } from 'lucide-react';
 
+const standardCheckinOptions = [
+    '🍽️ 당 충전하며 쉬고 싶어요',
+    '🎲 아무 생각 없이 놀고 싶어요',
+    '☕ 누군가와 이야기하고 싶어요',
+    '🙏 기도하거나 예배하고 싶어요',
+    '📚 조용히 집중하고 싶어요',
+    '🤷 아직 잘 모르겠어요'
+];
+
+const standardCheckoutOptions = [
+    '개인 할 일',
+    '프로그램 참여',
+    '교제 및 휴식',
+    '스처쌤 만남'
+];
+
 const VisitLogEditModal = ({ isOpen, onClose, sessionLog, onSave, visitNotes, locations = [] }) => {
     const [date, setDate] = useState('');
     const [startTime, setStartTime] = useState('');
@@ -9,11 +25,15 @@ const VisitLogEditModal = ({ isOpen, onClose, sessionLog, onSave, visitNotes, lo
     // Spaces/Locations State
     const [selectedLocationIds, setSelectedLocationIds] = useState([]);
     
-    // Visit Purpose State
-    const standardPurposes = ['개인 할 일', '프로그램 참여', '교제 및 휴식', '스처쌤 만남'];
-    const [selectedPurposes, setSelectedPurposes] = useState([]);
-    const [hasCustomPurpose, setHasCustomPurpose] = useState(false);
-    const [customPurposeText, setCustomPurposeText] = useState('');
+    // Check-in Purpose State
+    const [selectedCheckinPurposes, setSelectedCheckinPurposes] = useState([]);
+    const [hasCustomCheckin, setHasCustomCheckin] = useState(false);
+    const [customCheckinText, setCustomCheckinText] = useState('');
+
+    // Checkout Feedback State
+    const [selectedCheckoutOptions, setSelectedCheckoutOptions] = useState([]);
+    const [hasCustomCheckout, setHasCustomCheckout] = useState(false);
+    const [customCheckoutText, setCustomCheckoutText] = useState('');
     
     const [remarks, setRemarks] = useState('');
     const [loading, setLoading] = useState(false);
@@ -35,39 +55,55 @@ const VisitLogEditModal = ({ isOpen, onClose, sessionLog, onSave, visitNotes, lo
             const note = visitNotes[noteKey] || {};
             setRemarks(note.remarks || '');
 
-            // Parse existing purpose string
-            const rawPurpose = note.purpose || '';
-            const parts = rawPurpose ? rawPurpose.split(',').map(p => p.trim()).filter(Boolean) : [];
-            
-            const matchedStandards = parts.filter(p => standardPurposes.includes(p));
-            const unmatchedCustom = parts.filter(p => !standardPurposes.includes(p));
+            // Parse Checkin Purpose
+            const rawPurpose = note.purpose || sessionLog.purpose || '';
+            const checkinParts = rawPurpose ? rawPurpose.split(',').map(p => p.trim()).filter(Boolean) : [];
+            const matchedCheckin = checkinParts.filter(p => standardCheckinOptions.includes(p));
+            const unmatchedCheckin = checkinParts.filter(p => !standardCheckinOptions.includes(p));
 
-            setSelectedPurposes(matchedStandards);
-            if (unmatchedCustom.length > 0) {
-                setHasCustomPurpose(true);
-                setCustomPurposeText(unmatchedCustom.join(', '));
+            setSelectedCheckinPurposes(matchedCheckin);
+            if (unmatchedCheckin.length > 0) {
+                setHasCustomCheckin(true);
+                setCustomCheckinText(unmatchedCheckin.join(', '));
             } else {
-                setHasCustomPurpose(false);
-                setCustomPurposeText('');
+                setHasCustomCheckin(false);
+                setCustomCheckinText('');
+            }
+
+            // Parse Checkout Feedback
+            const rawCheckout = note.checkoutFeedback || sessionLog.checkoutFeedback || '';
+            const checkoutParts = rawCheckout ? rawCheckout.split(',').map(p => p.trim()).filter(Boolean) : [];
+            const matchedCheckout = checkoutParts.filter(p => standardCheckoutOptions.includes(p));
+            const unmatchedCheckout = checkoutParts.filter(p => !standardCheckoutOptions.includes(p));
+
+            setSelectedCheckoutOptions(matchedCheckout);
+            if (unmatchedCheckout.length > 0) {
+                setHasCustomCheckout(true);
+                setCustomCheckoutText(unmatchedCheckout.join(', '));
+            } else {
+                setHasCustomCheckout(false);
+                setCustomCheckoutText('');
             }
         }
     }, [sessionLog, visitNotes]);
 
     if (!isOpen || !sessionLog) return null;
 
-    const handlePurposeToggle = (purpose) => {
-        setSelectedPurposes(prev =>
-            prev.includes(purpose)
-                ? prev.filter(p => p !== purpose)
-                : [...prev, purpose]
+    const handleCheckinToggle = (option) => {
+        setSelectedCheckinPurposes(prev =>
+            prev.includes(option) ? prev.filter(p => p !== option) : [...prev, option]
+        );
+    };
+
+    const handleCheckoutToggle = (option) => {
+        setSelectedCheckoutOptions(prev =>
+            prev.includes(option) ? prev.filter(p => p !== option) : [...prev, option]
         );
     };
 
     const handleLocationToggle = (locId) => {
         setSelectedLocationIds(prev =>
-            prev.includes(locId)
-                ? prev.filter(id => id !== locId)
-                : [...prev, locId]
+            prev.includes(locId) ? prev.filter(id => id !== locId) : [...prev, locId]
         );
     };
 
@@ -87,14 +123,16 @@ const VisitLogEditModal = ({ isOpen, onClose, sessionLog, onSave, visitNotes, lo
             return alert('사용 공간을 최소 하나 이상 선택해주세요.');
         }
 
-        // Combine purpose
-        const finalPurposes = [...selectedPurposes];
-        if (hasCustomPurpose && customPurposeText.trim()) {
-            finalPurposes.push(customPurposeText.trim());
+        // Combine Checkin Purposes
+        const finalCheckin = [...selectedCheckinPurposes];
+        if (hasCustomCheckin && customCheckinText.trim()) {
+            finalCheckin.push(customCheckinText.trim());
         }
 
-        if (finalPurposes.length === 0) {
-            return alert('방문 목적을 선택하거나 작성해주세요.');
+        // Combine Checkout Feedbacks
+        const finalCheckout = [...selectedCheckoutOptions];
+        if (hasCustomCheckout && customCheckoutText.trim()) {
+            finalCheckout.push(customCheckoutText.trim());
         }
 
         setLoading(true);
@@ -104,7 +142,8 @@ const VisitLogEditModal = ({ isOpen, onClose, sessionLog, onSave, visitNotes, lo
                 date,
                 startTime,
                 endTime: endTime === '' ? '-' : endTime,
-                purpose: finalPurposes.join(', '),
+                purpose: finalCheckin.join(', '),
+                checkoutFeedback: finalCheckout.join(', '),
                 remarks,
                 locationIds: selectedLocationIds
             });
@@ -208,55 +247,108 @@ const VisitLogEditModal = ({ isOpen, onClose, sessionLog, onSave, visitNotes, lo
                         </div>
                     </div>
 
-                    {/* Purpose */}
+                    {/* Check-in Purpose */}
                     <div>
-                        <label className="block text-[11px] font-bold text-gray-400 mb-2.5 flex items-center gap-1.5 uppercase tracking-wider">
-                            <BookOpen size={13} className="text-gray-450" /> 방문 목적 (중복 선택)
+                        <label className="block text-[11px] font-bold text-blue-600 mb-2.5 flex items-center gap-1.5 uppercase tracking-wider">
+                            <BookOpen size={13} className="text-blue-500" /> 입실 기록 / 방문 목적 (중복 선택)
                         </label>
                         <div className="grid grid-cols-2 gap-2 mb-3">
-                            {standardPurposes.map(purp => {
-                                const isChecked = selectedPurposes.includes(purp);
+                            {standardCheckinOptions.map(purp => {
+                                const isChecked = selectedCheckinPurposes.includes(purp);
                                 return (
                                     <button
                                         key={purp}
                                         type="button"
-                                        onClick={() => handlePurposeToggle(purp)}
-                                        className={`p-3 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
+                                        onClick={() => handleCheckinToggle(purp)}
+                                        className={`p-2.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
                                             isChecked
                                                 ? 'bg-blue-50 border-blue-200 text-blue-700 font-extrabold shadow-sm'
                                                 : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
                                         }`}
                                     >
-                                        <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${isChecked ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white'}`}>
+                                        <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${isChecked ? 'border-blue-600 bg-blue-600' : 'border-gray-300 bg-white'}`}>
                                             {isChecked && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                                         </div>
-                                        {purp}
+                                        <span className="truncate">{purp}</span>
                                     </button>
                                 );
                             })}
                             <button
                                 type="button"
-                                onClick={() => setHasCustomPurpose(prev => !prev)}
-                                className={`p-3 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
-                                    hasCustomPurpose
+                                onClick={() => setHasCustomCheckin(prev => !prev)}
+                                className={`p-2.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
+                                    hasCustomCheckin
                                         ? 'bg-orange-50 border-orange-200 text-orange-700 font-extrabold shadow-sm'
                                         : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
                                 }`}
                             >
-                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center ${hasCustomPurpose ? 'border-orange-500 bg-orange-500' : 'border-gray-300 bg-white'}`}>
-                                    {hasCustomPurpose && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${hasCustomCheckin ? 'border-orange-500 bg-orange-500' : 'border-gray-300 bg-white'}`}>
+                                    {hasCustomCheckin && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
                                 </div>
                                 기타 (직접 입력)
                             </button>
                         </div>
 
-                        {hasCustomPurpose && (
+                        {hasCustomCheckin && (
                             <input
                                 type="text"
-                                placeholder="방문 목적 직접 입력 (쉼표로 구분 가능)..."
-                                value={customPurposeText}
-                                onChange={(e) => setCustomPurposeText(e.target.value)}
+                                placeholder="입실 목적 직접 입력 (쉼표로 구분 가능)..."
+                                value={customCheckinText}
+                                onChange={(e) => setCustomCheckinText(e.target.value)}
                                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 focus:bg-white focus:border-blue-500 focus:ring-1 focus:ring-blue-100 outline-none transition-all animate-fade-in animate-duration-150"
+                            />
+                        )}
+                    </div>
+
+                    {/* Checkout Feedback */}
+                    <div>
+                        <label className="block text-[11px] font-bold text-emerald-600 mb-2.5 flex items-center gap-1.5 uppercase tracking-wider">
+                            <BookOpen size={13} className="text-emerald-500" /> 퇴실 기록 / 이용 소감 (중복 선택)
+                        </label>
+                        <div className="grid grid-cols-2 gap-2 mb-3">
+                            {standardCheckoutOptions.map(purp => {
+                                const isChecked = selectedCheckoutOptions.includes(purp);
+                                return (
+                                    <button
+                                        key={purp}
+                                        type="button"
+                                        onClick={() => handleCheckoutToggle(purp)}
+                                        className={`p-2.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
+                                            isChecked
+                                                ? 'bg-emerald-50 border-emerald-200 text-emerald-700 font-extrabold shadow-sm'
+                                                : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                        }`}
+                                    >
+                                        <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${isChecked ? 'border-emerald-600 bg-emerald-600' : 'border-gray-300 bg-white'}`}>
+                                            {isChecked && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                        </div>
+                                        <span className="truncate">{purp}</span>
+                                    </button>
+                                );
+                            })}
+                            <button
+                                type="button"
+                                onClick={() => setHasCustomCheckout(prev => !prev)}
+                                className={`p-2.5 rounded-xl text-xs font-bold transition-all border flex items-center gap-2 ${
+                                    hasCustomCheckout
+                                        ? 'bg-orange-50 border-orange-200 text-orange-700 font-extrabold shadow-sm'
+                                        : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'
+                                }`}
+                            >
+                                <div className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${hasCustomCheckout ? 'border-orange-500 bg-orange-500' : 'border-gray-300 bg-white'}`}>
+                                    {hasCustomCheckout && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+                                </div>
+                                기타 (직접 입력)
+                            </button>
+                        </div>
+
+                        {hasCustomCheckout && (
+                            <input
+                                type="text"
+                                placeholder="퇴실 소감 직접 입력 (쉼표로 구분 가능)..."
+                                value={customCheckoutText}
+                                onChange={(e) => setCustomCheckoutText(e.target.value)}
+                                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl text-sm font-bold text-gray-800 focus:bg-white focus:border-emerald-500 focus:ring-1 focus:ring-emerald-100 outline-none transition-all animate-fade-in animate-duration-150"
                             />
                         )}
                     </div>
