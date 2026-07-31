@@ -14,15 +14,27 @@ const DEFAULT_SURVEY_OPTIONS = [
 ];
 
 const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
+    const [mode, setMode] = useState('SURVEY'); // 'SURVEY' | 'QUESTION_QA' | 'CHAT_SHOUTOUT' | 'HYBRID'
     const [questionText, setQuestionText] = useState('오늘 센터에서 무엇을 하고 싶나요?');
+    const [qaQuestionText, setQaQuestionText] = useState('오늘 센터에서 꼭 해보고 싶은 한 가지는 무엇인가요?');
+    const [qaPlaceholderText, setQaPlaceholderText] = useState('자유롭게 입력해주세요');
+    const [chatPromptText, setChatPromptText] = useState('센터에 있는 친구들에게 반가운 한마디 인사를 남겨보세요!');
+    const [chatPlaceholderText, setChatPlaceholderText] = useState('예: 3층 빈백존 입성! 보드게임 할 사람 덤벼라~');
+
     const [optionsList, setOptionsList] = useState(DEFAULT_SURVEY_OPTIONS);
     const [selectedLabels, setSelectedLabels] = useState([DEFAULT_SURVEY_OPTIONS[0].label]);
+    const [userAnswerText, setUserAnswerText] = useState('');
+    const [chatShoutoutText, setChatShoutoutText] = useState('');
+    const [shareToLiveChat, setShareToLiveChat] = useState(true);
+
     const [step, setStep] = useState('SELECT'); // 'SELECT' | 'RESULT'
     const [isSubmitting, setIsSubmitting] = useState(false);
 
     React.useEffect(() => {
         if (!isOpen) return;
         setStep('SELECT');
+        setUserAnswerText('');
+        setChatShoutoutText('');
         const fetchConfig = async () => {
             try {
                 const { data } = await supabase
@@ -34,7 +46,12 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
 
                 if (data?.content) {
                     const parsed = JSON.parse(data.content);
+                    if (parsed.mode) setMode(parsed.mode);
                     if (parsed.question) setQuestionText(parsed.question);
+                    if (parsed.qaQuestion) setQaQuestionText(parsed.qaQuestion);
+                    if (parsed.qaPlaceholder) setQaPlaceholderText(parsed.qaPlaceholder);
+                    if (parsed.chatPrompt) setChatPromptText(parsed.chatPrompt);
+                    if (parsed.chatPlaceholder) setChatPlaceholderText(parsed.chatPlaceholder);
                     if (parsed.options && parsed.options.length > 0) {
                         setOptionsList(parsed.options);
                         setSelectedLabels([parsed.options[0].label]);
@@ -93,28 +110,55 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                 }]);
             }
 
-            // 1. Insert checkin_surveys record
+            // 1. Prepare Survey Answer Payload (survey_type: 'CHECKIN')
+            const textAnswer = mode === 'QUESTION_QA'
+                ? userAnswerText.trim()
+                : (mode === 'CHAT_SHOUTOUT' || mode === 'HYBRID' ? chatShoutoutText.trim() : null);
+
             await supabase.from('checkin_surveys').insert([{
                 user_id: user.id,
-                selections: selectedLabels,
+                survey_type: 'CHECKIN',
+                mode: mode,
+                selections: (mode === 'SURVEY' || mode === 'HYBRID') ? selectedLabels : null,
+                text_answer: textAnswer,
                 created_at: new Date().toISOString()
             }]);
 
-            // 2. Trigger Realtime LINE / Discord Notification
+            // 2. If Live Chat Shoutout is present & enabled, post to center_daily_chats
+            if ((mode === 'CHAT_SHOUTOUT' || mode === 'HYBRID') && shareToLiveChat && chatShoutoutText.trim()) {
+                const centerCode = (locationName && locationName.includes('이높')) ? '이높플레이스' : '하이픈';
+                await supabase.from('center_daily_chats').insert([{
+                    center_code: centerCode,
+                    user_id: user.id,
+                    user_name: user.name || '익명',
+                    user_avatar: user.profile_image_url || null,
+                    user_role: '학생',
+                    message: `[👋 체크인 한마디] ${chatShoutoutText.trim()}`,
+                    is_hidden: false,
+                    report_count: 0
+                }]).catch(err => console.error('Failed to auto-post checkin shoutout to live chat:', err));
+            }
+
+            // 3. Trigger Realtime LINE / Discord Notification
             sendCheckinNotification({
                 userName: user.name,
                 schoolName: user.school,
                 locationName: locationName || '하이픈',
                 isGuest: false,
-                purposes: selectedLabels
+                purposes: (mode === 'SURVEY' || mode === 'HYBRID') ? selectedLabels : [textAnswer || '입실']
             }).catch(e => console.error('Failed to send checkin notification:', e));
 
             sessionStorage.removeItem('pending_checkin_survey');
             sessionStorage.removeItem('require_checkin_survey');
-            setStep('RESULT');
+            
+            if (mode === 'SURVEY' || mode === 'HYBRID') {
+                setStep('RESULT');
+            } else {
+                onClose(true);
+            }
         } catch (err) {
             console.error('Failed to save student checkin survey:', err);
-            setStep('RESULT');
+            onClose(true);
         } finally {
             setIsSubmitting(false);
         }
@@ -138,13 +182,21 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                             <div className="space-y-1">
                                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-50 text-blue-600 text-xs font-bold">
                                     <Sparkles size={13} className="animate-pulse" />
-                                    <span>입실 방문 목적 선택</span>
+                                    <span>
+                                        {mode === 'QUESTION_QA'
+                                            ? '오늘의 체크인 질문'
+                                            : (mode === 'CHAT_SHOUTOUT' ? '체크인 한마디 남기기' : '입실 방문 목적 선택')}
+                                    </span>
                                 </div>
                                 <h3 className="text-xl font-extrabold text-[#191F28] tracking-tight">
-                                    {questionText}
+                                    {mode === 'QUESTION_QA'
+                                        ? qaQuestionText
+                                        : (mode === 'CHAT_SHOUTOUT' ? chatPromptText : questionText)}
                                 </h3>
                                 <p className="text-xs text-[#4E5968] font-medium">
-                                    원하시는 방문 목적을 자유롭게 선택해 주세요. (중복 선택 가능)
+                                    {mode === 'QUESTION_QA'
+                                        ? '자유롭게 생각이나 답변을 적어주세요!'
+                                        : (mode === 'CHAT_SHOUTOUT' ? '체크인 소식과 함께 라이브 채팅에 게시됩니다.' : '원하시는 방문 목적을 선택해 주세요.')}
                                 </p>
                             </div>
                             <button
@@ -155,36 +207,98 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                             </button>
                         </div>
 
-                        {/* Survey Option Buttons (TITLE ONLY) */}
-                        <div className="space-y-2.5 pt-1">
-                            {optionsList.map((opt) => {
-                                const isSelected = selectedLabels.includes(opt.label);
-                                return (
-                                    <button
-                                        key={opt.id}
-                                        type="button"
-                                        onClick={() => toggleOption(opt.label)}
-                                        className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
-                                            isSelected
-                                                ? 'bg-blue-50/70 border-blue-500 shadow-sm'
-                                                : 'bg-[#F9FAFB] border-gray-100 hover:border-gray-200'
-                                        }`}
-                                    >
-                                        <div className="flex items-center gap-3.5">
-                                            <span className="text-2xl shrink-0">{opt.emoji}</span>
-                                            <span className={`text-sm font-extrabold ${isSelected ? 'text-blue-600' : 'text-[#191F28]'}`}>
-                                                {opt.label}
-                                            </span>
-                                        </div>
-                                        <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors shrink-0 ${
-                                            isSelected ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white'
-                                        }`}>
-                                            {isSelected && <Check size={14} strokeWidth={3} />}
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        {/* QUESTION_QA Mode (Text Input) */}
+                        {mode === 'QUESTION_QA' && (
+                            <div className="space-y-3 pt-1">
+                                <textarea
+                                    value={userAnswerText}
+                                    onChange={(e) => setUserAnswerText(e.target.value)}
+                                    placeholder={qaPlaceholderText}
+                                    rows={4}
+                                    maxLength={200}
+                                    className="w-full p-4 bg-[#F9FAFB] border border-gray-200 rounded-2xl text-sm font-semibold text-[#191F28] placeholder-gray-400 outline-none focus:bg-white focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 transition-all resize-none"
+                                />
+                                <div className="text-right text-[11px] text-gray-400 font-medium">
+                                    {userAnswerText.length} / 200자
+                                </div>
+                            </div>
+                        )}
+
+                        {/* CHAT_SHOUTOUT Mode (Live Chat Message Input) */}
+                        {mode === 'CHAT_SHOUTOUT' && (
+                            <div className="space-y-3 pt-1">
+                                <textarea
+                                    value={chatShoutoutText}
+                                    onChange={(e) => setChatShoutoutText(e.target.value)}
+                                    placeholder={chatPlaceholderText}
+                                    rows={3}
+                                    maxLength={150}
+                                    className="w-full p-4 bg-[#F9FAFB] border border-gray-200 rounded-2xl text-sm font-semibold text-[#191F28] placeholder-gray-400 outline-none focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all resize-none"
+                                />
+                                <div className="flex items-center justify-between text-xs">
+                                    <label className="flex items-center gap-2 cursor-pointer font-bold text-gray-600">
+                                        <input
+                                            type="checkbox"
+                                            checked={shareToLiveChat}
+                                            onChange={(e) => setShareToLiveChat(e.target.checked)}
+                                            className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
+                                        />
+                                        <span>라이브 채팅창에 한마디 공유하기</span>
+                                    </label>
+                                    <span className="text-[11px] text-gray-400 font-medium">{chatShoutoutText.length} / 150자</span>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* SURVEY or HYBRID Mode */}
+                        {(mode === 'SURVEY' || mode === 'HYBRID') && (
+                            <>
+                                <div className="space-y-2.5 pt-1">
+                                    {optionsList.map((opt) => {
+                                        const isSelected = selectedLabels.includes(opt.label);
+                                        return (
+                                            <button
+                                                key={opt.id}
+                                                type="button"
+                                                onClick={() => toggleOption(opt.label)}
+                                                className={`w-full p-4 rounded-2xl border text-left flex items-center justify-between transition-all cursor-pointer ${
+                                                    isSelected
+                                                        ? 'bg-blue-50/70 border-blue-500 shadow-sm'
+                                                        : 'bg-[#F9FAFB] border-gray-100 hover:border-gray-200'
+                                                }`}
+                                            >
+                                                <div className="flex items-center gap-3.5">
+                                                    <span className="text-2xl shrink-0">{opt.emoji}</span>
+                                                    <span className={`text-sm font-extrabold ${isSelected ? 'text-blue-600' : 'text-[#191F28]'}`}>
+                                                        {opt.label}
+                                                    </span>
+                                                </div>
+                                                <div className={`w-6 h-6 rounded-full flex items-center justify-center transition-colors shrink-0 ${
+                                                    isSelected ? 'bg-blue-600 text-white' : 'border border-gray-300 bg-white'
+                                                }`}>
+                                                    {isSelected && <Check size={14} strokeWidth={3} />}
+                                                </div>
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+
+                                {mode === 'HYBRID' && (
+                                    <div className="pt-3 border-t border-gray-100 space-y-2">
+                                        <label className="block text-xs font-bold text-gray-700">
+                                            💬 친구들에게 한마디 남기기 (선택)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={chatShoutoutText}
+                                            onChange={(e) => setChatShoutoutText(e.target.value)}
+                                            placeholder={chatPlaceholderText}
+                                            className="w-full px-3.5 py-2.5 bg-[#F9FAFB] border border-gray-200 rounded-xl text-xs font-semibold text-gray-800 outline-none focus:bg-white focus:border-blue-500"
+                                        />
+                                    </div>
+                                )}
+                            </>
+                        )}
 
                         {/* Submit Action Button */}
                         <button
@@ -192,7 +306,7 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                             disabled={isSubmitting}
                             className="w-full py-4 bg-[#3182F6] hover:bg-[#1B64DA] text-white font-extrabold rounded-2xl shadow-[0_4px_16px_rgba(49,130,246,0.3)] active:scale-[0.98] transition-all text-base tracking-tight cursor-pointer disabled:opacity-50"
                         >
-                            {isSubmitting ? '저장 중...' : '선택 완료'}
+                            {isSubmitting ? '저장 중...' : '입실 완료하기'}
                         </button>
                     </>
                 ) : (

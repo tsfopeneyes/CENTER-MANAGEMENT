@@ -630,8 +630,17 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     if (s.user_id && s.created_at) {
                         const kstDate = new Date(s.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
                         const key = `${s.user_id}_${kstDate}`;
-                        if (!surveyMap[key] && Array.isArray(s.selections) && s.selections.length > 0) {
-                            surveyMap[key] = s.selections.join(', ');
+                        if (!surveyMap[key]) {
+                            let textParts = [];
+                            if (Array.isArray(s.selections) && s.selections.length > 0) {
+                                textParts.push(s.selections.join(', '));
+                            }
+                            if (s.text_answer) {
+                                textParts.push(`[입력] ${s.text_answer}`);
+                            }
+                            if (textParts.length > 0) {
+                                surveyMap[key] = textParts.join(' | ');
+                            }
                         }
                     }
                 });
@@ -643,35 +652,31 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     let newRemarks = n.remarks || '';
 
                     const surveyText = surveyMap[`${n.user_id}_${n.visit_date}`];
-                    if (surveyText && (!newRemarks || newRemarks === '게스트 체크인' || newRemarks === '모바일 QR 체크인')) {
-                        newRemarks = surveyText;
-                        corrected = true;
-                    }
-                    if (surveyText && !newPurpose) {
-                        newPurpose = surveyText;
-                        corrected = true;
+                    if (surveyText) {
+                        if (!newPurpose) {
+                            newPurpose = surveyText;
+                            corrected = true;
+                        }
+                        if (!newRemarks || newRemarks === '게스트 체크인' || newRemarks === '모바일 QR 체크인') {
+                            newRemarks = surveyText;
+                            corrected = true;
+                        }
                     }
 
                     if (newPurpose) {
-                        const checkinPhrases = ['당 충전', '놀고 싶어요', '이야기하고 싶어요', '예배하고 싶어요', '집중하고 싶어요', '잘 모르겠어요'];
-                        if (checkinPhrases.some(phrase => newPurpose.includes(phrase))) {
-                            newPurpose = '';
-                            corrected = true;
-                        } else {
-                            const parts = newPurpose.split(',').map(p => {
-                                let trimmed = p.trim();
-                                if (trimmed === '교재' || trimmed === '교제') {
-                                    corrected = true;
-                                    return '교제 및 휴식';
-                                }
-                                if (trimmed === '스처썜 만남') {
-                                    corrected = true;
-                                    return '스처쌤 만남';
-                                }
-                                return trimmed;
-                            });
-                            newPurpose = parts.filter(Boolean).join(', ');
-                        }
+                        const parts = newPurpose.split(',').map(p => {
+                            let trimmed = p.trim();
+                            if (trimmed === '교재' || trimmed === '교제') {
+                                corrected = true;
+                                return '교제 및 휴식';
+                            }
+                            if (trimmed === '스처썜 만남') {
+                                corrected = true;
+                                return '스처쌤 만남';
+                            }
+                            return trimmed;
+                        });
+                        newPurpose = parts.filter(Boolean).join(', ');
                     }
 
                     n.purpose = newPurpose;
