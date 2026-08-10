@@ -302,7 +302,7 @@ const UserEditModal = ({
     const adminUser = JSON.parse(localStorage.getItem('admin_user')) || {};
 
     return (
-        <div onClick={handleBackdropClick} className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4 animate-fade-in">
+        <div onClick={handleBackdropClick} className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 animate-fade-in">
             <div className="bg-white w-full max-w-sm rounded-2xl shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
                 <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
                     <h3 className="font-bold text-gray-800">회원 카드</h3>
@@ -493,7 +493,6 @@ const UserEditModal = ({
                                     ) : participatedPrograms.length > 0 ? (
                                         <div className="space-y-2 max-h-48 overflow-y-auto custom-scrollbar pr-1">
                                             {participatedPrograms.map(p => {
-                                                const feedback = userFeedbacks.find(f => f.notice_id === p.id);
                                                 return (
                                                     <div key={p.id} className="bg-white p-2.5 rounded-lg shadow-sm border border-blue-50 flex flex-col gap-2">
                                                         <div className="flex justify-between items-start gap-2">
@@ -508,23 +507,6 @@ const UserEditModal = ({
                                                                 출석완료
                                                             </div>
                                                         </div>
-                                                        
-                                                        {feedback ? (
-                                                            <div className="bg-gray-50 rounded-md p-2 text-[10px] space-y-1">
-                                                                 <div className="flex items-center gap-1 font-bold text-yellow-600">
-                                                                    <Star size={10} className="fill-yellow-400 text-yellow-400" />
-                                                                    <span>만족도: {feedback.q3_satisfaction}점</span>
-                                                                </div>
-                                                                <div className="text-gray-600 leading-snug break-all line-clamp-2">
-                                                                    "{feedback.q8_additional_comments || feedback.q2_experience || '남긴 코멘트가 없습니다.'}"
-                                                                </div>
-                                                            </div>
-                                                        ) : (
-                                                            <div className="flex items-center gap-1 text-[10px] text-gray-400 pl-1">
-                                                                <MessageSquare size={10} />
-                                                                <span>작성된 리뷰 없음</span>
-                                                            </div>
-                                                        )}
                                                     </div>
                                                 );
                                             })}

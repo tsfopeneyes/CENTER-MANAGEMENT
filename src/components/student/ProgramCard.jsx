@@ -51,15 +51,15 @@ const ProgramCard = ({ program, onClick, compact = false }) => {
     return (
         <div
             onClick={() => onClick(program)}
-            className={`group bg-white overflow-hidden shadow-toss-standard hover:shadow-toss-elevated transition-all duration-300 active:scale-[0.98] cursor-pointer flex flex-col h-full transform-gpu isolate border-none ${compact ? 'rounded-toss-lg' : 'rounded-toss-xl'}`}
+            className={`group bg-white overflow-hidden shadow-toss-standard hover:shadow-toss-elevated transition-all duration-300 active:scale-[0.98] cursor-pointer flex flex-col h-full border-none ${compact ? 'rounded-toss-lg' : 'rounded-toss-xl'}`}
         >
             {/* Thumbnail Section */}
-            <div className={`relative aspect-square overflow-hidden bg-tossGrey50 border-b border-tossGrey100/50 transform-gpu backface-hidden`}>
+            <div className={`relative aspect-square overflow-hidden bg-tossGrey50 border-b border-tossGrey100/50 ${compact ? 'rounded-t-toss-lg' : 'rounded-t-toss-xl'}`}>
                 {thumb ? (
                     <img
                         src={thumb}
                         alt={program.title}
-                        className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110 will-change-transform transform-gpu"
+                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
                     />
                 ) : (
                     <div className="w-full h-full flex items-center justify-center bg-tossBlueLight text-tossBlue/30">

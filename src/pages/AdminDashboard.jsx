@@ -169,8 +169,8 @@ const AdminDashboard = () => {
             }
             setCheckinSurveys(surveyDataList);
 
-            // Stats Calculation - Increase limit for initial load and allow full fetch for statistics
-            const logLimit = isFullFetch ? 10000 : 3000;
+            // Stats Calculation - Limit initial log fetch dynamically for speed
+            const logLimit = activeMenu === 'STATISTICS' || isFullFetch ? 10000 : 2000;
             const { data: rawLogs } = await supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(logLimit);
             const logs = rawLogs ? [...rawLogs].reverse() : [];
 
@@ -235,18 +235,20 @@ const AdminDashboard = () => {
 
             todayLogs.forEach(log => {
                 if (log.location_id && vStats[log.location_id] !== undefined) {
-                    if (log.type === 'GUEST_ENTRY') {
-                        vStats[log.location_id]++;
-                    } else if ((log.type === 'CHECKIN' || log.type === 'MOVE') && (!log.user_id || !adminIdsSet.has(log.user_id))) {
-                        const visitorKey = log.user_id || `guest_${log.id}`;
+                    const isNotAdmin = !log.user_id || !adminIdsSet.has(log.user_id);
+                    if (isNotAdmin && (log.type === 'CHECKIN' || log.type === 'MOVE' || log.type === 'GUEST_ENTRY')) {
+                        const userObj = (userData || []).find(u => u.id === log.user_id);
+                        const visitorKey = log.user_id 
+                            ? log.user_id 
+                            : (userObj?.name ? userObj.name : (log.metadata?.guest_name ? `guest_${log.metadata.guest_name}` : `guest_${log.id}`));
                         locVisitors[log.location_id].add(visitorKey);
                     }
                 }
             });
 
-            // Merge student sets into counts
+            // Set unique visitor count per location
             Object.keys(locVisitors).forEach(locId => {
-                vStats[locId] += locVisitors[locId].size;
+                vStats[locId] = locVisitors[locId].size;
             });
 
             setZoneStats(zStats);

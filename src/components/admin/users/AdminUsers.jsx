@@ -19,6 +19,7 @@ const AdminUsers = ({ users, allLogs, locations, fetchData }) => {
         filterGroup, setFilterGroup,
         excludeLeaders, setExcludeLeaders,
         showOnlyNonSchoolChurch, setShowOnlyNonSchoolChurch,
+        showOnlyNew3Months, setShowOnlyNew3Months,
         selectedUserIds, setSelectedUserIds,
         bulkTargetGroup, setBulkTargetGroup,
         sendingBulk,
@@ -45,6 +46,7 @@ const AdminUsers = ({ users, allLogs, locations, fetchData }) => {
                 filterGroup={filterGroup} setFilterGroup={setFilterGroup}
                 excludeLeaders={excludeLeaders} setExcludeLeaders={setExcludeLeaders}
                 showOnlyNonSchoolChurch={showOnlyNonSchoolChurch} setShowOnlyNonSchoolChurch={setShowOnlyNonSchoolChurch}
+                showOnlyNew3Months={showOnlyNew3Months} setShowOnlyNew3Months={setShowOnlyNew3Months}
                 filteredUsers={filteredUsers}
                 setNotificationModalOpen={setNotificationModalOpen}
                 fetchData={fetchData}

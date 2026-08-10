@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAdminStatus } from './hooks/useAdminStatus';
 
 // Sub Components
@@ -6,10 +6,11 @@ import AdminStatusHeader from './components/AdminStatusHeader';
 import ZoneCards from './components/ZoneCards';
 import RealtimeActiveUsers from './components/RealtimeActiveUsers';
 import ZoneDetailModal from './components/ZoneDetailModal';
+import UserEditModal from '../users/modals/UserEditModal';
 
 const AdminStatus = ({
-    users,
-    locations,
+    users = [],
+    locations = [],
     locationGroups = [],
     zoneStats,
     currentLocations,
@@ -25,6 +26,8 @@ const AdminStatus = ({
     visitNotes,
     surveyConfig
 }) => {
+    const [selectedUserForModal, setSelectedUserForModal] = useState(null);
+
     const {
         locationTab, setLocationTab,
         zoneDetailModal, setZoneDetailModal,
@@ -36,6 +39,12 @@ const AdminStatus = ({
         activeUsersList,
         handleZoneClick
     } = useAdminStatus({ users, locations, locationGroups, zoneStats, currentLocations, dailyVisitStats, allLogs });
+
+    const handleUserClick = (targetUser) => {
+        if (!targetUser) return;
+        const fullUser = users.find(u => u.id === targetUser.id || String(u.id) === String(targetUser.id)) || targetUser;
+        setSelectedUserForModal(fullUser);
+    };
 
     return (
         <div className="space-y-4 md:space-y-6 animate-fade-in-up">
@@ -67,6 +76,7 @@ const AdminStatus = ({
                 checkinSurveys={checkinSurveys}
                 visitNotes={visitNotes}
                 surveyConfig={surveyConfig}
+                onUserClick={handleUserClick}
             />
 
             <ZoneDetailModal
@@ -75,7 +85,17 @@ const AdminStatus = ({
                 handleForceCheckout={handleForceCheckout}
                 checkinSurveys={checkinSurveys}
                 surveyConfig={surveyConfig}
+                onUserClick={handleUserClick}
             />
+
+            {selectedUserForModal && (
+                <UserEditModal
+                    editingUser={selectedUserForModal}
+                    setEditingUser={setSelectedUserForModal}
+                    fetchData={fetchData}
+                    locations={locations}
+                />
+            )}
         </div>
     );
 };

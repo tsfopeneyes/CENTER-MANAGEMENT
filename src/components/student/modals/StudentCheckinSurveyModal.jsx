@@ -25,7 +25,6 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
     const [selectedLabels, setSelectedLabels] = useState([DEFAULT_SURVEY_OPTIONS[0].label]);
     const [userAnswerText, setUserAnswerText] = useState('');
     const [chatShoutoutText, setChatShoutoutText] = useState('');
-    const [shareToLiveChat, setShareToLiveChat] = useState(true);
 
     const [step, setStep] = useState('SELECT'); // 'SELECT' | 'RESULT'
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -144,9 +143,9 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                 created_at: new Date().toISOString()
             }]);
 
-            // 2. If Live Chat Shoutout is present & enabled, post to center_daily_chats
+            // 2. If Live Chat Shoutout is present, post to center_daily_chats
             const shoutoutText = chatShoutoutText.trim();
-            if (shoutoutText && shareToLiveChat) {
+            if (shoutoutText) {
                 const centerCode = (locationName && (locationName.includes('이높') || locationName.includes('강서')))
                     ? '이높플레이스'
                     : (user?.school?.includes('강서') ? '이높플레이스' : '하이픈');
@@ -160,7 +159,7 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                     user_name: user.name || '익명',
                     user_avatar: user.profile_image_url || null,
                     user_role: '학생',
-                    message: `[👋 체크인 한마디] ${shoutoutText}`,
+                    message: `[CHECK-IN] ${shoutoutText}`,
                     is_hidden: false,
                     report_count: 0
                 }]);
@@ -277,17 +276,8 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                                     maxLength={150}
                                     className="w-full p-4 bg-[#F9FAFB] border border-gray-200 rounded-2xl text-sm font-semibold text-[#191F28] placeholder-gray-400 outline-none focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 transition-all resize-none"
                                 />
-                                <div className="flex items-center justify-between text-xs">
-                                    <label className="flex items-center gap-2 cursor-pointer font-bold text-gray-600">
-                                        <input
-                                            type="checkbox"
-                                            checked={shareToLiveChat}
-                                            onChange={(e) => setShareToLiveChat(e.target.checked)}
-                                            className="w-4 h-4 text-emerald-600 rounded border-gray-300 focus:ring-emerald-500"
-                                        />
-                                        <span>라이브 채팅창에 한마디 공유하기</span>
-                                    </label>
-                                    <span className="text-[11px] text-gray-400 font-medium">{chatShoutoutText.length} / 150자</span>
+                                <div className="text-right text-[11px] text-gray-400 font-medium">
+                                    {chatShoutoutText.length} / 150자
                                 </div>
                             </div>
                         )}

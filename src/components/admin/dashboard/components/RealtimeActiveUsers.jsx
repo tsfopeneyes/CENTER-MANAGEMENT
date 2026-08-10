@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import UserAvatar from '../../../common/UserAvatar';
 
 const RealtimeActiveUsers = ({
-    activeUsersList,
+    activeUsersList = [],
     handleForceCheckout,
     checkinSurveys = [],
-    visitNotes = {},
-    surveyConfig
+    surveyConfig,
+    onUserClick
 }) => {
     const [currentTime, setCurrentTime] = useState(new Date());
 
@@ -54,7 +54,6 @@ const RealtimeActiveUsers = ({
             return trimmed;
         };
 
-        // STRICTLY check checkin_surveys table created ON OR AFTER current checkInTime (KST)
         const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
         const userCheckinTime = user.checkInTime ? new Date(user.checkInTime).getTime() : 0;
 
@@ -97,7 +96,7 @@ const RealtimeActiveUsers = ({
                                     <th className="p-6 pl-10">이름</th>
                                     <th className="p-6">현재 위치</th>
                                     <th className="p-6">입실 시간</th>
-                                    <th className="p-6">설문 선택</th>
+                                    <th className="p-6">방문 목적</th>
                                     <th className="p-6">학교</th>
                                     <th className="p-6">그룹</th>
                                     <th className="p-6 pr-10 text-right">관리</th>
@@ -106,13 +105,23 @@ const RealtimeActiveUsers = ({
                             <tbody className="divide-y divide-gray-50 text-sm">
                                 {activeUsersList.map(user => {
                                     const selectionsList = getUserSurveySelections(user);
+                                    const cleanNameStr = (user.name || '')
+                                        .replace('(guest)', '')
+                                        .replace(/@/g, '')
+                                        .replace(/\(guest\)/gi, '')
+                                        .replace(/\(게스트\)/gi, '')
+                                        .trim() || '게스트';
 
                                     return (
                                         <tr key={user.id} className="hover:bg-blue-50/20 transition-all duration-300 group">
                                             <td className="p-6 pl-10 font-bold text-gray-700 align-middle">
-                                                <div className="flex items-center gap-3">
-                                                    <UserAvatar user={user} size="w-10 h-10" textSize="text-sm" />
-                                                    <span>{user.name}</span>
+                                                <div 
+                                                    onClick={() => onUserClick?.(user)}
+                                                    className="flex items-center gap-3 cursor-pointer group-hover:text-blue-600 w-fit"
+                                                    title="회원 정보 카드 보기"
+                                                >
+                                                    <UserAvatar user={{ ...user, name: cleanNameStr }} size="w-10 h-10" textSize="text-sm" />
+                                                    <span className="hover:underline">{cleanNameStr}</span>
                                                     {user.is_leader && <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="#FACC15" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>}
                                                 </div>
                                             </td>
@@ -133,11 +142,13 @@ const RealtimeActiveUsers = ({
                                             </td>
                                             <td className="p-6 text-gray-500 font-medium align-middle">{user.school || '-'}</td>
                                             <td className="p-6 align-middle">
-                                                <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tight ${user.user_group === '졸업생' ? 'bg-gray-100 text-gray-600' :
-                                                    user.user_group === '일반인' ? 'bg-orange-100 text-orange-600' :
-                                                        'bg-blue-100 text-blue-600'
-                                                    }`}>
-                                                    {user.user_group || '재학생'}
+                                                <span className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap border ${
+                                                    user.user_group === '게스트' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                                    user.user_group === '졸업생' ? 'bg-gray-100 text-gray-600 border-gray-200' :
+                                                    user.user_group === '일반인' ? 'bg-orange-50 text-orange-600 border-orange-200' :
+                                                    'bg-blue-50 text-blue-600 border-blue-200'
+                                                }`}>
+                                                    {user.user_group || '청소년'}
                                                 </span>
                                             </td>
                                             <td className="p-6 pr-10 text-right align-middle">
@@ -159,19 +170,40 @@ const RealtimeActiveUsers = ({
                     <div className="md:hidden divide-y divide-gray-100">
                         {activeUsersList.map(user => {
                             const selectionsList = getUserSurveySelections(user);
+                            const cleanNameStr = (user.name || '')
+                                .replace('(guest)', '')
+                                .replace(/@/g, '')
+                                .replace(/\(guest\)/gi, '')
+                                .replace(/\(게스트\)/gi, '')
+                                .trim() || '게스트';
+
                             return (
                                 <div key={user.id} className="p-4 active:bg-gray-50 transition flex items-center justify-between gap-4">
-                                    <UserAvatar user={user} size="w-10 h-10" textSize="text-xs" />
+                                    <div 
+                                        onClick={() => onUserClick?.(user)}
+                                        className="cursor-pointer"
+                                        title="회원 정보 카드 보기"
+                                    >
+                                        <UserAvatar user={{ ...user, name: cleanNameStr }} size="w-10 h-10" textSize="text-xs" />
+                                    </div>
                                     <div className="flex-1 min-w-0 flex flex-col justify-center">
-                                        {/* 1행: 이름 + 학교명 */}
-                                        <div className="flex items-baseline gap-2 mb-1.5 min-w-0">
-                                            <span className="font-bold text-gray-800 text-base flex-shrink-0 flex items-center gap-1">
-                                                {user.name}
+                                        {/* 1행: 이름 + 그룹 뱃지 + 학교명 */}
+                                        <div className="flex items-center gap-1.5 mb-1.5 min-w-0 flex-wrap">
+                                            <span 
+                                                onClick={() => onUserClick?.(user)}
+                                                className="font-bold text-gray-800 text-base flex-shrink-0 flex items-center gap-1 cursor-pointer hover:text-blue-600 hover:underline"
+                                            >
+                                                {cleanNameStr}
                                                 {user.is_leader && <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="#FACC15" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>}
                                             </span>
+                                            {user.user_group === '게스트' && (
+                                                <span className="px-1.5 py-[1px] leading-none inline-flex items-center rounded-full text-[9.5px] font-bold bg-purple-100 text-purple-700 border border-purple-200/80 shrink-0">
+                                                    게스트
+                                                </span>
+                                            )}
                                             {user.school && (
                                                 <span className="text-xs text-gray-400 font-medium truncate flex-1 min-w-0">
-                                                    {user.school}
+                                                    ({user.school})
                                                 </span>
                                             )}
                                         </div>

@@ -41,11 +41,14 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
     const [editLocationId, setEditLocationId] = useState(null);
 
     // 4. Layout State
-    const [dashboardConfig, setDashboardConfig] = useState([
-        { id: 'stats', label: '활동 통계', isVisible: true, count: 3 },
-        { id: 'programs', label: '프로그램 신청', isVisible: true, count: 3 },
-        { id: 'notices', label: '공지사항', isVisible: true, count: 3 }
-    ]);
+    const DEFAULT_DASHBOARD_ITEMS = [
+        { id: 'operating_status', label: '센터 오픈 현황', isVisible: true, count: 0 },
+        { id: 'live_chat', label: '실시간 라이브 채팅', isVisible: true, count: 0 },
+        { id: 'notices', label: '공지사항', isVisible: true, count: 5 },
+        { id: 'programs', label: '프로그램 신청', isVisible: true, count: 10 }
+    ];
+
+    const [dashboardConfig, setDashboardConfig] = useState(DEFAULT_DASHBOARD_ITEMS);
     const [sidebarConfig, setSidebarConfig] = useState([
         { id: 'STATUS', label: '공간 현황', isVisible: true },
         { id: 'CALENDAR', label: '일정 관리', isVisible: true },
@@ -107,6 +110,20 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
     const [checkinSurveyConfig, setCheckinSurveyConfig] = useState(defaultSurveyConfig);
     const [surveySaving, setSurveySaving] = useState(false);
 
+    // 8. Checkout Survey Config State
+    const defaultCheckoutSurveyConfig = {
+        mode: 'SURVEY',
+        question: '오늘 센터에서의 시간은 어떠셨나요?',
+        options: [
+            { id: '1', emoji: '😊', label: '교제 및 휴식', recommendTitle: '휴식 세션 완료', recommendText: '편안한 휴식이 되었기를 바랍니다!' },
+            { id: '2', emoji: '📚', label: '개인 할 일', recommendTitle: '집중 공부 완료', recommendText: '오늘도 수고 많으셨습니다!' },
+            { id: '3', emoji: '🎯', label: '프로그램 참여', recommendTitle: '프로그램 참여 완료', recommendText: '알찬 시간이 되었길 바래요!' },
+            { id: '4', emoji: '☕', label: '스처쌤 만남', recommendTitle: '커피챗 완료', recommendText: '유익한 대화의 시간이었기를 진심으로 바래요!' }
+        ]
+    };
+    const [checkoutSurveyConfig, setCheckoutSurveyConfig] = useState(defaultCheckoutSurveyConfig);
+    const [checkoutSurveySaving, setCheckoutSurveySaving] = useState(false);
+
 
     // --- EFFECT: Load Layout Configurations ---
     useEffect(() => {
@@ -121,8 +138,18 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
             if (dbData?.content) {
                 try {
                     const parsed = JSON.parse(dbData.content);
-                    // Filter out GALLERY if it exists in old configs
-                    if (Array.isArray(parsed)) setDashboardConfig(parsed.filter(c => c.id !== 'gallery'));
+                    if (Array.isArray(parsed)) {
+                        const filtered = parsed.filter(c => c.id !== 'gallery');
+                        const merged = DEFAULT_DASHBOARD_ITEMS.map(def => {
+                            const found = filtered.find(f => f.id === def.id);
+                            return found ? { ...def, ...found } : def;
+                        });
+                        const ordered = [
+                            ...filtered.map(f => merged.find(m => m.id === f.id)).filter(Boolean),
+                            ...merged.filter(m => !filtered.find(f => f.id === m.id))
+                        ];
+                        setDashboardConfig(ordered);
+                    }
                 } catch (e) { console.error(e); }
             }
 
@@ -264,6 +291,22 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
                     const parsed = JSON.parse(surveyData.content);
                     if (parsed && parsed.question && Array.isArray(parsed.options)) {
                         setCheckinSurveyConfig(parsed);
+                    }
+                } catch (e) { console.error(e); }
+            }
+
+            const { data: checkoutSurveyData } = await supabase
+                .from('notices')
+                .select('content')
+                .eq('category', CATEGORIES.SYSTEM)
+                .eq('title', 'CHECKOUT_SURVEY_CONFIG')
+                .maybeSingle();
+
+            if (checkoutSurveyData?.content) {
+                try {
+                    const parsed = JSON.parse(checkoutSurveyData.content);
+                    if (parsed) {
+                        setCheckoutSurveyConfig(parsed);
                     }
                 } catch (e) { console.error(e); }
             }
@@ -816,6 +859,41 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
         }
     };
 
+    const handleSaveCheckoutSurveyConfig = async (newConfig) => {
+        setCheckoutSurveySaving(true);
+        try {
+            const { data: existing } = await supabase
+                .from('notices')
+                .select('id')
+                .eq('category', CATEGORIES.SYSTEM)
+                .eq('title', 'CHECKOUT_SURVEY_CONFIG')
+                .maybeSingle();
+
+            const payload = {
+                title: 'CHECKOUT_SURVEY_CONFIG',
+                content: JSON.stringify(newConfig),
+                category: CATEGORIES.SYSTEM,
+                is_sticky: false,
+                is_recruiting: false
+            };
+
+            if (existing) {
+                const { error: updateError } = await supabase.from('notices').update(payload).eq('id', existing.id);
+                if (updateError) throw updateError;
+            } else {
+                const { error: insertError } = await supabase.from('notices').insert([payload]);
+                if (insertError) throw insertError;
+            }
+            setCheckoutSurveyConfig(newConfig);
+            alert('퇴실 설문 설정이 저장되었습니다.');
+        } catch (err) {
+            console.error(err);
+            alert('퇴실 설문 설정 저장 실패: ' + err.message);
+        } finally {
+            setCheckoutSurveySaving(false);
+        }
+    };
+
     return {
         profileImage, setProfileImage,
         profilePreview, setProfilePreview,
@@ -861,7 +939,9 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
         selectedStaffConfig, staffSaving,
         handleSaveStaffPresenceConfig,
         checkinSurveyConfig, surveySaving,
-        handleSaveCheckinSurveyConfig
+        handleSaveCheckinSurveyConfig,
+        checkoutSurveyConfig, checkoutSurveySaving,
+        handleSaveCheckoutSurveyConfig
     };
 };
 

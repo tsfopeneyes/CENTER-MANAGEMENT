@@ -99,7 +99,14 @@ const GuestLogTable = ({ hookData }) => {
                                 </td>
                                 <td className="p-3 whitespace-nowrap">{summary.date}</td>
                                 <td className="p-3">{summary.dayOfWeek}</td>
-                                <td className="p-3 font-bold text-gray-800">{summary.name}</td>
+                                <td className="p-3 font-bold text-gray-800 whitespace-nowrap">
+                                    {(summary.name || '')
+                                        .replace('(guest)', '')
+                                        .replace(/@/g, '')
+                                        .replace(/\(guest\)/gi, '')
+                                        .replace(/\(게스트\)/gi, '')
+                                        .trim() || '게스트'}
+                                </td>
                                 <td className="p-3 whitespace-nowrap text-gray-600">{summary.school}</td>
                                 <td className="p-3 whitespace-nowrap text-gray-600">{summary.birth}</td>
                                 <td className="p-3 font-mono text-xs text-gray-500">{summary.phone}</td>

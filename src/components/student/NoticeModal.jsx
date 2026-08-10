@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ZoomIn, X, Calendar as CalendarIcon, User, Trash2, MapPin, Users, Upload, Clock, CheckCircle, Check, Sparkles, XCircle, ExternalLink, Dices, RefreshCw, MessageSquare } from 'lucide-react';
+import { ZoomIn, X, Calendar as CalendarIcon, User, Trash2, MapPin, Users, Upload, Clock, CheckCircle, Check, Sparkles, XCircle, ExternalLink, Dices, RefreshCw, MessageSquare, Eye } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../supabaseClient';
+import { noticesApi } from '../../api/noticesApi';
 import ModernEditor from '../common/ModernEditor';
 import UserAvatar from '../common/UserAvatar';
 import LinkPreview from '../common/LinkPreview';
@@ -14,6 +15,7 @@ import confetti from 'canvas-confetti';
 // Components
 import NoticeCarousel from './components/NoticeCarousel';
 import NoticeHeader from './components/NoticeHeader';
+import NoticeReactions from './NoticeReactions';
 import WriteForm from '../admin/board/components/forms/WriteForm';
 
 const seededShuffle = (array, seed) => {
@@ -56,6 +58,30 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
         if (Array.isArray(questions) && questions.length > 0) {
             const initialRandomIndex = Math.floor(Math.random() * questions.length);
             setCurrentQuestionIndex(initialRandomIndex);
+        }
+    }, [notice?.id]);
+
+    const [viewCount, setViewCount] = useState(notice?.view_count || 0);
+
+    useEffect(() => {
+        setViewCount(notice?.view_count || 0);
+    }, [notice?.id, notice?.view_count]);
+
+    // 이용자 열람 시 조회수 세션 단위 집계 및 실시간 업데이트
+    useEffect(() => {
+        if (!notice?.id) return;
+        const sessionKey = `viewed_notice_${notice.id}`;
+        const alreadyViewed = sessionStorage.getItem(sessionKey);
+        
+        if (!alreadyViewed) {
+            sessionStorage.setItem(sessionKey, 'true');
+            noticesApi.incrementViewCount(notice.id).then((updatedCount) => {
+                if (typeof updatedCount === 'number') {
+                    setViewCount(updatedCount);
+                } else {
+                    setViewCount(prev => prev + 1);
+                }
+            }).catch(console.error);
         }
     }, [notice?.id]);
 
@@ -260,6 +286,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
     const {
         joinCount, waitlistCount,
         timeLeft,
+        reactions, handleToggleReaction,
         userVotes, pendingVotes,
         isSubmittingPoll, pollResults,
         pollTotalVotes, pollTimeLeft, isPollExpired,
@@ -470,7 +497,15 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                         </div>
                     ) : (
                         <>
-                            <h1 className="text-2xl font-bold text-tossGrey900 leading-tight mb-4">{notice.title}</h1>
+                            <div className="flex items-center justify-between gap-3 mb-4">
+                                <h1 className="text-2xl font-bold text-tossGrey900 leading-tight">{notice.title}</h1>
+                                {(fromAdmin || user?.role === 'admin' || user?.role === 'master' || user?.role === 'staff' || user?.user_group === 'STAFF' || user?.user_group === '관리자') && (
+                                    <span className="shrink-0 inline-flex items-center gap-1.5 text-xs font-extrabold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
+                                        <Eye size={14} className="text-gray-500" />
+                                        조회수 {viewCount || 0}회
+                                    </span>
+                                )}
+                            </div>
                             {notice.category === 'PROGRAM' && (
                                 <div className="bg-tossGrey50 rounded-toss-xl p-5 space-y-4 mb-6">
                                     <div className="flex text-sm leading-relaxed">
@@ -901,12 +936,22 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                              {notice.max_capacity > 0 && <div className="bg-tossSuccess/10 text-tossSuccess px-3 py-1.5 rounded-toss-md text-xs font-bold">{joinCount} / {notice.max_capacity}명</div>}
                                          </div>
                                          {isAdmin ? (
-                                             <button
-                                                 onClick={() => onViewParticipants && onViewParticipants(notice)}
-                                                 className="w-full py-3.5 rounded-toss-xl font-bold text-white transition-all bg-tossBlue hover:bg-tossBlueHover flex items-center justify-center gap-2"
-                                             >
-                                                 신청자 명단 ({joinCount}명)
-                                             </button>
+                                             <div className="flex gap-2">
+                                                 <button
+                                                     onClick={() => onViewParticipants && onViewParticipants(notice, 'attendance')}
+                                                     className="flex-1 py-3.5 rounded-toss-xl font-bold text-white transition-all bg-tossBlue hover:bg-tossBlueHover flex items-center justify-center gap-2"
+                                                 >
+                                                     신청자 명단 ({joinCount}명)
+                                                 </button>
+                                                 {notice.is_poll && (
+                                                     <button
+                                                         onClick={() => onViewParticipants && onViewParticipants(notice, 'poll')}
+                                                         className="py-3.5 px-4 rounded-toss-xl font-bold text-purple-700 bg-purple-100 hover:bg-purple-200 transition-all flex items-center justify-center gap-1.5 shrink-0"
+                                                     >
+                                                         투표 결과
+                                                     </button>
+                                                 )}
+                                             </div>
                                          ) : (
                                              <button
                                                  disabled={(notice.recruitment_deadline && new Date(notice.recruitment_deadline) < new Date()) || (!responses[notice.id] && notice.is_leader_only && !user?.is_leader)}
@@ -941,6 +986,15 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                          </>
                      )}
                  </div>
+
+                  {/* Slack-style Emoji Reactions (Rendered at the very bottom of post content) */}
+                  <div className="px-4 py-2 mt-2">
+                      <NoticeReactions
+                          reactions={reactions}
+                          currentUserId={user?.id}
+                          onToggleReaction={handleToggleReaction}
+                      />
+                  </div>
 
                  {/* Comments Section */}
                  <div className="border-t border-tossGrey100 mt-1">
@@ -977,14 +1031,23 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                      )}
                      {isAdmin ? (
                          <div className="p-4 bg-white space-y-2.5">
-                             {/* 1. 상단 숏컷 버튼 (신청자 / 팀배치 / 피드백) */}
+                             {/* 1. 상단 숏컷 버튼 (신청자 / 투표 결과 / 팀배치 / 피드백) */}
                              <div className="flex items-center gap-2">
                                  <button
-                                     onClick={() => onViewParticipants && onViewParticipants(notice)}
+                                     onClick={() => onViewParticipants && onViewParticipants(notice, 'attendance')}
                                      className="flex-1 h-11 rounded-toss-xl font-bold text-tossBlue text-xs bg-tossBlueLight hover:bg-blue-100 transition transform active:scale-[0.98] flex items-center justify-center cursor-pointer px-2"
                                  >
                                      <span>신청자 ({joinCount}명)</span>
                                  </button>
+
+                                 {notice.is_poll && (
+                                     <button
+                                         onClick={() => onViewParticipants && onViewParticipants(notice, 'poll')}
+                                         className="flex-1 h-11 rounded-toss-xl font-bold text-purple-700 text-xs bg-purple-50 hover:bg-purple-100 transition transform active:scale-[0.98] flex items-center justify-center border border-purple-200 cursor-pointer px-2"
+                                     >
+                                         <span>투표 결과</span>
+                                     </button>
+                                 )}
 
                                  {(notice.guest_properties?.enable_group_assignment ?? notice.enable_group_assignment) && (
                                      <button

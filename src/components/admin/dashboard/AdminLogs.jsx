@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { RefreshCw, FileSpreadsheet, MapPin, Calendar, Trash2, Filter, X, ClipboardList, Database, User as UserIcon } from 'lucide-react';
+import { RefreshCw, FileSpreadsheet, MapPin, Calendar, Trash2, Filter, X, ClipboardList, Database, User as UserIcon, ShieldCheck } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { exportLogsToExcel, exportVisitLogToExcel } from '../../../utils/exportUtils';
 import RangeDatePicker from '../../common/RangeDatePicker';
@@ -11,6 +11,7 @@ import GuestLogTable from './components/GuestLogTable';
 import StudentMeetLogTable from './components/StudentMeetLogTable';
 import ProgramLogTable from './components/ProgramLogTable';
 import SpaceLogTable from './components/SpaceLogTable';
+import AdminActivityLogTable from './components/AdminActivityLogTable';
 import ManualEntryModal from './modals/ManualEntryModal';
 import VisitLogEditModal from './modals/VisitLogEditModal';
 
@@ -26,7 +27,9 @@ import AdminPageHeader from '../common/AdminPageHeader';
 const AdminLogs = ({ allLogs, schoolLogs = [], users, locations, notices, fetchData }) => {
     const hookData = useAdminLogs({ allLogs, schoolLogs, users, locations, notices, fetchData });
     const {
-        logCategory, setLogCategory, selectedLogId, setSelectedLogId,
+        logCategory, setLogCategory,
+        visitUserGroupFilter, setVisitUserGroupFilter,
+        selectedLogId, setSelectedLogId,
         visitNotes, setVisitNotes, startDate, setStartDate, endDate, setEndDate,
         visitFilters, setVisitFilters, selectedRows, setSelectedRows,
         isManualModalOpen, setIsManualModalOpen, manualEntry, setManualEntry,
@@ -140,45 +143,59 @@ const AdminLogs = ({ allLogs, schoolLogs = [], users, locations, notices, fetchD
                 actions={actions}
             />
 
-            {/* Category Filter Tabs with Manual Entry Button */}
+            {/* Category Filter Tabs with Sub-filter & Manual Entry Button */}
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-                <div className="flex overflow-x-auto no-scrollbar bg-gray-100/50 p-1.5 rounded-2xl w-full md:w-fit border border-gray-100 shadow-inner gap-1">
-                    <button
-                        onClick={() => setLogCategory('VISIT')}
-                        className={`whitespace-nowrap shrink-0 flex-1 md:flex-none px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${logCategory === 'VISIT' ? 'bg-white text-blue-600 shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                        <FileSpreadsheet size={16} className="shrink-0" /> 학생방문일지
-                    </button>
-                    <button
-                        onClick={() => setLogCategory('GUEST')}
-                        className={`whitespace-nowrap shrink-0 flex-1 md:flex-none px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${logCategory === 'GUEST' ? 'bg-white text-indigo-600 shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                        <UserIcon size={16} className="shrink-0" /> 게스트 방문일지
-                    </button>
-                    <button
-                        onClick={() => setLogCategory('STUDENT')}
-                        className={`whitespace-nowrap shrink-0 flex-1 md:flex-none px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${logCategory === 'STUDENT' ? 'bg-white text-blue-600 shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                        <ClipboardList size={16} className="shrink-0" /> 학생만남일지
-                    </button>
-                    <button
-                        onClick={() => setLogCategory('PROGRAM')}
-                        className={`whitespace-nowrap shrink-0 flex-1 md:flex-none px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${logCategory === 'PROGRAM' ? 'bg-white text-blue-600 shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                        <Calendar size={16} className="shrink-0" /> 프로그램 참여
-                    </button>
-                    <button
-                        onClick={() => setLogCategory('SPACE')}
-                        className={`whitespace-nowrap shrink-0 flex-1 md:flex-none px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${logCategory === 'SPACE' ? 'bg-white text-blue-600 shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                        <MapPin size={16} className="shrink-0" /> 공간 이용
-                    </button>
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full md:w-auto">
+                    <div className="flex overflow-x-auto no-scrollbar bg-gray-100/50 p-1.5 rounded-2xl w-full sm:w-fit border border-gray-100 shadow-inner gap-1">
+                        <button
+                            onClick={() => setLogCategory('VISIT')}
+                            className={`whitespace-nowrap shrink-0 flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${logCategory === 'VISIT' ? 'bg-white text-blue-600 shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <FileSpreadsheet size={16} className="shrink-0" /> 센터 방문일지
+                        </button>
+                        <button
+                            onClick={() => setLogCategory('STUDENT')}
+                            className={`whitespace-nowrap shrink-0 flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${logCategory === 'STUDENT' ? 'bg-white text-blue-600 shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <ClipboardList size={16} className="shrink-0" /> 학생 만남일지
+                        </button>
+                        <button
+                            onClick={() => setLogCategory('ADMIN_ACTIVITY')}
+                            className={`whitespace-nowrap shrink-0 flex-1 sm:flex-none px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${logCategory === 'ADMIN_ACTIVITY' ? 'bg-white text-blue-600 shadow-md transform scale-[1.02]' : 'text-gray-500 hover:text-gray-700'}`}
+                        >
+                            <ShieldCheck size={16} className="shrink-0" /> 관리자 활동 로그
+                        </button>
+                    </div>
+
+                    {/* Sub-filter chips when on VISIT tab */}
+                    {logCategory === 'VISIT' && (
+                        <div className="flex bg-gray-100/80 p-1 rounded-xl gap-1 text-xs font-bold shrink-0 border border-gray-200/50">
+                            <button
+                                onClick={() => setVisitUserGroupFilter('ALL')}
+                                className={`px-3 py-1.5 rounded-lg transition-all ${visitUserGroupFilter === 'ALL' ? 'bg-white text-blue-600 shadow-xs font-black' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                전체
+                            </button>
+                            <button
+                                onClick={() => setVisitUserGroupFilter('MEMBER')}
+                                className={`px-3 py-1.5 rounded-lg transition-all ${visitUserGroupFilter === 'MEMBER' ? 'bg-white text-blue-600 shadow-xs font-black' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                청소년 회원
+                            </button>
+                            <button
+                                onClick={() => setVisitUserGroupFilter('GUEST')}
+                                className={`px-3 py-1.5 rounded-lg transition-all ${visitUserGroupFilter === 'GUEST' ? 'bg-white text-indigo-600 shadow-xs font-black' : 'text-gray-500 hover:text-gray-700'}`}
+                            >
+                                게스트
+                            </button>
+                        </div>
+                    )}
                 </div>
 
-                {(logCategory === 'VISIT' || logCategory === 'GUEST') && (
+                {logCategory === 'VISIT' && (
                     <button
                         onClick={() => setIsManualModalOpen(true)}
-                        className="w-full md:w-auto px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-extrabold shadow-lg shadow-blue-200 hover:bg-blue-700 transition flex items-center justify-center gap-2"
+                        className="w-full md:w-auto px-6 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-extrabold shadow-lg shadow-blue-200 hover:bg-blue-700 transition flex items-center justify-center gap-2 shrink-0"
                     >
                         <Calendar size={18} /> 수기작성
                     </button>
@@ -187,11 +204,9 @@ const AdminLogs = ({ allLogs, schoolLogs = [], users, locations, notices, fetchD
 
             <div className={`bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden ${logCategory === 'VISIT' ? 'min-h-[500px]' : ''}`}>
                 {logCategory === 'VISIT' && <VisitLogTable hookData={hookData} />}
-                {logCategory === 'GUEST' && <GuestLogTable hookData={hookData} />}
                 {logCategory === 'STUDENT' && <StudentMeetLogTable hookData={hookData} setSelectedLogId={setSelectedLogId} />}
+                {logCategory === 'ADMIN_ACTIVITY' && <AdminActivityLogTable users={users} />}
             </div>
-            {logCategory === 'PROGRAM' && <ProgramLogTable hookData={hookData} />}
-            {logCategory === 'SPACE' && <SpaceLogTable hookData={hookData} users={users} locations={locations} notices={notices} />}
             <ManualEntryModal hookData={hookData} users={users} locations={locations} />
             {isLogEditModalOpen && (
                 <VisitLogEditModal

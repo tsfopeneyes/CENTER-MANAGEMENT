@@ -13,7 +13,8 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
             return saved;
         }
         return 'VISIT';
-    }); // VISIT, SPACE, PROGRAM, STUDENT
+    }); // VISIT, STUDENT, ADMIN_ACTIVITY
+    const [visitUserGroupFilter, setVisitUserGroupFilter] = useState('ALL'); // 'ALL', 'MEMBER', 'GUEST'
     const [selectedLogId, setSelectedLogId] = useState(null);
     const [visitNotes, setVisitNotes] = useState({}); // { 'userId_date': { purpose, remarks } }
     const [startDate, setStartDate] = useState('');
@@ -120,6 +121,10 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
             purposes: ['개인 할 일', '프로그램 참여', '교제 및 휴식', '스처쌤 만남']
         };
         const filtered = withGroup.filter(summary => {
+            const isGuest = summary.userGroup === '게스트' || summary.userGroup === '미가입';
+            if (visitUserGroupFilter === 'MEMBER' && isGuest) return false;
+            if (visitUserGroupFilter === 'GUEST' && !isGuest) return false;
+
             const noteKey = `${summary.userId}_${summary.date}`;
             const note = visitNotes[noteKey] || {};
             const matchFilter = (val, filter) => !filter || val.toLowerCase().includes(filter.toLowerCase());
@@ -142,7 +147,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
             return b.startTime.localeCompare(a.startTime);
         });
         return { data: sorted, options: uniqueOptions };
-    }, [allLogs, users, locations, startDate, endDate, visitFilters, visitNotes, userGroupMap]);
+    }, [allLogs, users, locations, startDate, endDate, visitFilters, visitNotes, userGroupMap, visitUserGroupFilter]);
 
     const filteredVisitSummaries = useMemo(() => visitSummaries.data, [visitSummaries.data]);
     const filteredGuestSummaries = useMemo(() => visitSummaries.data.filter(s => s.userGroup === '게스트'), [visitSummaries.data]);
@@ -959,6 +964,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
 
     return {
         logCategory, setLogCategory,
+        visitUserGroupFilter, setVisitUserGroupFilter,
         selectedLogId, setSelectedLogId,
         visitNotes, setVisitNotes,
         startDate, setStartDate,

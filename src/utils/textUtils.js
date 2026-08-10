@@ -1,8 +1,33 @@
 export const stripHtml = (html) => {
     if (!html) return '';
+    // 줄바꿈 태그(<br>, </p>, </div>, </li>, </h1~6>, </tr> 등) 및 개행문자를 공백(" ")으로 치환하여 단어가 뭉치지 않게 처리
+    const processedHtml = html
+        .replace(/<br\s*\/?>/gi, ' ')
+        .replace(/<\/(p|div|li|h[1-6]|tr)>/gi, ' ')
+        .replace(/[\r\n]+/g, ' ');
+
     const tmp = document.createElement("DIV");
-    tmp.innerHTML = html;
-    return tmp.textContent || tmp.innerText || "";
+    tmp.innerHTML = processedHtml;
+    const text = tmp.textContent || tmp.innerText || "";
+
+    // 연속된 공백 정리 후 앞뒤 공백 제거
+    return text.replace(/\s+/g, ' ').trim();
+};
+
+export const getFirstParagraph = (html) => {
+    if (!html) return '';
+    // 줄바꿈 태그(<br>, </p>, </div>, </li> 등)를 개행문자(\n)로 변환
+    const textWithNewlines = html
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|li|h[1-6]|tr|blockquote)>/gi, '\n');
+
+    const tmp = document.createElement("DIV");
+    tmp.innerHTML = textWithNewlines;
+    const fullText = tmp.textContent || tmp.innerText || '';
+
+    // 첫 번째 비어있지 않은 단락/줄만 추출
+    const lines = fullText.split(/[\r\n]+/).map(s => s.trim()).filter(Boolean);
+    return lines[0] || '';
 };
 
 export const extractUrls = (text) => {

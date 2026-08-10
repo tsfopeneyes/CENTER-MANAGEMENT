@@ -27,26 +27,27 @@ export const getWeekIdentifier = (date) => {
 };
 
 export const calculateAge = (birthDate) => {
-    if (!birthDate || birthDate.length !== 6) return '';
+    if (!birthDate) return '';
+    const cleanStr = String(birthDate).replace(/[^0-9]/g, '');
+    if (cleanStr.length !== 6) return '';
+
+    // Ignore dummy / placeholder dates
+    if (cleanStr === '990101' || cleanStr === '999999' || cleanStr === '000000') return '';
+
+    const yy = parseInt(cleanStr.substring(0, 2), 10);
+    const mm = parseInt(cleanStr.substring(2, 4), 10);
+    const dd = parseInt(cleanStr.substring(4, 6), 10);
+
+    if (isNaN(yy) || isNaN(mm) || isNaN(dd)) return '';
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) return '';
 
     const today = new Date();
     const currentYear = today.getFullYear();
-    const currentMonth = today.getMonth() + 1;
-    const currentDay = today.getDate();
 
-    // YYMMDD parsing
-    const yy = parseInt(birthDate.substring(0, 2), 10);
-    const mm = parseInt(birthDate.substring(2, 4), 10);
-    const dd = parseInt(birthDate.substring(4, 6), 10);
-
-    // Dynamic century: if year is 00-30, assume 20xx (2000-2030). Else 19xx.
-    // Adjust threshold as needed. 30 seems safe for now.
     const year = (yy <= 30) ? 2000 + yy : 1900 + yy;
-
     let age = currentYear - year + 1;
 
-    // Year Age (연나이) calculation: simply current year - birth year + 1
-    // No month/day adjustment needed as requested by user for grade grouping.
+    if (isNaN(age) || age <= 0 || age > 100) return '';
 
     return age;
 };

@@ -12,11 +12,19 @@ import GuestMobileWelcome from './pages/GuestMobileWelcome'
 import { supabase } from './supabaseClient'
 
 import StandaloneLiveChat from './pages/StandaloneLiveChat'
+import TvSignageViewer from './pages/TvSignageViewer'
 
 function App() {
     const [isLoading, setIsLoading] = useState(() => {
-        // Only show splash screen if it hasn't been shown in this session
-        return !sessionStorage.getItem('splash_shown');
+        try {
+            const path = window.location.pathname.toLowerCase();
+            if (path.includes('/chat') || path.includes('/live-chat') || path.includes('/kiosk') || path.includes('/tv') || path.includes('/view') || path.includes('/signage')) {
+                return false;
+            }
+            return !sessionStorage.getItem('splash_shown');
+        } catch (e) {
+            return false;
+        }
     });
 
     useEffect(() => {
@@ -27,7 +35,9 @@ function App() {
                     .select('*');
                 if (!error && data) {
                     data.forEach(item => {
-                        localStorage.setItem(item.key, item.value);
+                        try {
+                            localStorage.setItem(item.key, item.value);
+                        } catch (err) {}
                     });
                 }
             } catch (e) {
@@ -37,7 +47,10 @@ function App() {
 
         const trackWebSession = async () => {
             try {
-                const stored = localStorage.getItem('user') || localStorage.getItem('admin_user');
+                let stored = null;
+                try {
+                    stored = localStorage.getItem('user') || localStorage.getItem('admin_user');
+                } catch (err) {}
                 if (!stored) return;
                 const currentUser = JSON.parse(stored);
                 if (!currentUser?.id) return;
@@ -50,8 +63,10 @@ function App() {
                     await supabase.from('users').update({ preferences: updatedPreferences }).eq('id', currentUser.id);
 
                     const updatedUser = { ...currentUser, preferences: updatedPreferences };
-                    if (localStorage.getItem('user')) localStorage.setItem('user', JSON.stringify(updatedUser));
-                    if (localStorage.getItem('admin_user')) localStorage.setItem('admin_user', JSON.stringify(updatedUser));
+                    try {
+                        if (localStorage.getItem('user')) localStorage.setItem('user', JSON.stringify(updatedUser));
+                        if (localStorage.getItem('admin_user')) localStorage.setItem('admin_user', JSON.stringify(updatedUser));
+                    } catch (err) {}
                 }
             } catch (e) {
                 console.error('Failed to track web session:', e);
@@ -63,7 +78,9 @@ function App() {
     }, []);
 
     const handleFinishLoading = () => {
-        sessionStorage.setItem('splash_shown', 'true');
+        try {
+            sessionStorage.setItem('splash_shown', 'true');
+        } catch (e) {}
         setIsLoading(false);
     };
 
@@ -88,6 +105,12 @@ function App() {
                     <Route path="/live-chat/:center" element={<StandaloneLiveChat />} />
                     <Route path="/chat" element={<StandaloneLiveChat />} />
                     <Route path="/chat/:center" element={<StandaloneLiveChat />} />
+                    <Route path="/tv" element={<StandaloneLiveChat />} />
+                    <Route path="/tv/:center" element={<StandaloneLiveChat />} />
+                    <Route path="/signage" element={<StandaloneLiveChat />} />
+                    <Route path="/signage/:center" element={<StandaloneLiveChat />} />
+                    <Route path="/view" element={<StandaloneLiveChat />} />
+                    <Route path="/display" element={<StandaloneLiveChat />} />
                 </Routes>
             </BrowserRouter>
         </>

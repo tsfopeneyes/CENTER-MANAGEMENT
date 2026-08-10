@@ -84,25 +84,28 @@ export const useAnalytics = ({ logs, schoolLogs, locations, locationGroups = [],
         return logs.filter(l => !l.location_id || validLocationIds.has(l.location_id)); 
     }, [logs, filteredLocations, locationGroups, selectedLocationGroupId]);   
     
-    const spaceData = useMemo(() => {     
+    const spaceData = useMemo(() => {
+        if (viewMode !== 'SPACE') return { summary: {}, charts: {}, logs: [] };
         const currentDate = new Date(selectedYear, selectedMonth, selectedDay);     
         return processAnalyticsData(filteredLogsForSpace, filteredLocations, users, currentDate, periodType, visitNotes); 
-    }, [filteredLogsForSpace, filteredLocations, users, selectedYear, selectedMonth, selectedDay, periodType, visitNotes]);   
+    }, [viewMode, filteredLogsForSpace, filteredLocations, users, selectedYear, selectedMonth, selectedDay, periodType, visitNotes]);   
     
-    const rawProgramData = useMemo(() => {     
+    const rawProgramData = useMemo(() => {
+        if (viewMode !== 'PROGRAM') return [];
         const currentDate = new Date(selectedYear, selectedMonth, selectedDay);     
         return processProgramAnalytics(notices, responses, currentDate, periodType); 
-    }, [notices, responses, selectedYear, selectedMonth, selectedDay, periodType]);   
+    }, [viewMode, notices, responses, selectedYear, selectedMonth, selectedDay, periodType]);   
     
     const programData = useMemo(() => {     
         if (programFilter === 'ALL') return rawProgramData;     
         return rawProgramData.filter(p => (p.program_type || 'CENTER') === programFilter); 
     }, [rawProgramData, programFilter]);   
     
-    const rawUserData = useMemo(() => {     
+    const rawUserData = useMemo(() => {
+        if (viewMode !== 'USER' && viewMode !== 'SEUCHEO') return [];
         const currentDate = new Date(selectedYear, selectedMonth, selectedDay);     
         return processUserAnalytics(users, logs, responses, notices, currentDate, periodType); 
-    }, [users, logs, responses, notices, selectedYear, selectedMonth, selectedDay, periodType]);   
+    }, [viewMode, users, logs, responses, notices, selectedYear, selectedMonth, selectedDay, periodType]);   
     
     const userData = useMemo(() => {     
         let filtered = rawUserData.filter(u =>         

@@ -26,15 +26,23 @@ export default function AzitReactions({ reactions, currentUserId, onToggleReacti
             {Object.entries(grouped).map(([emoji, data]) => (
                 <button
                     key={emoji}
+                    type="button"
                     onClick={() => handleEmojiClick(emoji)}
-                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm font-bold transition-all border ${
+                    onDragStart={(e) => e.preventDefault()}
+                    draggable={false}
+                    style={{
+                        WebkitUserSelect: 'none',
+                        userSelect: 'none',
+                        WebkitTouchCallout: 'none'
+                    }}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-sm font-bold transition-all border select-none ${
                         data.hasMine 
                             ? 'bg-indigo-50 border-indigo-200 text-indigo-700' 
                             : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
                     }`}
                 >
-                    <span className="text-sm leading-none">{emoji}</span>
-                    <span className="text-xs leading-none mt-0.5">{data.count}</span>
+                    <span className="text-sm leading-none select-none pointer-events-none">{emoji}</span>
+                    <span className="text-xs leading-none mt-0.5 select-none pointer-events-none">{data.count}</span>
                 </button>
             ))}
 

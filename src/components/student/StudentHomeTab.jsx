@@ -7,7 +7,7 @@ import UserAvatar from '../common/UserAvatar';
 import ProgramCard from './ProgramCard';
 import { startOfDay } from 'date-fns';
 import { TAB_NAMES, CATEGORIES } from '../../constants/appConstants';
-import { stripHtml } from '../../utils/textUtils';
+import { stripHtml, getFirstParagraph } from '../../utils/textUtils';
 import TodayOperatingWidget from './components/TodayOperatingWidget';
 import LiveCenterChat from './components/LiveCenterChat';
 import CoffeeChatModal from './modals/CoffeeChatModal';
@@ -362,190 +362,199 @@ const StudentHomeTab = ({
                     </motion.div>
                 )}
 
-                {/* 1. Today Operating Widget (includes weekly calendar and staff) */}
-                {!isGuest && (
-                    <>
-                        <TodayOperatingWidget 
-                            studentRegion={studentRegion} 
-                            adminSchedules={adminSchedules} 
-                            calendarCategories={calendarCategories} 
-                            onStaffClick={onStaffClick}
-                        />
-                        <LiveCenterChat 
-                            currentUser={user} 
-                            studentRegion={studentRegion} 
-                        />
-                    </>
-                )}
+                {/* Dynamic Section Renderer based on dashboardConfig order */}
+                {dashboardConfig.map((item) => {
+                    if (!item || !item.isVisible) return null;
 
-                {/* 2. Notices (공지사항) */}
-                {!isGuest && (() => {
-                    const config = dashboardConfig.find(c => c.id === 'notices');
-                    if (!config || !config.isVisible) return null;
-                    return (
-                        <div className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-tossWarning/10 text-tossWarning flex items-center justify-center shrink-0">
-                                        <Bell size={18} />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-tossGrey900 text-[15px] tracking-tight leading-tight">공지사항</h3>
-                                        <p className="text-[11px] text-tossGrey500 font-semibold mt-0.5">새로운 소식</p>
-                                    </div>
-                                </div>
-                                <button onClick={() => handleTabChange(TAB_NAMES.NOTICES)} className="text-[11px] text-tossGrey600 font-bold px-2.5 py-1.5 bg-tossGrey100 rounded-toss-md hover:bg-tossGrey200 transition-colors">더보기</button>
-                            </div>
-                            <div className="divide-y divide-tossGrey100">
-                                {homeNotices.slice(0, config.count || 3).map(n => (
-                                    <motion.div
-                                        key={n.id}
-                                        initial={{ opacity: 0, y: 10 }}
-                                        animate={{ opacity: 1, y: 0 }}
-                                        onClick={() => openNoticeDetail(n)}
-                                        className="py-3.5 first:pt-0 last:pb-0 cursor-pointer group flex justify-between items-start gap-4 hover:bg-tossGrey50/50 px-2 -mx-2 rounded-toss-md transition-all duration-200"
-                                    >
-                                        <div className="flex-1 min-w-0">
-                                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
-                                                {n.is_sticky && (
-                                                    <span className="flex items-center gap-0.5 px-2 py-0.5 bg-tossWarning/10 text-tossWarning rounded-full text-[9px] font-bold whitespace-nowrap shrink-0">
-                                                        공지
-                                                    </span>
-                                                )}
-                                                {n.is_recruiting && (
-                                                    <span className="px-2 py-0.5 bg-tossBlueLight text-tossBlue rounded-full text-[9px] font-bold shrink-0">
-                                                        모집중
-                                                    </span>
-                                                )}
-                                                <span className="text-[10px] text-tossGrey400 font-bold">{new Date(n.created_at).toLocaleDateString()}</span>
-                                            </div>
-                                            <h4 className="font-bold text-sm text-tossGrey800 group-hover:text-tossBlue transition-colors line-clamp-1 mb-1 leading-snug">{n.title}</h4>
-                                            <p className="text-xs text-tossGrey600 font-medium line-clamp-2 leading-relaxed">{stripHtml(n.content)}</p>
+                    if (item.id === 'operating_status') {
+                        if (isGuest) return null;
+                        return (
+                            <TodayOperatingWidget 
+                                key="operating_status"
+                                studentRegion={studentRegion} 
+                                adminSchedules={adminSchedules} 
+                                calendarCategories={calendarCategories} 
+                                onStaffClick={onStaffClick}
+                            />
+                        );
+                    }
+
+                    if (item.id === 'live_chat') {
+                        if (isGuest) return null;
+                        return (
+                            <LiveCenterChat 
+                                key="live_chat"
+                                currentUser={user} 
+                                studentRegion={studentRegion} 
+                            />
+                        );
+                    }
+
+                    if (item.id === 'notices') {
+                        return (
+                            <div key="notices" className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-tossWarning/10 text-tossWarning flex items-center justify-center shrink-0">
+                                            <Bell size={18} />
                                         </div>
-                                        
-                                        {(n.images?.length > 0 || n.image_url) && (
-                                            <div className="w-16 h-16 rounded-toss-lg overflow-hidden bg-tossGrey50 shrink-0 border border-tossGrey100 relative shadow-inner">
-                                                <img src={n.images?.length > 0 ? n.images[0] : n.image_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
-                                            </div>
-                                        )}
-                                    </motion.div>
-                                ))}
-                                {homeNotices.length === 0 && <p className="text-center py-6 text-tossGrey400 text-xs">등록된 공지사항이 없습니다</p>}
-                            </div>
-                        </div>
-                    );
-                })()}
-
-                {/* 3. Programs (프로그램) */}
-                {(() => {
-                    const config = dashboardConfig.find(c => c.id === 'programs');
-                    if (!config || !config.isVisible) return null;
-                    return (
-                        <div className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
-                            <div className="flex justify-between items-start mb-4">
-                                <div className="flex items-center gap-3">
-                                    <div className="w-10 h-10 rounded-full bg-tossBlueLight text-tossBlue flex items-center justify-center shrink-0">
-                                        <Sparkles size={18} />
-                                    </div>
-                                    <div>
-                                        <h3 className="font-bold text-tossGrey900 text-[15px] tracking-tight leading-tight">프로그램</h3>
-                                        <p className="text-[11px] text-tossGrey500 font-semibold mt-0.5">기독 청소년 라이프스타일을 누려봅시다!</p>
-                                    </div>
-                                </div>
-                                <button onClick={() => handleTabChange(TAB_NAMES.PROGRAMS)} className="text-[11px] text-tossGrey600 font-bold px-2.5 py-1.5 bg-tossGrey100 rounded-toss-md hover:bg-tossGrey200 transition-colors">더보기</button>
-                            </div>
-                            <div className="space-y-5">
-                                {(() => {
-                                    const myJoinedPrograms = homePrograms.filter(p => responses[p.id] === 'JOIN');
-                                    if (myJoinedPrograms.length === 0) return null;
-                                    return (
-                                        <div className="mb-4">
-                                            <div className="mb-3 flex flex-col gap-1">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="w-1 h-3 rounded-full bg-tossBlue shrink-0"></span>
-                                                    <h4 className="font-extrabold text-tossGrey900 text-[13.5px] sm:text-[14.5px] leading-none">내가 신청한 프로그램</h4>
-                                                </div>
-                                                <p className="text-[10.5px] sm:text-[11.5px] text-tossGrey500 font-semibold pl-2.5">
-                                                    현재 {user?.name?.replace('(guest)', '') || '학생'}님이 참여 신청했어요
-                                                </p>
-                                            </div>
-                                            <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x no-swipe" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                                                {myJoinedPrograms.map(p => (
-                                                    <div key={p.id} className={myJoinedPrograms.length === 1 ? "w-full snap-start" : "min-w-[160px] w-[160px] snap-start"}>
-                                                        <ProgramCard
-                                                            program={{ ...p, responseStatus: responses[p.id] }}
-                                                            onClick={openNoticeDetail}
-                                                            compact={true}
-                                                        />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-
-                                {(() => {
-                                    const openPrograms = homePrograms.filter(p => !p.is_recruiting && responses[p.id] !== 'JOIN');
-                                    if (openPrograms.length === 0) return null;
-                                    return (
                                         <div>
-                                            <div className="mb-3 flex flex-col gap-1">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="w-1 h-3 rounded-full bg-tossBlue shrink-0"></span>
-                                                    <h4 className="font-extrabold text-tossGrey800 text-[13.5px] sm:text-[14.5px] leading-none">오픈 프로그램</h4>
-                                                </div>
-                                                <p className="text-[10.5px] sm:text-[11.5px] text-tossGrey500 font-semibold pl-2.5">누구나 신청 없이 함께할 수 있어요</p>
-                                            </div>
-                                            <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x no-swipe" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                                                {openPrograms.slice(0, config.count || 10).map(p => (
-                                                    <div key={p.id} className={openPrograms.length === 1 ? "w-full snap-start" : "min-w-[160px] w-[160px] snap-start"}>
-                                                        <ProgramCard
-                                                            program={{ ...p, responseStatus: responses[p.id] }}
-                                                            onClick={openNoticeDetail}
-                                                            compact={true}
-                                                        />
-                                                    </div>
-                                                ))}
-                                            </div>
+                                            <h3 className="font-bold text-tossGrey900 text-[15px] tracking-tight leading-tight">공지사항</h3>
+                                            <p className="text-[11px] text-tossGrey500 font-semibold mt-0.5">새로운 소식</p>
                                         </div>
-                                    );
-                                })()}
-
-                                {(() => {
-                                    const openPrograms = homePrograms.filter(p => !p.is_recruiting && responses[p.id] !== 'JOIN');
-                                    const applyPrograms = homePrograms.filter(p => p.is_recruiting && responses[p.id] !== 'JOIN');
-                                    if (applyPrograms.length === 0) return null;
-                                    return (
-                                        <div className={openPrograms.length > 0 ? "pt-4 border-t border-tossGrey100" : ""}>
-                                            <div className="mb-3 flex flex-col gap-1">
-                                                <div className="flex items-center gap-1.5">
-                                                    <span className="w-1 h-3 rounded-full bg-tossBlue shrink-0"></span>
-                                                    <h4 className="font-extrabold text-tossGrey800 text-[13.5px] sm:text-[14.5px] leading-none">신청 프로그램</h4>
+                                    </div>
+                                    <button onClick={() => handleTabChange(TAB_NAMES.NOTICES)} className="text-[11px] text-tossGrey600 font-bold px-2.5 py-1.5 bg-tossGrey100 rounded-toss-md hover:bg-tossGrey200 transition-colors">더보기</button>
+                                </div>
+                                <div className="divide-y divide-tossGrey100">
+                                    {homeNotices.slice(0, item.count || 3).map(n => (
+                                        <motion.div
+                                            key={n.id}
+                                            initial={{ opacity: 0, y: 10 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            onClick={() => openNoticeDetail(n)}
+                                            className="py-3.5 first:pt-0 last:pb-0 cursor-pointer group flex justify-between items-start gap-4 hover:bg-tossGrey50/50 px-2 -mx-2 rounded-toss-md transition-all duration-200"
+                                        >
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                                    {n.is_sticky && (
+                                                        <span className="flex items-center gap-0.5 px-2 py-0.5 bg-tossWarning/10 text-tossWarning rounded-full text-[9px] font-bold whitespace-nowrap shrink-0">
+                                                            공지
+                                                        </span>
+                                                    )}
+                                                    {n.is_recruiting && (
+                                                        <span className="px-2 py-0.5 bg-tossBlueLight text-tossBlue rounded-full text-[9px] font-bold shrink-0">
+                                                            모집중
+                                                        </span>
+                                                    )}
+                                                    <span className="text-[10px] text-tossGrey400 font-bold">{new Date(n.created_at).toLocaleDateString()}</span>
                                                 </div>
-                                                <p className="text-[10.5px] sm:text-[11.5px] text-tossGrey500 font-semibold pl-2.5">미리 신청하고 약속된 시간에 만나요!</p>
+                                                <h4 className="font-bold text-sm text-tossGrey800 group-hover:text-tossBlue transition-colors line-clamp-1 mb-1 leading-snug">{n.title}</h4>
+                                                <p className="text-xs text-tossGrey600 font-medium line-clamp-1 leading-relaxed">{getFirstParagraph(n.content)}</p>
                                             </div>
-                                            <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x no-swipe" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
-                                                {applyPrograms.slice(0, config.count || 10).map(p => (
-                                                    <div key={p.id} className={applyPrograms.length === 1 ? "w-full snap-start" : "min-w-[160px] w-[160px] snap-start"}>
-                                                        <ProgramCard
-                                                            program={{ ...p, responseStatus: responses[p.id] }}
-                                                            onClick={openNoticeDetail}
-                                                            compact={true}
-                                                        />
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    );
-                                })()}
-
-                                {homePrograms.length === 0 && (
-                                    <p className="text-center py-6 text-tossGrey400 text-xs w-full">신청 가능한 프로그램이 없습니다</p>
-                                )}
+                                            
+                                            {(n.images?.length > 0 || n.image_url) && (
+                                                <div className="w-16 h-16 rounded-toss-lg overflow-hidden bg-tossGrey50 shrink-0 border border-tossGrey100 relative shadow-inner">
+                                                    <img src={n.images?.length > 0 ? n.images[0] : n.image_url} alt="" className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
+                                                </div>
+                                            )}
+                                        </motion.div>
+                                    ))}
+                                    {homeNotices.length === 0 && <p className="text-center py-6 text-tossGrey400 text-xs">등록된 공지사항이 없습니다</p>}
+                                </div>
                             </div>
-                        </div>
-                    );
-                })()}
+                        );
+                    }
+
+                    if (item.id === 'programs') {
+                        return (
+                            <div key="programs" className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
+                                <div className="flex justify-between items-start mb-4">
+                                    <div className="flex items-center gap-3">
+                                        <div className="w-10 h-10 rounded-full bg-tossBlueLight text-tossBlue flex items-center justify-center shrink-0">
+                                            <Sparkles size={18} />
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-tossGrey900 text-[15px] tracking-tight leading-tight">프로그램</h3>
+                                            <p className="text-[11px] text-tossGrey500 font-semibold mt-0.5">기독 청소년 라이프스타일을 누려봅시다!</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => handleTabChange(TAB_NAMES.PROGRAMS)} className="text-[11px] text-tossGrey600 font-bold px-2.5 py-1.5 bg-tossGrey100 rounded-toss-md hover:bg-tossGrey200 transition-colors">더보기</button>
+                                </div>
+                                <div className="space-y-5">
+                                    {(() => {
+                                        const myJoinedPrograms = homePrograms.filter(p => responses[p.id] === 'JOIN');
+                                        if (myJoinedPrograms.length === 0) return null;
+                                        return (
+                                            <div className="mb-4">
+                                                <div className="mb-3 flex flex-col gap-1">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="w-1 h-3 rounded-full bg-tossBlue shrink-0"></span>
+                                                        <h4 className="font-extrabold text-tossGrey900 text-[13.5px] sm:text-[14.5px] leading-none">내가 신청한 프로그램</h4>
+                                                    </div>
+                                                    <p className="text-[10.5px] sm:text-[11.5px] text-tossGrey500 font-semibold pl-2.5">
+                                                        현재 {user?.name?.replace('(guest)', '') || '학생'}님이 참여 신청했어요
+                                                    </p>
+                                                </div>
+                                                <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x no-swipe" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                                                    {myJoinedPrograms.map(p => (
+                                                        <div key={p.id} className={myJoinedPrograms.length === 1 ? "w-full snap-start shrink-0" : "min-w-[160px] w-[160px] shrink-0 snap-start"}>
+                                                            <ProgramCard
+                                                                program={{ ...p, responseStatus: responses[p.id] }}
+                                                                onClick={openNoticeDetail}
+                                                                compact={true}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {(() => {
+                                        const openPrograms = homePrograms.filter(p => !p.is_recruiting && responses[p.id] !== 'JOIN');
+                                        if (openPrograms.length === 0) return null;
+                                        return (
+                                            <div>
+                                                <div className="mb-3 flex flex-col gap-1">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="w-1 h-3 rounded-full bg-tossBlue shrink-0"></span>
+                                                        <h4 className="font-extrabold text-tossGrey800 text-[13.5px] sm:text-[14.5px] leading-none">오픈 프로그램</h4>
+                                                    </div>
+                                                    <p className="text-[10.5px] sm:text-[11.5px] text-tossGrey500 font-semibold pl-2.5">누구나 신청 없이 함께할 수 있어요</p>
+                                                </div>
+                                                <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x no-swipe" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                                                    {openPrograms.slice(0, item.count || 10).map(p => (
+                                                        <div key={p.id} className={openPrograms.length === 1 ? "w-full snap-start shrink-0" : "min-w-[160px] w-[160px] shrink-0 snap-start"}>
+                                                            <ProgramCard
+                                                                program={{ ...p, responseStatus: responses[p.id] }}
+                                                                onClick={openNoticeDetail}
+                                                                compact={true}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {(() => {
+                                        const openPrograms = homePrograms.filter(p => !p.is_recruiting && responses[p.id] !== 'JOIN');
+                                        const applyPrograms = homePrograms.filter(p => p.is_recruiting && responses[p.id] !== 'JOIN');
+                                        if (applyPrograms.length === 0) return null;
+                                        return (
+                                            <div className={openPrograms.length > 0 ? "pt-4 border-t border-tossGrey100" : ""}>
+                                                <div className="mb-3 flex flex-col gap-1">
+                                                    <div className="flex items-center gap-1.5">
+                                                        <span className="w-1 h-3 rounded-full bg-tossBlue shrink-0"></span>
+                                                        <h4 className="font-extrabold text-tossGrey800 text-[13.5px] sm:text-[14.5px] leading-none">신청 프로그램</h4>
+                                                    </div>
+                                                    <p className="text-[10.5px] sm:text-[11.5px] text-tossGrey500 font-semibold pl-2.5">미리 신청하고 약속된 시간에 만나요!</p>
+                                                </div>
+                                                <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x no-swipe" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                                                    {applyPrograms.slice(0, item.count || 10).map(p => (
+                                                        <div key={p.id} className={applyPrograms.length === 1 ? "w-full snap-start shrink-0" : "min-w-[160px] w-[160px] shrink-0 snap-start"}>
+                                                            <ProgramCard
+                                                                program={{ ...p, responseStatus: responses[p.id] }}
+                                                                onClick={openNoticeDetail}
+                                                                compact={true}
+                                                            />
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    {homePrograms.length === 0 && (
+                                        <p className="text-center py-6 text-tossGrey400 text-xs w-full">신청 가능한 프로그램이 없습니다</p>
+                                    )}
+                                </div>
+                            </div>
+                        );
+                    }
+
+                    return null;
+                })}
             </div>
 
         </>

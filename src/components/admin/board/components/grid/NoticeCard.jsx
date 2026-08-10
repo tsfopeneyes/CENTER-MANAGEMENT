@@ -212,7 +212,12 @@ const NoticeCard = ({
                             : 'bg-[#f9fafb]/60 border-[#f2f4f6]/60 opacity-70'
                     } `}>
                         <div className={`flex gap-3 font-semibold items-center text-[#4e5968] ${viewMode === 'smaller' ? 'text-[9px]' : 'text-[10px] md:text-[11px]'}`}>
-                            {notice.is_poll ? (
+                            {notice.is_poll && notice.is_recruiting ? (
+                                <>
+                                    <span>신청 <span className={isActive ? "text-[#1b64da] font-bold" : "text-[#8b95a1] font-bold"}>{noticeStats[notice.id]?.JOIN || 0}</span></span>
+                                    <span>투표 <span className={isActive ? "text-[#7c3aed] font-bold" : "text-[#8b95a1] font-bold"}>{noticeStats[notice.id]?.pollTotal || 0}</span></span>
+                                </>
+                            ) : notice.is_poll ? (
                                 <span>
                                     투표 <span className={isActive ? "text-[#7c3aed] font-bold" : "text-[#8b95a1] font-bold"}>{noticeStats[notice.id]?.pollTotal || 0}</span>
                                 </span>
@@ -225,20 +230,42 @@ const NoticeCard = ({
                                 <span className={isActive ? "text-[#333d4b] font-semibold" : "text-[#8b95a1] font-semibold"}>오픈 프로그램</span>
                             )}
                         </div>
-                        <button 
-                            onClick={() => onOpenParticipants(notice)} 
-                            className={`text-[9px] md:text-[10px] px-3 py-1.5 rounded-xl font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] ${
-                                isActive 
-                                    ? 'bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff]' 
-                                    : 'bg-[#f2f4f6] text-[#4e5968] hover:bg-[#e4e8eb]'
-                            }`}
-                        >
-                            {notice.is_poll ? '결과' : '명단'}
-                        </button>
+
+                        {notice.is_poll && (notice.category === 'PROGRAM' || notice.is_recruiting || mode === CATEGORIES.PROGRAM) ? (
+                            <div className="flex items-center gap-1.5">
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, 'attendance'); }} 
+                                    className="text-[9px] md:text-[10px] px-2.5 py-1 rounded-xl font-semibold transition-all bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff] active:scale-95"
+                                >
+                                    명단
+                                </button>
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, 'poll'); }} 
+                                    className="text-[9px] md:text-[10px] px-2.5 py-1 rounded-xl font-semibold transition-all bg-purple-100 text-purple-700 hover:bg-purple-200 active:scale-95"
+                                >
+                                    투표결과
+                                </button>
+                            </div>
+                        ) : (
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, notice.is_poll ? 'poll' : 'attendance'); }} 
+                                className={`text-[9px] md:text-[10px] px-3 py-1.5 rounded-xl font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                                    isActive 
+                                        ? 'bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff]' 
+                                        : 'bg-[#f2f4f6] text-[#4e5968] hover:bg-[#e4e8eb]'
+                                }`}
+                            >
+                                {notice.is_poll ? '투표결과' : '명단'}
+                            </button>
+                        )}
                     </div>
                 )}
 
                 <div className={`flex items-center justify-between lg:gap-2 pt-2 md:pt-3 border-t border-[#f2f4f6]`}>
+                    <div className="flex items-center gap-1 text-[11px] font-bold text-gray-500 bg-gray-50 px-2 py-1 rounded-md" title="이용자 조회수 (스탭 제외)">
+                        <Eye size={12} className="text-gray-400" />
+                        <span>조회 {notice.view_count || 0}회</span>
+                    </div>
                     <div className="flex items-center gap-1 shrink-0">
                         {mode === CATEGORIES.PROGRAM && (
                             <>

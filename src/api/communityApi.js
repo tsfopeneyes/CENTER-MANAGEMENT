@@ -1,5 +1,19 @@
 import { supabase } from '../supabaseClient';
 
+// Helper for fallback post count update when RPC fails
+const updatePostCountFallback = async (postId, field, delta) => {
+    try {
+        const { data } = await supabase.from('community_posts').select(field).eq('id', postId).maybeSingle();
+        if (data) {
+            const current = data[field] || 0;
+            const updated = Math.max(0, current + delta);
+            await supabase.from('community_posts').update({ [field]: updated }).eq('id', postId);
+        }
+    } catch (e) {
+        console.error(`Fallback error updating ${field}:`, e);
+    }
+};
+
 export const communityApi = {
     // Fetch posts for a specific category
     fetchPosts: async (category, currentUserId) => {
@@ -80,7 +94,10 @@ export const communityApi = {
 
             // Decrement
             const { error: rpcError } = await supabase.rpc('decrement_post_likes', { p_post_id: postId });
-            if (rpcError) console.error('Error decrementing likes:', rpcError);
+            if (rpcError) {
+                console.warn('Error decrementing likes via RPC, using direct update fallback:', rpcError);
+                await updatePostCountFallback(postId, 'likes_count', -1);
+            }
 
             return true;
         } else {
@@ -95,7 +112,10 @@ export const communityApi = {
 
             // Increment
             const { error: rpcError } = await supabase.rpc('increment_post_likes', { p_post_id: postId });
-            if (rpcError) console.error('Error incrementing likes:', rpcError);
+            if (rpcError) {
+                console.warn('Error incrementing likes via RPC, using direct update fallback:', rpcError);
+                await updatePostCountFallback(postId, 'likes_count', 1);
+            }
 
             return true;
         }
@@ -141,7 +161,10 @@ export const communityApi = {
 
         // Increment post comments count
         const { error: rpcError } = await supabase.rpc('increment_post_comments', { p_post_id: postId });
-        if (rpcError) console.error('Error incrementing comments:', rpcError);
+        if (rpcError) {
+            console.warn('Error incrementing comments via RPC, using direct update fallback:', rpcError);
+            await updatePostCountFallback(postId, 'comments_count', 1);
+        }
 
         return data;
     },
@@ -151,7 +174,10 @@ export const communityApi = {
         const { error } = await supabase.from('community_comments').delete().eq('id', commentId);
         if (!error) {
             const { error: rpcError } = await supabase.rpc('decrement_post_comments', { p_post_id: postId });
-            if (rpcError) console.error('Error decrementing comments:', rpcError);
+            if (rpcError) {
+                console.warn('Error decrementing comments via RPC, using direct update fallback:', rpcError);
+                await updatePostCountFallback(postId, 'comments_count', -1);
+            }
         } else {
             console.error('Error deleting comment:', error);
         }

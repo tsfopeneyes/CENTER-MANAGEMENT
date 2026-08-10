@@ -93,11 +93,45 @@ const useNoticeModal = ({ notice, user, context, responses }) => {
         return () => clearInterval(interval);
     }, [notice.poll_deadline, notice.is_poll]);
 
+    // Reactions State
+    const [reactions, setReactions] = useState([]);
+
+    const fetchReactions = async () => {
+        if (!notice?.id) return;
+        try {
+            const data = await noticesApi.fetchNoticeReactions(notice.id);
+            setReactions(data || []);
+        } catch (err) {
+            console.error('Failed to fetch reactions:', err);
+        }
+    };
+
+    const handleToggleReaction = async (emoji) => {
+        if (!notice?.id || !user?.id || !emoji) return;
+
+        // Optimistic UI update
+        const existingIdx = reactions.findIndex(r => r.user_id === user.id && r.emoji === emoji);
+        if (existingIdx > -1) {
+            setReactions(prev => prev.filter((_, idx) => idx !== existingIdx));
+        } else {
+            setReactions(prev => [...prev, { notice_id: notice.id, user_id: user.id, emoji }]);
+        }
+
+        try {
+            await noticesApi.toggleNoticeReaction(notice.id, user.id, emoji);
+            fetchReactions();
+        } catch (err) {
+            console.error('Failed to toggle reaction:', err);
+            fetchReactions();
+        }
+    };
+
     useEffect(() => {
         if (!context) {
             fetchLikeStatus();
             fetchParticipantCounts();
             fetchPollData();
+            fetchReactions();
         }
     }, [notice.id, user, responses?.[notice.id]]);
 
@@ -170,6 +204,8 @@ const useNoticeModal = ({ notice, user, context, responses }) => {
         joinCount, waitlistCount,
         liked, likeCount,
         timeLeft,
+        // Reactions state
+        reactions, handleToggleReaction,
         // Poll states
         userVotes, pendingVotes,
         isSubmittingPoll, pollResults,

@@ -1,8 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useSearchParams, useNavigate } from 'react-router-dom';
 import { MessageSquare, ExternalLink, Copy, Check, Sparkles, User, ShieldCheck, LogIn, ArrowLeft } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import LiveCenterChat from '../components/student/components/LiveCenterChat';
+
+// Safe Motion Fallback for Samsung Smart Signage / Tizen Browsers
+const motion = {
+    div: ({ children, className, style, onClick, ...props }) => (
+        <div className={className} style={style} onClick={onClick}>{children}</div>
+    )
+};
+const AnimatePresence = ({ children }) => <>{children}</>;
 
 const StandaloneLiveChat = () => {
     const { center: paramCenter } = useParams();
@@ -24,15 +31,36 @@ const StandaloneLiveChat = () => {
     const [activeCenter, setActiveCenter] = useState(getTargetCenter);
     const [copied, setCopied] = useState(false);
 
+    const getSafeItem = (type, key) => {
+        try {
+            const storage = type === 'session' ? window.sessionStorage : window.localStorage;
+            return storage ? storage.getItem(key) : null;
+        } catch (e) {
+            return null;
+        }
+    };
+
+    const setSafeItem = (type, key, value) => {
+        try {
+            const storage = type === 'session' ? window.sessionStorage : window.localStorage;
+            if (storage) storage.setItem(key, value);
+        } catch (e) {}
+    };
+
     // Helper to generate a valid UUID for guest session
     const getGuestUuid = () => {
-        let savedId = sessionStorage.getItem('standalone_chat_guest_uuid');
+        let savedId = getSafeItem('session', 'standalone_chat_guest_uuid');
         const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
         if (!savedId || !uuidRegex.test(savedId)) {
-            savedId = typeof crypto !== 'undefined' && crypto.randomUUID
-                ? crypto.randomUUID()
-                : '00000000-0000-4000-8000-' + Math.random().toString(16).substring(2, 14).padStart(12, '0');
-            sessionStorage.setItem('standalone_chat_guest_uuid', savedId);
+            try {
+                if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+                    savedId = crypto.randomUUID();
+                }
+            } catch (e) {}
+            if (!savedId) {
+                savedId = '00000000-0000-4000-8000-' + Math.random().toString(16).substring(2, 14).padStart(12, '0');
+            }
+            setSafeItem('session', 'standalone_chat_guest_uuid', savedId);
         }
         return savedId;
     };
@@ -40,7 +68,7 @@ const StandaloneLiveChat = () => {
     // 2. User State Management (Logged in or Guest)
     const [currentUser, setCurrentUser] = useState(() => {
         try {
-            const stored = localStorage.getItem('user') || localStorage.getItem('admin_user');
+            const stored = getSafeItem('local', 'user') || getSafeItem('local', 'admin_user');
             if (stored) {
                 return JSON.parse(stored);
             }
@@ -48,7 +76,7 @@ const StandaloneLiveChat = () => {
             console.error('Failed to parse logged user', e);
         }
         // Fallback guest name from session
-        const savedGuestName = sessionStorage.getItem('standalone_chat_guest_name');
+        const savedGuestName = getSafeItem('session', 'standalone_chat_guest_name');
         if (savedGuestName) {
             return {
                 id: getGuestUuid(),
@@ -81,7 +109,7 @@ const StandaloneLiveChat = () => {
             user_group: '게스트'
         };
 
-        sessionStorage.setItem('standalone_chat_guest_name', formattedName);
+        setSafeItem('session', 'standalone_chat_guest_name', formattedName);
         setCurrentUser(guestUser);
         setShowGuestModal(false);
     };
@@ -101,74 +129,10 @@ const StandaloneLiveChat = () => {
                 <div className="absolute -bottom-20 -right-20 w-80 h-80 bg-purple-500/5 rounded-full blur-[90px]" />
             </div>
 
-            {/* Standalone Header */}
-            <header className="bg-white/90 backdrop-blur-md border-b border-[#E5E8EB] px-4 sm:px-6 py-3.5 sticky top-0 z-40 shadow-xs flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <button
-                        onClick={() => navigate('/')}
-                        className="p-2 text-gray-500 hover:text-gray-900 rounded-full hover:bg-gray-100 transition"
-                        title="메인 홈으로"
-                    >
-                        <ArrowLeft size={18} />
-                    </button>
-                    <div>
-                        <div className="flex items-center gap-2">
-                            <span className="font-black text-base sm:text-lg text-[#191F28] tracking-tight">
-                                SCI CENTER
-                            </span>
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 text-[11px] font-bold border border-red-100 animate-pulse">
-                                <span className="w-1.5 h-1.5 rounded-full bg-red-500" />
-                                LIVE 대화방
-                            </span>
-                        </div>
-                        <p className="text-[11px] text-[#8B95A1] font-medium hidden sm:block">
-                            센터별 실시간 채팅 전용 페이지
-                        </p>
-                    </div>
-                </div>
-
-                {/* Center Switcher & Actions */}
-                <div className="flex items-center gap-2 sm:gap-3">
-                    {/* Center Tabs */}
-                    <div className="flex items-center bg-[#F2F4F6] p-1 rounded-2xl border border-gray-200/60">
-                        <button
-                            onClick={() => setActiveCenter('하이픈')}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all ${
-                                activeCenter === '하이픈'
-                                    ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-gray-500 hover:text-gray-800'
-                            }`}
-                        >
-                            하이픈
-                        </button>
-                        <button
-                            onClick={() => setActiveCenter('이높플레이스')}
-                            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all ${
-                                activeCenter === '이높플레이스'
-                                    ? 'bg-white text-blue-600 shadow-sm'
-                                    : 'text-gray-500 hover:text-gray-800'
-                            }`}
-                        >
-                            이높플레이스
-                        </button>
-                    </div>
-
-                    {/* Copy Link Button */}
-                    <button
-                        onClick={handleCopyUrl}
-                        className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl text-xs transition border border-gray-200"
-                        title="이 대화방 주소 복사하기"
-                    >
-                        {copied ? <Check size={14} className="text-green-600" /> : <Copy size={14} />}
-                        <span className="hidden sm:inline">{copied ? '복사됨!' : '주소 복사'}</span>
-                    </button>
-                </div>
-            </header>
-
-            {/* Main Chat Area */}
-            <main className="flex-1 max-w-4xl w-full mx-auto p-3 sm:p-6 flex flex-col">
+            {/* Main Chat Area - 100% Full Height without Top Header */}
+            <main className="flex-1 w-full flex flex-col bg-white overflow-hidden">
                 {currentUser ? (
-                    <div className="flex-1 flex flex-col bg-white rounded-3xl border border-[#E5E8EB] shadow-xl overflow-hidden p-2 sm:p-4">
+                    <div className="flex-1 flex flex-col bg-white overflow-hidden px-2 sm:px-6 pt-2 pb-0">
                         <LiveCenterChat
                             currentUser={currentUser}
                             studentRegion={activeCenter === '이높플레이스' ? '강서' : '강동'}

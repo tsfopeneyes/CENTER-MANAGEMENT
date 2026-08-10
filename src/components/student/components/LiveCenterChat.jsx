@@ -1,8 +1,19 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { MessageSquare, MessageCircle, Send, AlertTriangle, Shield, Info, Sparkles, Flag, CheckCircle2, Trash2, Eye, EyeOff, RotateCcw, Image as ImageIcon, X, Smile, ExternalLink } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../../../supabaseClient';
 import { useLiveCenterChat } from '../../../hooks/useLiveCenterChat';
+
+// Safe Motion Fallback for Samsung Smart Signage / Tizen Browsers
+const motion = {
+    div: ({ children, className, style, onClick, ...props }) => (
+        <div className={className} style={style} onClick={onClick}>{children}</div>
+    ),
+    button: ({ children, className, style, onClick, ...props }) => (
+        <button className={className} style={style} onClick={onClick}>{children}</button>
+    )
+};
+const AnimatePresence = ({ children }) => <>{children}</>;
 
 const QUICK_EMOJIS = ['👍', '❤️', '🔥', '😂', '🎉', '👏', '😮', '😢', '🙏', '💯'];
 
@@ -13,7 +24,7 @@ const EMOJI_CATEGORIES = [
     },
     {
         name: '표정 & 기분',
-        emojis: ['😊', '🥰', '😍', '🤩', '😎', '🥳', '🤔', '🫡', '🤫', '😴', '😭', '😱', '🤯', '😈', '🤡']
+        emojis: ['😊', '🥰', '😍', '🤩', '😎', '🥳', '🤔', '🤗', '🤫', '😴', '😭', '😱', '🤯', '😈', '🤡']
     },
     {
         name: '손짓 & 응원',
@@ -25,7 +36,7 @@ const EMOJI_CATEGORIES = [
     },
     {
         name: '축하 & 오브젝트',
-        emojis: ['🎉', '🎊', '🎁', '🎈', '🏆', '🥇', '👑', '🎯', '🚀', '🍕', '🧋', '☕', '🍀', '🌸', '🎵']
+        emojis: ['🎉', '🎊', '🎁', '🎈', '🏆', '🥇', '👑', '🎯', '🚀', '🍕', '🍿', '☕', '🍀', '🌸', '🎵']
     }
 ];
 
@@ -78,6 +89,42 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
     const [customEmojiInput, setCustomEmojiInput] = useState('');
     const [reactionDetailMsg, setReactionDetailMsg] = useState(null);
     const [activeReactionTab, setActiveReactionTab] = useState('ALL');
+
+    // Long press for reactions
+    const reactionTimerRef = useRef(null);
+    const isReactionLongPressRef = useRef(false);
+    const ignoreReactionBackdropClickRef = useRef(false);
+
+    const handleReactionPressStart = (msg, emoji) => {
+        isReactionLongPressRef.current = false;
+        reactionTimerRef.current = setTimeout(() => {
+            isReactionLongPressRef.current = true;
+            ignoreReactionBackdropClickRef.current = true;
+            setReactionDetailMsg(msg);
+            setActiveReactionTab(emoji);
+            setTimeout(() => {
+                ignoreReactionBackdropClickRef.current = false;
+            }, 500);
+        }, 400);
+    };
+
+    const handleReactionPressEnd = (msgId, emoji) => {
+        if (reactionTimerRef.current) {
+            clearTimeout(reactionTimerRef.current);
+            reactionTimerRef.current = null;
+        }
+        if (!isReactionLongPressRef.current) {
+            toggleReaction(msgId, emoji);
+        }
+    };
+
+    const handleReactionPressCancel = () => {
+        if (reactionTimerRef.current) {
+            clearTimeout(reactionTimerRef.current);
+            reactionTimerRef.current = null;
+        }
+    };
+
     const [centerUsers, setCenterUsers] = useState([]);
     const [showMentionPopover, setShowMentionPopover] = useState(false);
     const [mentionSearchQuery, setMentionSearchQuery] = useState('');
@@ -180,9 +227,22 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
 
         const fetchRpcCandidates = async () => {
             try {
-                const { data: rpcData } = await supabase.rpc('get_login_candidates', { p_name: mentionSearchQuery.trim() });
-                if (rpcData && Array.isArray(rpcData)) {
-                    setRpcCandidates(rpcData.map(r => ({
+                let candidates = [];
+                const { data: rpcData, error: rpcError } = await supabase.rpc('get_login_candidates', { p_name: mentionSearchQuery.trim() });
+                if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+                    candidates = rpcData;
+                } else {
+                    // Fallback to direct query on users table
+                    const { data: fallbackData } = await supabase
+                        .from('users')
+                        .select('id, name, school, role')
+                        .ilike('name', `%${mentionSearchQuery.trim()}%`)
+                        .limit(10);
+                    candidates = fallbackData || [];
+                }
+
+                if (candidates && Array.isArray(candidates)) {
+                    setRpcCandidates(candidates.map(r => ({
                         id: r.id,
                         name: r.name,
                         school: r.school || '',
@@ -193,7 +253,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                     })));
                 }
             } catch (e) {
-                console.warn('RPC candidate fetch error:', e);
+                console.warn('RPC candidate fetch error, trying direct query:', e);
             }
         };
 
@@ -257,9 +317,18 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
         return Array.from(userMap.values());
     }, [centerUsers, rpcCandidates, messages]);
 
-    // Auto-scroll ONLY internal chat box (prevents main page from jumping down on refresh)
+    const [userHasScrolledUp, setUserHasScrolledUp] = useState(false);
+
+    const handleScroll = () => {
+        if (!messagesContainerRef.current) return;
+        const { scrollTop, scrollHeight, clientHeight } = messagesContainerRef.current;
+        const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+        setUserHasScrolledUp(!isAtBottom);
+    };
+
+    // Auto-scroll ONLY when user is near bottom or on initial load
     useEffect(() => {
-        if (messagesContainerRef.current) {
+        if (messagesContainerRef.current && !userHasScrolledUp) {
             messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
         }
     }, [messages, activeCenter, typingUsers]);
@@ -520,32 +589,40 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
     };
 
     return (
-        <div className="bg-white p-5 rounded-toss-xl shadow-toss-standard relative">
-            {/* Header - Unified with Toss Card Design System */}
-            <div className="flex justify-between items-start mb-3 pb-3 border-b border-tossGrey100">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-full bg-tossBlue/10 text-tossBlue flex items-center justify-center shrink-0">
-                        <MessageSquare size={18} />
+        <div className={`bg-white relative flex flex-col overflow-hidden ${isStandalone ? 'h-screen w-full p-0' : 'p-5 rounded-toss-xl shadow-toss-standard'}`}>
+            {/* Header - Fixed Top Flex Block */}
+            <div className={`flex justify-between items-center bg-white opacity-100 shrink-0 ${isStandalone ? 'px-8 py-4 border-b-2 border-tossGrey100 shadow-xs' : 'mb-3 pb-3 border-b border-tossGrey100'}`}>
+                <div className="flex items-center gap-3.5 min-w-0">
+                    <div className={`${isStandalone ? 'w-12 h-12 rounded-2xl bg-tossBlue/10 text-tossBlue border border-tossBlue/20' : 'w-10 h-10 rounded-2xl bg-tossBlue/10 text-tossBlue'} flex items-center justify-center shrink-0`}>
+                        <MessageSquare size={isStandalone ? 22 : 18} />
                     </div>
-                    <div>
-                        <div className="flex items-center gap-1.5">
-                            <h3 className="font-bold text-tossGrey900 text-[15px] tracking-tight leading-tight">
+                    <div className="min-w-0 pr-3.5">
+                        <div className="flex items-center gap-2">
+                            <h3 className={`font-black text-tossGrey900 ${isStandalone ? 'text-2xl sm:text-3xl' : 'text-[15px]'} tracking-tight leading-tight`}>
                                 {activeCenter === '이높플레이스' ? '이높플 라이브' : '하이픈 라이브'}
                             </h3>
+                            {isStandalone && (
+                                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-red-50 text-red-600 text-xs font-black border border-red-200/80 animate-pulse">
+                                    <span className="w-2 h-2 rounded-full bg-red-500" />
+                                    LIVE
+                                </span>
+                            )}
                             <button
                                 onClick={() => setShowInfoModal(!showInfoModal)}
                                 className="text-tossGrey400 hover:text-tossGrey600 transition p-0.5"
                                 title="채팅 안내"
                             >
-                                <Info size={14} />
+                                <Info size={15} />
                             </button>
                         </div>
-                        <p className="text-[11px] text-tossGrey500 font-semibold mt-0.5">센터에서 나누고 싶은 모든 이야기 (매일 밤 12시 초기화)</p>
+                        <p className={`${isStandalone ? 'text-xs sm:text-sm font-semibold text-tossGrey500' : 'text-[11px] text-tossGrey500 font-semibold'} mt-0.5`}>
+                            {activeCenter}에서 나누고 싶은 모든 이야기 (매일 밤 12시 초기화)
+                        </p>
                     </div>
                 </div>
 
                 {/* Right Header Actions: Master Switcher or Admin Reset */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0 ml-3.5">
                     {isAdminOrStaff && (
                         <button
                             onClick={() => setShowClearConfirmModal(true)}
@@ -584,56 +661,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                 </div>
             </div>
 
-            {/* Floating Quick Reaction Bar (Card-level, 100% visible with zero clipping) */}
-            <AnimatePresence>
-                {activeReactionPickerId && (
-                    <motion.div
-                        initial={{ opacity: 0, y: -6 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -6 }}
-                        className="mb-2.5 p-2 bg-white/95 backdrop-blur-md border border-tossBlue/30 rounded-2xl shadow-toss-standard flex flex-col gap-1.5 z-30"
-                    >
-                        <div className="flex items-center justify-between px-1">
-                            <span className="text-[10.5px] font-bold text-tossBlue flex items-center gap-1">
-                                <Smile size={12} />
-                                <span>이모지 반응 고르기</span>
-                            </span>
-                            <button
-                                type="button"
-                                onClick={() => setActiveReactionPickerId(null)}
-                                className="text-tossGrey400 hover:text-tossGrey600 p-0.5"
-                            >
-                                <X size={13} />
-                            </button>
-                        </div>
-                        <div className="grid grid-cols-5 gap-1.5 py-1 px-0.5">
-                            {QUICK_EMOJIS.map(emoji => (
-                                <button
-                                    key={emoji}
-                                    type="button"
-                                    onClick={() => {
-                                        toggleReaction(activeReactionPickerId, emoji);
-                                        setActiveReactionPickerId(null);
-                                    }}
-                                    className="hover:scale-125 transition-transform text-xl p-1.5 hover:bg-tossBlue/10 rounded-xl flex items-center justify-center"
-                                >
-                                    {emoji}
-                                </button>
-                            ))}
-                        </div>
-                        <button
-                            type="button"
-                            onClick={() => {
-                                setExtendedReactionMsgId(activeReactionPickerId);
-                                setActiveReactionPickerId(null);
-                            }}
-                            className="w-full text-center text-[10.5px] font-bold text-tossBlue bg-tossBlue/5 hover:bg-tossBlue/15 py-1 rounded-xl transition border border-tossBlue/10"
-                        >
-                            + 더 많은 이모지 보기 / 직접 입력
-                        </button>
-                    </motion.div>
-                )}
-            </AnimatePresence>
+
 
             {/* Info Dropdown */}
             <AnimatePresence>
@@ -688,7 +716,8 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
             {/* Messages Area (Compact & Optimized Scrollable Box) */}
             <div
                 ref={messagesContainerRef}
-                className={`${isStandalone ? 'h-[58vh] sm:h-[65vh] min-h-[400px]' : 'h-56'} overflow-y-auto px-1 space-y-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b border-tossGrey100/60 pb-3`}
+                onScroll={handleScroll}
+                className={`${isStandalone ? 'flex-1 overflow-y-auto overflow-x-hidden px-8 py-4' : 'h-56 overflow-y-auto overflow-x-hidden px-1'} space-y-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden border-b-0`}
             >
                 {loading ? (
                     <div className="h-full flex items-center justify-center text-xs text-tossGrey400">
@@ -698,7 +727,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                     <div className="h-full flex flex-col items-center justify-center text-center p-4 text-tossGrey400">
                         <MessageCircle size={28} className="mb-1.5 text-tossGrey300" />
                         <p className="text-xs font-bold text-tossGrey600">오늘 첫 메시지를 남겨보세요! ✨</p>
-                        <p className="text-[11px] text-tossGrey400 mt-0.5">센터 친구들과 자유롭게 이야기를 공유할 수 있습니다.</p>
+                        <p className="text-[11px] text-tossGrey400 mt-0.5">친구들과 자유롭게 이야기를 공유할 수 있습니다.</p>
                     </div>
                 ) : (
                     messages.map((msg, idx) => {
@@ -754,12 +783,12 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                     return (
                                         <span
                                             key={index}
-                                            className={`inline-flex items-center px-1.5 py-0.5 rounded-md text-[11px] font-black mx-0.5 align-baseline leading-none transition-colors ${
+                                            className={`font-bold ${
                                                 isMentioningMe
-                                                    ? 'bg-amber-400 text-slate-950 shadow-2xs'
+                                                    ? 'text-amber-400 font-extrabold underline'
                                                     : isMe
-                                                        ? 'bg-white/25 text-white border border-white/40'
-                                                        : 'bg-blue-100/90 text-blue-700 border border-blue-200/80'
+                                                        ? 'text-blue-100 font-extrabold'
+                                                        : 'text-tossBlue font-extrabold'
                                             }`}
                                         >
                                             {part}
@@ -772,7 +801,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
 
                         return (
                             <div
-                                className={`px-3 py-2 rounded-2xl text-[13px] leading-relaxed break-words font-medium shrink-0 max-w-full flex flex-col gap-1.5 overflow-visible ${
+                                className={`p-1 rounded-2xl text-[12px] leading-relaxed break-words font-medium shrink-0 max-w-full flex flex-col gap-1 ${
                                     isStaffOrMaster
                                         ? isMe
                                             ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-br-2xs shadow-toss-subtle'
@@ -786,12 +815,12 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                     <img
                                         src={m.image_url}
                                         alt="첨부 이미지"
-                                        className="max-w-[200px] sm:max-w-[240px] max-h-[200px] rounded-xl object-cover border border-black/10 cursor-pointer hover:opacity-95 transition shadow-2xs"
+                                        className={`${isStandalone ? 'max-w-[320px] sm:max-w-[440px] max-h-[380px] rounded-2xl' : 'max-w-[200px] sm:max-w-[240px] max-h-[200px] rounded-xl'} object-cover border border-black/10 cursor-pointer hover:opacity-95 transition shadow-sm my-1`}
                                         onClick={() => setEnlargedImageUrl(m.image_url)}
                                     />
                                 )}
                                 {m.message && (
-                                    <div className="px-0.5 py-0.5 whitespace-pre-wrap break-words leading-relaxed">
+                                    <div className={`px-3 py-1 whitespace-pre-wrap break-words ${isStandalone ? 'text-lg sm:text-xl font-medium leading-relaxed tracking-normal' : 'text-[13.5px] font-semibold leading-relaxed'}`}>
                                         {renderFormattedMessageText(m.message)}
                                     </div>
                                 )}
@@ -823,21 +852,33 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                             <button
                                                 key={emoji}
                                                 type="button"
-                                                onClick={() => toggleReaction(m.id, emoji)}
+                                                onMouseDown={() => handleReactionPressStart(m, emoji)}
+                                                onMouseUp={() => handleReactionPressEnd(m.id, emoji)}
+                                                onMouseLeave={handleReactionPressCancel}
+                                                onTouchStart={() => handleReactionPressStart(m, emoji)}
+                                                onTouchEnd={() => handleReactionPressEnd(m.id, emoji)}
+                                                onTouchCancel={handleReactionPressCancel}
                                                 onContextMenu={(e) => {
                                                     e.preventDefault();
                                                     setReactionDetailMsg(m);
                                                     setActiveReactionTab(emoji);
                                                 }}
-                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition border relative group/reaction ${
+                                                onDragStart={(e) => e.preventDefault()}
+                                                draggable={false}
+                                                style={{
+                                                    WebkitUserSelect: 'none',
+                                                    userSelect: 'none',
+                                                    WebkitTouchCallout: 'none'
+                                                }}
+                                                className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold transition border relative group/reaction select-none active:scale-95 ${
                                                     hasReacted
                                                         ? 'bg-tossBlue/10 border-tossBlue/40 text-tossBlue font-bold shadow-2xs'
                                                         : 'bg-white border-tossGrey200 text-tossGrey700 hover:bg-tossGrey100 shadow-2xs'
                                                 }`}
-                                                title={`${names.join(', ')} 님이 ${emoji} 반응을 남겼습니다`}
+                                                title={`${names.join(', ')} 님이 ${emoji} 반응을 남겼습니다 (길게 눌러 전체 확인)`}
                                             >
-                                                <span>{emoji}</span>
-                                                <span className="text-[10px] text-tossGrey600">{userList.length}</span>
+                                                <span className="select-none pointer-events-none">{emoji}</span>
+                                                <span className="text-[10px] text-tossGrey600 select-none pointer-events-none">{userList.length}</span>
 
                                                 {/* Desktop Hover Tooltip & Click to Details */}
                                                 <div
@@ -867,12 +908,8 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                 {!m.is_hidden && (
                                     <button
                                         type="button"
-                                        onClick={() => setActiveReactionPickerId(activeReactionPickerId === m.id ? null : m.id)}
-                                        className={`p-0.5 rounded transition ${
-                                            activeReactionPickerId === m.id
-                                                ? 'text-tossBlue bg-tossBlue/15 font-bold shadow-2xs'
-                                                : 'text-tossGrey400 hover:text-tossBlue hover:bg-tossGrey100'
-                                        }`}
+                                        onClick={() => setExtendedReactionMsgId(m.id)}
+                                        className="p-0.5 rounded transition text-tossGrey400 hover:text-tossBlue hover:bg-tossGrey100"
                                         title="반응 남기기"
                                     >
                                         <Smile size={12} />
@@ -917,10 +954,10 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                             >
                                 {/* OTHERS MESSAGE (Left Aligned) */}
                                 {!isMe && (
-                                    <div className="flex gap-2 items-start max-w-[82%]">
+                                    <div className={`flex gap-2 items-start ${isStandalone ? 'max-w-[92%]' : 'max-w-[82%]'}`}>
                                         {/* Avatar (only on first of grouped block) */}
                                         {!isGroupedWithPrev ? (
-                                            <div className="w-7 h-7 rounded-full bg-tossGrey100 border border-tossGrey200/60 flex items-center justify-center font-bold text-[11px] text-tossGrey600 shrink-0 overflow-hidden shadow-2xs mt-0.5">
+                                            <div className={`${isStandalone ? 'w-9 h-9 text-xs' : 'w-7 h-7 text-[11px]'} rounded-full bg-tossGrey100 border border-tossGrey200/60 flex items-center justify-center font-bold text-tossGrey600 shrink-0 overflow-hidden shadow-2xs mt-0.5`}>
                                                 {msg.user_avatar ? (
                                                     <img src={msg.user_avatar} alt={msg.user_name} className="w-full h-full object-cover" />
                                                 ) : (
@@ -928,14 +965,14 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                                 )}
                                             </div>
                                         ) : (
-                                            <div className="w-7 h-7 shrink-0" />
+                                            <div className={isStandalone ? 'w-9 h-9 shrink-0' : 'w-7 h-7 shrink-0'} />
                                         )}
 
                                         <div className="flex flex-col items-start max-w-full">
                                             {/* Header: Name (only on first of grouped block) */}
                                             {!isGroupedWithPrev && (
                                                 <div className="flex items-center gap-1 mb-1 px-0.5">
-                                                    <span className="text-[10.5px] font-bold text-tossGrey700">{msg.user_name}</span>
+                                                    <span className={`${isStandalone ? 'text-xs sm:text-sm font-black' : 'text-[10.5px] font-bold'} text-tossGrey700`}>{msg.user_name}</span>
                                                 </div>
                                             )}
 
@@ -943,7 +980,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                             <div className="relative group flex items-end gap-1.5 max-w-full">
                                                 {renderBubble(msg)}
                                                 {!isGroupedWithNext && (
-                                                    <span className="text-[9.5px] text-tossGrey400 shrink-0 pb-0.5 whitespace-nowrap">
+                                                    <span className={`${isStandalone ? 'text-xs font-semibold' : 'text-[9.5px]'} text-tossGrey400 shrink-0 pb-0.5 whitespace-nowrap`}>
                                                         {currentTime}
                                                     </span>
                                                 )}
@@ -964,7 +1001,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
 
                                 {/* MY MESSAGE (Right Aligned) */}
                                 {isMe && (
-                                    <div className="flex flex-col items-end max-w-[82%]">
+                                    <div className={`flex flex-col items-end ${isStandalone ? 'max-w-[92%]' : 'max-w-[82%]'}`}>
                                         <div className="relative group flex items-end gap-1.5 max-w-full justify-end">
                                             {/* Floating Action Buttons */}
                                             <div className={`absolute right-full top-1/2 -translate-y-1/2 pr-1.5 transition-opacity duration-150 z-20 ${
@@ -1019,383 +1056,420 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                 )}
             </div>
 
-            {/* Input Form with Image Upload & Mention Popover Support */}
-            {imagePreview && (
-                <div className="mt-2.5 relative inline-block">
-                    <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-tossBlue shadow-sm relative group">
-                        <img src={imagePreview} alt="선택 이미지" className="w-full h-full object-cover" />
+            {/* Standalone Bottom QR Banner - 3-Row Flex Block (Zero Overlap Guaranteed) */}
+            {isStandalone && (
+                <footer className="shrink-0 bg-[#F8F9FA] border-t-2 border-tossGrey200 px-8 py-5 flex items-center justify-between shadow-md z-20">
+                    <div className="flex items-center gap-16 sm:gap-20">
+                        {/* QR Code Container */}
+                        <div className="w-24 h-24 sm:w-28 sm:h-28 bg-white p-2 rounded-2xl border-2 border-tossGrey200 shadow-md shrink-0 flex items-center justify-center overflow-hidden">
+                            <img
+                                src="https://api.qrserver.com/v1/create-qr-code/?size=250x250&data=https://app.schoolchurchimpact.org"
+                                alt="App QR Code"
+                                className="w-full h-full object-contain"
+                            />
+                        </div>
+                        {/* Text Content with Generous 20px+ Gap */}
+                        <div className="flex flex-col justify-center space-y-1.5 ml-4 sm:ml-8">
+                            <div className="flex items-center gap-4">
+                                <span className="font-black text-2xl sm:text-3xl text-tossGrey900 tracking-tight">
+                                    HAIFN APP에 접속해보세요!
+                                </span>
+                                <span className="px-3.5 py-1 rounded-full bg-tossBlue text-white text-xs sm:text-sm font-black shadow-2xs shrink-0">
+                                    실시간 대화 참여
+                                </span>
+                            </div>
+                            <p className="text-sm sm:text-base text-tossGrey600 font-bold leading-relaxed">
+                                스마트폰 카메라로 QR 코드를 스캔하거나 <strong className="font-black text-tossBlue underline ml-1">app.schoolchurchimpact.org</strong> 로 접속하세요 ✨
+                            </p>
+                        </div>
+                    </div>
+                </footer>
+            )}
+
+            {/* Input Form with Image Upload & Mention Popover Support - Hidden on Standalone Viewer Mode */}
+            {!isStandalone && (
+                <>
+                    {imagePreview && (
+                        <div className="mt-2.5 relative inline-block">
+                            <div className="w-16 h-16 rounded-xl overflow-hidden border-2 border-tossBlue shadow-sm relative group">
+                                <img src={imagePreview} alt="선택 이미지" className="w-full h-full object-cover" />
+                                <button
+                                    type="button"
+                                    onClick={removeSelectedImage}
+                                    className="absolute top-0.5 right-0.5 bg-black/70 text-white p-1 rounded-full hover:bg-black transition"
+                                    title="이미지 제거"
+                                >
+                                    <X size={10} />
+                                </button>
+                            </div>
+                        </div>
+                    )}
+                    <form onSubmit={handleSend} className="mt-2.5 flex items-center gap-1.5 relative">
+                        {/* Mention (@) User Autocomplete Popover (Floating above form with z-[999]) */}
+                        {showMentionPopover && (
+                            <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-tossGrey300 rounded-2xl shadow-2xl p-2.5 z-[999] max-h-56 overflow-y-auto">
+                                <div className="text-[11px] font-bold text-tossGrey600 px-2 py-1 flex items-center justify-between border-b border-tossGrey100 mb-1.5">
+                                    <span>친구/스처쌤 언급하기 (@{mentionSearchQuery})</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowMentionPopover(false)}
+                                        className="text-tossGrey400 hover:text-tossGrey600 p-0.5"
+                                    >
+                                        <X size={13} />
+                                    </button>
+                                </div>
+                                {filteredMentionUsers.length === 0 ? (
+                                    <div className="py-3 text-center text-tossGrey400 text-xs font-medium">
+                                        해당 이름의 이용자가 없습니다.
+                                    </div>
+                                ) : (
+                                    filteredMentionUsers.map(u => (
+                                        <button
+                                            key={u.id}
+                                            type="button"
+                                            onMouseDown={(e) => e.preventDefault()}
+                                            onClick={(e) => selectMentionUser(e, u)}
+                                            className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-tossBlue/10 active:bg-tossBlue/20 transition text-left group"
+                                        >
+                                            <div className="w-7 h-7 rounded-full bg-tossBlue/10 border border-tossBlue/20 flex items-center justify-center font-bold text-xs text-tossBlue shrink-0 overflow-hidden">
+                                                {u.profile_image_url ? (
+                                                    <img src={u.profile_image_url} alt={u.name} className="w-full h-full object-cover" />
+                                                ) : (
+                                                    u.name?.[0] || '익'
+                                                )}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="font-bold text-xs text-tossGrey900 truncate group-hover:text-tossBlue">{u.name}</span>
+                                                    {(u.role === 'admin' || u.user_group === 'STAFF' || u.role === 'staff') && (
+                                                        <span className="px-1.5 py-0.2 bg-tossBlue/10 text-tossBlue text-[9px] font-bold rounded">스처쌤</span>
+                                                    )}
+                                                </div>
+                                                {u.school && <div className="text-[10px] text-tossGrey500 truncate">{u.school}</div>}
+                                            </div>
+                                        </button>
+                                    ))
+                                )}
+                            </div>
+                        )}
+
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            accept="image/*"
+                            className="hidden"
+                            onChange={handleImageSelect}
+                        />
                         <button
                             type="button"
-                            onClick={removeSelectedImage}
-                            className="absolute top-0.5 right-0.5 bg-black/70 text-white p-1 rounded-full hover:bg-black transition"
-                            title="이미지 제거"
+                            onClick={() => fileInputRef.current?.click()}
+                            disabled={uploadingImage}
+                            className="p-2 text-tossGrey500 hover:text-tossBlue bg-tossGrey100 hover:bg-tossBlue/10 rounded-xl transition shrink-0 disabled:opacity-40"
+                            title="사진 첨부"
                         >
-                            <X size={10} />
+                            <ImageIcon size={18} />
                         </button>
-                    </div>
-                </div>
+                        <input
+                            type="text"
+                            value={inputMessage}
+                            onChange={handleInputChange}
+                            placeholder={`${activeCenter} 친구들에게 메시지 보내기 (@이름 언급 가능)`}
+                            className="flex-1 bg-tossGrey100 border border-tossGrey200/60 rounded-xl px-3.5 py-2 text-[12px] text-tossGrey900 placeholder-tossGrey400 outline-none focus:bg-white focus:border-tossBlue focus:ring-1 focus:ring-tossBlue transition font-medium"
+                        />
+                        <button
+                            type="submit"
+                            disabled={(!inputMessage.trim() && !selectedImage) || uploadingImage}
+                            className="bg-tossBlue text-white p-2 px-3 rounded-xl hover:bg-tossBlue/90 disabled:opacity-30 transition shadow-toss-subtle active:scale-95 flex items-center justify-center shrink-0"
+                        >
+                            {uploadingImage ? (
+                                <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                            ) : (
+                                <Send size={15} />
+                            )}
+                        </button>
+                    </form>
+                </>
             )}
-            <form onSubmit={handleSend} className="mt-2.5 flex items-center gap-1.5 relative">
-                {/* Mention (@) User Autocomplete Popover (Floating above form with z-[999]) */}
-                {showMentionPopover && (
-                    <div className="absolute bottom-full left-0 right-0 mb-2 bg-white border border-tossGrey300 rounded-2xl shadow-2xl p-2.5 z-[999] max-h-56 overflow-y-auto">
-                        <div className="text-[11px] font-bold text-tossGrey600 px-2 py-1 flex items-center justify-between border-b border-tossGrey100 mb-1.5">
-                            <span>친구/스처쌤 언급하기 (@{mentionSearchQuery})</span>
-                            <button
-                                type="button"
-                                onClick={() => setShowMentionPopover(false)}
-                                className="text-tossGrey400 hover:text-tossGrey600 p-0.5"
-                            >
-                                <X size={13} />
-                            </button>
-                        </div>
-                        {filteredMentionUsers.length === 0 ? (
-                            <div className="py-3 text-center text-tossGrey400 text-xs font-medium">
-                                해당 이름의 이용자가 없습니다.
-                            </div>
-                        ) : (
-                            filteredMentionUsers.map(u => (
-                                <button
-                                    key={u.id}
-                                    type="button"
-                                    onMouseDown={(e) => e.preventDefault()}
-                                    onClick={(e) => selectMentionUser(e, u)}
-                                    className="w-full flex items-center gap-2.5 p-2 rounded-xl hover:bg-tossBlue/10 active:bg-tossBlue/20 transition text-left group"
-                                >
-                                    <div className="w-7 h-7 rounded-full bg-tossBlue/10 border border-tossBlue/20 flex items-center justify-center font-bold text-xs text-tossBlue shrink-0 overflow-hidden">
-                                        {u.profile_image_url ? (
-                                            <img src={u.profile_image_url} alt={u.name} className="w-full h-full object-cover" />
-                                        ) : (
-                                            u.name?.[0] || '익'
-                                        )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-1.5">
-                                            <span className="font-bold text-xs text-tossGrey900 truncate group-hover:text-tossBlue">{u.name}</span>
-                                            {(u.role === 'admin' || u.user_group === 'STAFF' || u.role === 'staff') && (
-                                                <span className="px-1.5 py-0.2 bg-tossBlue/10 text-tossBlue text-[9px] font-bold rounded">스처쌤</span>
-                                            )}
-                                        </div>
-                                        {u.school && <div className="text-[10px] text-tossGrey500 truncate">{u.school}</div>}
-                                    </div>
-                                </button>
-                            ))
-                        )}
-                    </div>
-                )}
-
-                <input
-                    type="file"
-                    ref={fileInputRef}
-                    accept="image/*"
-                    className="hidden"
-                    onChange={handleImageSelect}
-                />
-                <button
-                    type="button"
-                    onClick={() => fileInputRef.current?.click()}
-                    disabled={uploadingImage}
-                    className="p-2 text-tossGrey500 hover:text-tossBlue bg-tossGrey100 hover:bg-tossBlue/10 rounded-xl transition shrink-0 disabled:opacity-40"
-                    title="사진 첨부"
-                >
-                    <ImageIcon size={18} />
-                </button>
-                <input
-                    type="text"
-                    value={inputMessage}
-                    onChange={handleInputChange}
-                    placeholder={`${activeCenter} 센터 친구들에게 메시지 보내기 (@이름 언급 가능)...`}
-                    className="flex-1 bg-tossGrey100 border border-tossGrey200/60 rounded-xl px-3.5 py-2 text-[12px] text-tossGrey900 placeholder-tossGrey400 outline-none focus:bg-white focus:border-tossBlue focus:ring-1 focus:ring-tossBlue transition font-medium"
-                />
-                <button
-                    type="submit"
-                    disabled={(!inputMessage.trim() && !selectedImage) || uploadingImage}
-                    className="bg-tossBlue text-white p-2 px-3 rounded-xl hover:bg-tossBlue/90 disabled:opacity-30 transition shadow-toss-subtle active:scale-95 flex items-center justify-center shrink-0"
-                >
-                    {uploadingImage ? (
-                        <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                    ) : (
-                        <Send size={15} />
-                    )}
-                </button>
-            </form>
 
             {/* Report Confirmation Modal */}
-            <AnimatePresence>
-                {reportingMsgId && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs">
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-white rounded-toss-xl p-5 max-w-xs w-full shadow-toss-standard text-center border border-tossGrey100"
-                        >
-                            <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-2">
-                                <Flag size={20} />
-                            </div>
-                            <h4 className="font-bold text-tossGrey900 text-sm mb-1">메시지 신고</h4>
-                            <p className="text-xs text-tossGrey500 mb-4 leading-relaxed">
-                                유해 메시지로 신고하시겠습니까?<br />
-                                (3회 수집 시 자동 숨김)
-                            </p>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setReportingMsgId(null)}
-                                    className="flex-1 py-2 bg-tossGrey100 hover:bg-tossGrey200 rounded-xl text-xs font-bold text-tossGrey600 transition"
-                                >
-                                    취소
-                                </button>
-                                <button
-                                    onClick={handleReportConfirm}
-                                    className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 rounded-xl text-xs font-bold text-white shadow-sm transition"
-                                >
-                                    신고하기
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+            {reportingMsgId && createPortal(
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50 backdrop-blur-2xs">
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.9, opacity: 0 }}
+                        className="bg-white rounded-toss-xl p-5 max-w-xs w-full shadow-toss-standard text-center border border-tossGrey100"
+                    >
+                        <div className="w-10 h-10 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center mx-auto mb-2">
+                            <Flag size={20} />
+                        </div>
+                        <h4 className="font-bold text-tossGrey900 text-sm mb-1">메시지 신고</h4>
+                        <p className="text-xs text-tossGrey500 mb-4 leading-relaxed">
+                            유해 메시지로 신고하시겠습니까?<br />
+                            (3회 수집 시 자동 숨김)
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setReportingMsgId(null)}
+                                className="flex-1 py-2 bg-tossGrey100 hover:bg-tossGrey200 rounded-xl text-xs font-bold text-tossGrey600 transition"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleReportConfirm}
+                                className="flex-1 py-2 bg-amber-500 hover:bg-amber-600 rounded-xl text-xs font-bold text-white shadow-sm transition"
+                            >
+                                신고하기
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>,
+                document.body
+            )}
 
             {/* Delete Single Message Confirmation Modal */}
-            <AnimatePresence>
-                {deletingMsgId && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs">
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-white rounded-toss-xl p-5 max-w-xs w-full shadow-toss-standard text-center border border-tossGrey100"
-                        >
-                            <div className="w-10 h-10 rounded-full bg-tossError/10 text-tossError flex items-center justify-center mx-auto mb-2">
-                                <Trash2 size={20} />
-                            </div>
-                            <h4 className="font-bold text-tossGrey900 text-sm mb-1">메시지 삭제</h4>
-                            <p className="text-xs text-tossGrey500 mb-4 leading-relaxed">
-                                해당 메시지를 완전히 삭제하시겠습니까?
-                            </p>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setDeletingMsgId(null)}
-                                    className="flex-1 py-2 bg-tossGrey100 hover:bg-tossGrey200 rounded-xl text-xs font-bold text-tossGrey600 transition"
-                                >
-                                    취소
-                                </button>
-                                <button
-                                    onClick={handleDeleteConfirm}
-                                    className="flex-1 py-2 bg-tossError hover:bg-tossError/90 rounded-xl text-xs font-bold text-white shadow-sm transition"
-                                >
-                                    삭제하기
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+            {deletingMsgId && createPortal(
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50 backdrop-blur-2xs">
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.9, opacity: 0 }}
+                        className="bg-white rounded-toss-xl p-5 max-w-xs w-full shadow-toss-standard text-center border border-tossGrey100"
+                    >
+                        <div className="w-10 h-10 rounded-full bg-tossError/10 text-tossError flex items-center justify-center mx-auto mb-2">
+                            <Trash2 size={20} />
+                        </div>
+                        <h4 className="font-bold text-tossGrey900 text-sm mb-1">메시지 삭제</h4>
+                        <p className="text-xs text-tossGrey500 mb-4 leading-relaxed">
+                            해당 메시지를 완전히 삭제하시겠습니까?
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setDeletingMsgId(null)}
+                                className="flex-1 py-2 bg-tossGrey100 hover:bg-tossGrey200 rounded-xl text-xs font-bold text-tossGrey600 transition"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleDeleteConfirm}
+                                className="flex-1 py-2 bg-tossError hover:bg-tossError/90 rounded-xl text-xs font-bold text-white shadow-sm transition"
+                            >
+                                삭제하기
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>,
+                document.body
+            )}
 
             {/* Clear Entire Center Chat Confirmation Modal */}
-            <AnimatePresence>
-                {showClearConfirmModal && (
-                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs">
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="bg-white rounded-toss-xl p-5 max-w-xs w-full shadow-toss-standard text-center border border-tossGrey100"
-                        >
-                            <div className="w-10 h-10 rounded-full bg-tossError/10 text-tossError flex items-center justify-center mx-auto mb-2">
-                                <RotateCcw size={20} />
-                            </div>
-                            <h4 className="font-bold text-tossGrey900 text-sm mb-1">센터 대화 전체 초기화</h4>
-                            <p className="text-xs text-tossGrey500 mb-4 leading-relaxed">
-                                정말로 <strong className="text-tossGrey900">[{activeCenter}]</strong> 센터의 오늘 전체 대화를 초기화(삭제)하시겠습니까?
-                            </p>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => setShowClearConfirmModal(false)}
-                                    className="flex-1 py-2 bg-tossGrey100 hover:bg-tossGrey200 rounded-xl text-xs font-bold text-tossGrey600 transition"
-                                >
-                                    취소
-                                </button>
-                                <button
-                                    onClick={handleClearConfirm}
-                                    className="flex-1 py-2 bg-tossError hover:bg-tossError/90 rounded-xl text-xs font-bold text-white shadow-sm transition"
-                                >
-                                    초기화하기
-                                </button>
-                            </div>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+            {showClearConfirmModal && createPortal(
+                <div className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/50 backdrop-blur-2xs">
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.9, opacity: 0 }}
+                        className="bg-white rounded-toss-xl p-5 max-w-xs w-full shadow-toss-standard text-center border border-tossGrey100"
+                    >
+                        <div className="w-10 h-10 rounded-full bg-tossError/10 text-tossError flex items-center justify-center mx-auto mb-2">
+                            <RotateCcw size={20} />
+                        </div>
+                        <h4 className="font-bold text-tossGrey900 text-sm mb-1">센터 대화 전체 초기화</h4>
+                        <p className="text-xs text-tossGrey500 mb-4 leading-relaxed">
+                            정말로 <strong className="text-tossGrey900">[{activeCenter}]</strong>의 오늘 전체 대화를 초기화(삭제)하시겠습니까?
+                        </p>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => setShowClearConfirmModal(false)}
+                                className="flex-1 py-2 bg-tossGrey100 hover:bg-tossGrey200 rounded-xl text-xs font-bold text-tossGrey600 transition"
+                            >
+                                취소
+                            </button>
+                            <button
+                                onClick={handleClearConfirm}
+                                className="flex-1 py-2 bg-tossError hover:bg-tossError/90 rounded-xl text-xs font-bold text-white shadow-sm transition"
+                            >
+                                초기화하기
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>,
+                document.body
+            )}
 
             {/* Enlarged Image Modal */}
-            <AnimatePresence>
-                {enlargedImageUrl && (
-                    <div
-                        className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
-                        onClick={() => setEnlargedImageUrl(null)}
+            {enlargedImageUrl && createPortal(
+                <div
+                    className="fixed inset-0 z-[300] flex items-center justify-center p-4 bg-black/80 backdrop-blur-xs"
+                    onClick={() => setEnlargedImageUrl(null)}
+                >
+                    <motion.div
+                        initial={{ scale: 0.9, opacity: 0 }}
+                        animate={{ scale: 1, opacity: 1 }}
+                        exit={{ scale: 0.9, opacity: 0 }}
+                        className="relative max-w-2xl w-full max-h-[85vh] flex items-center justify-center"
+                        onClick={(e) => e.stopPropagation()}
                     >
-                        <motion.div
-                            initial={{ scale: 0.9, opacity: 0 }}
-                            animate={{ scale: 1, opacity: 1 }}
-                            exit={{ scale: 0.9, opacity: 0 }}
-                            className="relative max-w-2xl w-full max-h-[85vh] flex items-center justify-center"
-                            onClick={(e) => e.stopPropagation()}
+                        <img
+                            src={enlargedImageUrl}
+                            alt="원본 이미지"
+                            className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl"
+                        />
+                        <button
+                            onClick={() => setEnlargedImageUrl(null)}
+                            className="absolute -top-3 -right-3 bg-black/60 hover:bg-black text-white p-2 rounded-full backdrop-blur-md transition shadow-md"
                         >
-                            <img
-                                src={enlargedImageUrl}
-                                alt="원본 이미지"
-                                className="max-w-full max-h-[80vh] rounded-2xl object-contain shadow-2xl"
-                            />
-                            <button
-                                onClick={() => setEnlargedImageUrl(null)}
-                                className="absolute -top-3 -right-3 bg-black/60 hover:bg-black text-white p-2 rounded-full backdrop-blur-md transition shadow-md"
-                            >
-                                <X size={18} />
-                            </button>
-                        </motion.div>
-                    </div>
-                )}
-            </AnimatePresence>
+                            <X size={18} />
+                        </button>
+                    </motion.div>
+                </div>,
+                document.body
+            )}
 
             {/* Unified Emoji Reaction Details Modal (Slack/Discord Style Tabbed Modal) */}
-            <AnimatePresence>
-                {reactionDetailMsg && (() => {
-                    const reactionsObj = reactionDetailMsg.reactions || {};
-                    const entries = Object.entries(reactionsObj).filter(([_, list]) => Array.isArray(list) && list.length > 0);
+            {reactionDetailMsg && (() => {
+                const reactionsObj = reactionDetailMsg.reactions || {};
+                const entries = Object.entries(reactionsObj).filter(([_, list]) => Array.isArray(list) && list.length > 0);
 
-                    const allItems = [];
-                    entries.forEach(([emoji, rawList]) => {
-                        rawList.forEach(item => {
-                            let uObj = typeof item === 'object' ? item : { id: item, name: '이용자' };
-                            if (uObj.id === currentUser?.id && currentUser?.name) {
-                                uObj = { ...uObj, name: currentUser.name };
-                            } else if (uObj.id === reactionDetailMsg.user_id && reactionDetailMsg.user_name) {
-                                uObj = { ...uObj, name: reactionDetailMsg.user_name };
-                            }
-                            allItems.push({ emoji, user: uObj });
-                        });
+                const allItems = [];
+                entries.forEach(([emoji, rawList]) => {
+                    rawList.forEach(item => {
+                        let uObj = typeof item === 'object' ? item : { id: item, name: '이용자' };
+                        if (uObj.id === currentUser?.id && currentUser?.name) {
+                            uObj = { ...uObj, name: currentUser.name };
+                        } else if (uObj.id === reactionDetailMsg.user_id && reactionDetailMsg.user_name) {
+                            uObj = { ...uObj, name: reactionDetailMsg.user_name };
+                        }
+                        allItems.push({ emoji, user: uObj });
                     });
+                });
 
-                    const filteredItems = activeReactionTab === 'ALL'
-                        ? allItems
-                        : allItems.filter(item => item.emoji === activeReactionTab);
-
-                    return (
-                        <div
-                            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-2xs"
-                            onClick={() => setReactionDetailMsg(null)}
+                return createPortal(
+                    <div
+                        className="fixed inset-0 z-[300] bg-black/50 backdrop-blur-2xs flex items-end sm:items-center justify-center p-0 sm:p-4 select-none"
+                        style={{
+                            WebkitUserSelect: 'none',
+                            userSelect: 'none',
+                            WebkitTouchCallout: 'none'
+                        }}
+                        onDragStart={(e) => e.preventDefault()}
+                        draggable={false}
+                        onClick={() => {
+                            if (ignoreReactionBackdropClickRef.current) return;
+                            setReactionDetailMsg(null);
+                        }}
+                    >
+                        <motion.div
+                            initial={{ opacity: 0, y: 80 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: 80 }}
+                            transition={{ duration: 0.2 }}
+                            className="bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl p-4 sm:p-5 w-full max-w-sm border border-tossGrey200 flex flex-col max-h-[80vh] select-none"
+                            style={{
+                                WebkitUserSelect: 'none',
+                                userSelect: 'none',
+                                WebkitTouchCallout: 'none'
+                            }}
+                            onDragStart={(e) => e.preventDefault()}
+                            draggable={false}
+                            onClick={(e) => e.stopPropagation()}
                         >
-                            <motion.div
-                                initial={{ scale: 0.9, opacity: 0 }}
-                                animate={{ scale: 1, opacity: 1 }}
-                                exit={{ scale: 0.9, opacity: 0 }}
-                                className="bg-white rounded-toss-xl p-5 max-w-xs sm:max-w-sm w-full shadow-toss-standard flex flex-col gap-3 border border-tossGrey100"
-                                onClick={(e) => e.stopPropagation()}
-                            >
-                                {/* Header */}
-                                <div className="flex items-center justify-between border-b border-tossGrey100 pb-3">
-                                    <h4 className="font-bold text-tossGrey900 text-sm flex items-center gap-1.5">
-                                        <span>이모지 반응 현황</span>
-                                        <span className="text-xs font-semibold text-tossGrey400">({allItems.length})</span>
-                                    </h4>
-                                    <button
-                                        onClick={() => setReactionDetailMsg(null)}
-                                        className="text-tossGrey400 hover:text-tossGrey600 transition p-1"
-                                    >
-                                        <X size={16} />
-                                    </button>
-                                </div>
+                            {/* Drag Handle */}
+                            <div className="w-10 h-1 bg-tossGrey300 rounded-full mx-auto mb-3 shrink-0" />
 
-                                {/* Emoji Filter Tabs */}
-                                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                            {/* Header Filter Tabs */}
+                            <div className="flex items-center gap-4 overflow-x-auto border-b border-tossGrey100 pb-2 mb-3 [scrollbar-width:none] shrink-0 text-xs font-bold text-left select-none">
+                                <button
+                                    type="button"
+                                    onClick={() => setActiveReactionTab('ALL')}
+                                    className={`pb-1.5 whitespace-nowrap transition-all border-b-2 select-none ${
+                                        activeReactionTab === 'ALL'
+                                            ? 'text-tossGrey900 font-extrabold border-emerald-600'
+                                            : 'text-tossGrey400 hover:text-tossGrey700 border-transparent'
+                                    }`}
+                                >
+                                    모두
+                                </button>
+                                {entries.map(([emoji, rawList]) => (
                                     <button
-                                        onClick={() => setActiveReactionTab('ALL')}
-                                        className={`px-3 py-1 rounded-full text-xs font-bold transition shrink-0 border ${
-                                            activeReactionTab === 'ALL'
-                                                ? 'bg-tossBlue text-white border-tossBlue shadow-2xs'
-                                                : 'bg-tossGrey100 text-tossGrey600 border-tossGrey200/60 hover:bg-tossGrey200'
+                                        key={emoji}
+                                        type="button"
+                                        onClick={() => setActiveReactionTab(emoji)}
+                                        className={`pb-1.5 whitespace-nowrap flex items-center gap-1 transition-all border-b-2 select-none ${
+                                            activeReactionTab === emoji
+                                                ? 'text-tossGrey900 font-extrabold border-emerald-600'
+                                                : 'text-tossGrey400 hover:text-tossGrey700 border-transparent'
                                         }`}
                                     >
-                                        전체 {allItems.length}
+                                        <span className="text-sm leading-none select-none pointer-events-none">{emoji}</span>
+                                        <span className="select-none pointer-events-none">{rawList.length}</span>
                                     </button>
-                                    {entries.map(([emoji, rawList]) => (
-                                        <button
-                                            key={emoji}
-                                            onClick={() => setActiveReactionTab(emoji)}
-                                            className={`px-2.5 py-1 rounded-full text-xs font-bold transition shrink-0 border flex items-center gap-1 ${
-                                                activeReactionTab === emoji
-                                                    ? 'bg-tossBlue/10 text-tossBlue border-tossBlue/40 shadow-2xs'
-                                                    : 'bg-tossGrey100 text-tossGrey600 border-tossGrey200/60 hover:bg-tossGrey200'
-                                            }`}
-                                        >
-                                            <span>{emoji}</span>
-                                            <span className="text-[10px] text-tossGrey500">{rawList.length}</span>
-                                        </button>
-                                    ))}
-                                </div>
+                                ))}
+                            </div>
 
-                                {/* User List */}
-                                <div className="max-h-56 overflow-y-auto bg-tossGrey50/80 rounded-xl p-2 flex flex-col gap-1.5 border border-tossGrey200/50">
-                                    {filteredItems.length === 0 ? (
-                                        <div className="py-6 text-center text-tossGrey400 text-xs font-medium">
-                                            반응이 없습니다.
-                                        </div>
-                                    ) : (
-                                        filteredItems.map((item, idx) => {
-                                            const isMe = item.user.id === currentUser?.id;
-                                            return (
-                                                <div
-                                                    key={idx}
-                                                    className="flex items-center justify-between p-2 rounded-lg bg-white border border-tossGrey100 shadow-2xs"
-                                                >
-                                                    <div className="flex items-center gap-2.5 min-w-0">
-                                                        <span className="text-base shrink-0">{item.emoji}</span>
-                                                        <span className="font-bold text-xs text-tossGrey900 truncate">
-                                                            {item.user.name || '미등록'}
-                                                        </span>
-                                                        {isMe && (
-                                                            <span className="px-1.5 py-0.2 bg-tossBlue/10 text-tossBlue rounded text-[9.5px] font-bold border border-tossBlue/20 shrink-0">
-                                                                나
-                                                            </span>
-                                                        )}
-                                                    </div>
-                                                    <button
-                                                        onClick={() => {
-                                                            toggleReaction(reactionDetailMsg.id, item.emoji);
-                                                        }}
-                                                        className={`text-[10.5px] font-bold px-2 py-0.5 rounded-md border transition shrink-0 ${
-                                                            isMe
-                                                                ? 'bg-red-50 text-red-600 border-red-200 hover:bg-red-100'
-                                                                : 'bg-tossGrey100 text-tossGrey600 border-tossGrey200 hover:bg-tossGrey200'
-                                                        }`}
-                                                    >
-                                                        {isMe ? '취소' : '나도 추가'}
-                                                    </button>
+                            {/* Reacted User List Grouped by Emoji */}
+                            <div className="flex-1 overflow-y-auto space-y-4 pr-1 text-left [scrollbar-width:thin] select-none">
+                                {entries
+                                    .filter(([emoji]) => activeReactionTab === 'ALL' || activeReactionTab === emoji)
+                                    .map(([emoji, userList]) => {
+                                        const formattedUsers = userList.map(item => {
+                                            let uObj = typeof item === 'object' ? item : { id: item, name: '이용자', school: '' };
+                                            if (uObj.id === currentUser?.id) {
+                                                uObj = { 
+                                                    ...uObj, 
+                                                    name: currentUser.name || uObj.name, 
+                                                    school: currentUser.school || currentUser.user_group || currentUser.school_name || uObj.school || '' 
+                                                };
+                                            } else if (uObj.id === reactionDetailMsg.user_id && reactionDetailMsg.user_name) {
+                                                uObj = { 
+                                                    ...uObj, 
+                                                    name: reactionDetailMsg.user_name, 
+                                                    school: reactionDetailMsg.user_school || uObj.school || '' 
+                                                };
+                                            }
+                                            if (!uObj.school && allCandidateUsers) {
+                                                const found = allCandidateUsers.find(c => c.id === uObj.id);
+                                                if (found) {
+                                                    uObj = { ...uObj, school: found.school || found.user_group || found.school_name || '' };
+                                                }
+                                            }
+                                            const nameStr = uObj.name || '익명';
+                                            const schoolStr = uObj.school ? ` (${uObj.school})` : '';
+                                            return `${nameStr}${schoolStr}`;
+                                        }).join(', ');
+
+                                        return (
+                                            <div key={emoji} className="flex items-start gap-3 py-1 select-none">
+                                                <span className="text-2xl leading-none shrink-0 pt-0.5 select-none pointer-events-none">{emoji}</span>
+                                                <div className="flex flex-col text-xs leading-relaxed text-tossGrey700 font-semibold break-words pt-1 select-none pointer-events-none">
+                                                    <span className="select-none pointer-events-none">{formattedUsers || '사용자 정보 없음'}</span>
                                                 </div>
-                                            );
-                                        })
-                                    )}
-                                </div>
+                                            </div>
+                                        );
+                                    })}
+                            </div>
 
-                                {/* Close Button */}
-                                <button
-                                    onClick={() => setReactionDetailMsg(null)}
-                                    className="w-full py-2.5 bg-tossGrey100 hover:bg-tossGrey200 rounded-xl text-xs font-bold text-tossGrey700 transition"
-                                >
-                                    닫기
-                                </button>
-                            </motion.div>
-                        </div>
-                    );
-                })()}
-            </AnimatePresence>
+                            {/* Close Button */}
+                            <button
+                                type="button"
+                                onClick={() => setReactionDetailMsg(null)}
+                                className="mt-4 w-full py-2.5 rounded-2xl bg-tossGrey100 hover:bg-tossGrey200 text-tossGrey700 text-xs font-bold transition active:scale-98 shrink-0 select-none"
+                            >
+                                닫기
+                            </button>
+                        </motion.div>
+                    </div>,
+                    document.body
+                );
+            })()}
 
             {/* Extended Emoji Category Modal Overlay (Card-Level, 100% visible with zero clipping) */}
             <AnimatePresence>
-                {extendedReactionMsgId && (
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-2xs z-50 rounded-toss-xl flex items-center justify-center p-3">
+                {extendedReactionMsgId && createPortal(
+                    <div 
+                        className="fixed inset-0 bg-black/50 backdrop-blur-2xs z-[300] flex items-center justify-center p-3"
+                        onClick={() => setExtendedReactionMsgId(null)}
+                    >
                         <motion.div
                             initial={{ opacity: 0, scale: 0.95 }}
                             animate={{ opacity: 1, scale: 1 }}
@@ -1463,7 +1537,8 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                 </button>
                             </form>
                         </motion.div>
-                    </div>
+                    </div>,
+                    document.body
                 )}
             </AnimatePresence>
         </div>

@@ -144,8 +144,8 @@ const StudentCalendarTab = ({
                             return true;
                         })
                         .filter(e => {
-                            // Hide regular recurring closures (Saturday=6, Sunday=0) to prevent clutter
-                            if (e.catName === '휴관') {
+                            // Hide single-day weekend closures to prevent clutter, but keep multi-day or custom closures
+                            if (e.catName === '휴관' && isSameDay(e.start, e.end)) {
                                 const day = e.start.getDay();
                                 if (day === 0 || day === 6) {
                                     return false;
@@ -159,68 +159,85 @@ const StudentCalendarTab = ({
 
                     return (
                         <div className="bg-white rounded-3xl p-6 shadow-[0_4px_24px_rgba(0,0,0,0.02)] border border-[#f2f4f6] divide-y divide-[#f2f4f6]">
-                            {sortedEvents.map((event, idx) => (
-                                <motion.div
-                                    key={idx}
-                                    initial={{ opacity: 0, y: 10 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ delay: idx * 0.03 }}
-                                    className={`flex gap-5 items-center py-4 text-left group cursor-pointer ${idx === 0 ? 'pt-0' : ''} ${idx === sortedEvents.length - 1 ? 'pb-0' : ''}`}
-                                    onClick={() => event.type === 'PROGRAM' ? openNoticeDetail(event) : null}
-                                >
-                                    {/* Left: Flat Date */}
-                                    <div className="flex flex-col items-start justify-center min-w-[56px] shrink-0 text-left">
-                                        <span className="text-[11px] font-bold text-[#8b95a1] uppercase mb-0.5 tracking-wider">
-                                            {event.start.getMonth() + 1}월
-                                        </span>
-                                        <div className="flex items-baseline gap-0.5">
-                                            <span className="text-[22px] font-black text-[#191f28] tracking-tight leading-none">
-                                                {event.start.getDate()}
-                                            </span>
-                                            <span className={`text-[13px] font-bold ${
-                                                event.start.getDay() === 0 ? 'text-[#f04438]' : event.start.getDay() === 6 ? 'text-[#3182f6]' : 'text-[#8b95a1]'
-                                            }`}>
-                                                ({event.start.toLocaleDateString('ko-KR', { weekday: 'short' })})
-                                            </span>
-                                        </div>
-                                    </div>
+                            {sortedEvents.map((event, idx) => {
+                                const isMultiDay = !isSameDay(event.start, event.end);
+                                const startMonth = event.start.getMonth() + 1;
+                                const endMonth = event.end.getMonth() + 1;
+                                const startDay = event.start.getDate();
+                                const endDay = event.end.getDate();
+                                const startWk = event.start.toLocaleDateString('ko-KR', { weekday: 'short' });
+                                const endWk = event.end.toLocaleDateString('ko-KR', { weekday: 'short' });
 
-                                    {/* Right: Clean stacked typography with icons */}
-                                    <div className="flex-1 min-w-0">
-                                        <h4 className="font-bold text-[#191f28] text-[16px] tracking-tight mb-1.5 truncate group-hover:text-[#3182f6] transition-colors">
-                                            {event.category_id === 'RENTAL' ? event.meetingName : event.title}
-                                        </h4>
-                                        
-                                        <div className="flex flex-col gap-1 text-[13px] text-[#8b95a1] font-semibold">
-                                            {event.catName !== '휴관' && (
+                                return (
+                                    <motion.div
+                                        key={idx}
+                                        initial={{ opacity: 0, y: 10 }}
+                                        animate={{ opacity: 1, y: 0 }}
+                                        transition={{ delay: idx * 0.03 }}
+                                        className={`flex gap-4 sm:gap-5 items-center py-4 text-left group cursor-pointer ${idx === 0 ? 'pt-0' : ''} ${idx === sortedEvents.length - 1 ? 'pb-0' : ''}`}
+                                        onClick={() => event.type === 'PROGRAM' ? openNoticeDetail(event) : null}
+                                    >
+                                        {/* Left: Flat Date */}
+                                        <div className="flex flex-col items-start justify-center min-w-[64px] shrink-0 text-left">
+                                            <span className="text-[11px] font-bold text-[#8b95a1] uppercase mb-0.5 tracking-wider">
+                                                {isMultiDay && startMonth !== endMonth ? `${startMonth}월~${endMonth}월` : `${startMonth}월`}
+                                            </span>
+                                            <div className="flex items-baseline gap-0.5 flex-wrap">
+                                                <span className="text-[20px] sm:text-[22px] font-black text-[#191f28] tracking-tight leading-none">
+                                                    {isMultiDay ? `${startDay}~${endDay}` : startDay}
+                                                </span>
+                                                <span className={`text-[12px] font-bold ${
+                                                    event.start.getDay() === 0 ? 'text-[#f04438]' : event.start.getDay() === 6 ? 'text-[#3182f6]' : 'text-[#8b95a1]'
+                                                }`}>
+                                                    {isMultiDay ? `(${startWk}~${endWk})` : `(${startWk})`}
+                                                </span>
+                                            </div>
+                                        </div>
+
+                                        {/* Right: Clean stacked typography with icons */}
+                                        <div className="flex-1 min-w-0">
+                                            <h4 className="font-bold text-[#191f28] text-[16px] tracking-tight mb-1.5 truncate group-hover:text-[#3182f6] transition-colors">
+                                                {event.category_id === 'RENTAL' ? event.meetingName : event.title}
+                                            </h4>
+                                            
+                                            <div className="flex flex-col gap-1 text-[13px] text-[#8b95a1] font-semibold">
                                                 <div className="flex items-center gap-1">
                                                     <Clock size={13} className="shrink-0 text-[#8b95a1]" />
                                                     <span>
-                                                        {event.type === 'PROGRAM' ? (
-                                                            formatKoreanTimeRange(event.program_date || event.program_start_date || event.start, event.program_duration)
-                                                        ) : event.category_id === 'RENTAL' ? (
-                                                            `${event.start.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })} - ${event.end.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}`
-                                                        ) : (
-                                                            new Date(event.start).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
-                                                        )}
+                                                        {(() => {
+                                                            if (isMultiDay) {
+                                                                const periodText = startMonth === endMonth 
+                                                                    ? `${startMonth}/${startDay}(${startWk}) ~ ${endDay}(${endWk})`
+                                                                    : `${startMonth}/${startDay}(${startWk}) ~ ${endMonth}/${endDay}(${endWk})`;
+                                                                return event.catName === '휴관' ? `${periodText} (전일 휴무)` : periodText;
+                                                            }
+                                                            if (event.catName === '휴관') return '전일 휴무';
+                                                            if (event.type === 'PROGRAM') {
+                                                                return formatKoreanTimeRange(event.program_date || event.program_start_date || event.start, event.program_duration);
+                                                            }
+                                                            if (event.category_id === 'RENTAL') {
+                                                                return `${event.start.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })} - ${event.end.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
+                                                            }
+                                                            return new Date(event.start).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+                                                        })()}
                                                     </span>
                                                 </div>
-                                            )}
-                                            
-                                            {(event.program_location || event.spaceName) && (
-                                                <div className="flex items-center gap-1 text-[#4e5968] font-bold truncate mt-0.5">
-                                                    <MapPin size={13} className="shrink-0 text-[#8b95a1]" />
-                                                    <span className="truncate">
-                                                        {event.category_id === 'RENTAL' ? event.spaceName : event.program_location}
-                                                    </span>
-                                                </div>
-                                            )}
+                                                
+                                                {(event.program_location || event.spaceName) && (
+                                                    <div className="flex items-center gap-1 text-[#4e5968] font-bold truncate mt-0.5">
+                                                        <MapPin size={13} className="shrink-0 text-[#8b95a1]" />
+                                                        <span className="truncate">
+                                                            {event.category_id === 'RENTAL' ? event.spaceName : event.program_location}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                            </div>
                                         </div>
-                                    </div>
 
-                                    <ChevronRight size={18} className="text-[#ccc] group-hover:text-[#3182f6] group-hover:translate-x-0.5 transition-all shrink-0" />
-                                </motion.div>
-                            ))}
+                                        <ChevronRight size={18} className="text-[#ccc] group-hover:text-[#3182f6] group-hover:translate-x-0.5 transition-all shrink-0" />
+                                    </motion.div>
+                                );
+                            })}
                         </div>
                     );
                 })()}

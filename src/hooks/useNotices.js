@@ -142,10 +142,8 @@ export const useNotices = (userId) => {
         // Supabase Realtime Listener for instant cross-device updates (Mobile <-> Desktop)
         const channel = supabase
             .channel('public_notices_realtime')
-            .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'notices' }, (payload) => {
-                if (payload.new) {
-                    setNotices(prev => prev.map(n => n.id === payload.new.id ? { ...n, ...payload.new } : n));
-                }
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'notices' }, () => {
+                fetchNotices();
             })
             .subscribe();
 

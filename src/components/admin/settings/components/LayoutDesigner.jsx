@@ -102,17 +102,19 @@ const LayoutDesigner = ({
                             </div>
 
                             <div className="flex items-center gap-6">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs font-bold text-gray-500">노출 개수</span>
-                                    <input
-                                        type="number"
-                                        min="1"
-                                        max="20"
-                                        value={item.count}
-                                        onChange={(e) => handleUpdateConfig(item.id, 'count', parseInt(e.target.value) || 1)}
-                                        className="w-16 p-2 bg-gray-50 border border-gray-100 rounded-lg text-center text-sm font-bold outline-none focus:border-blue-500"
-                                    />
-                                </div>
+                                {item.id !== 'operating_status' && item.id !== 'live_chat' && (
+                                    <div className="flex items-center gap-2">
+                                        <span className="text-xs font-bold text-gray-500">노출 개수</span>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            max="20"
+                                            value={item.count}
+                                            onChange={(e) => handleUpdateConfig(item.id, 'count', parseInt(e.target.value) || 1)}
+                                            className="w-16 p-2 bg-gray-50 border border-gray-100 rounded-lg text-center text-sm font-bold outline-none focus:border-blue-500"
+                                        />
+                                    </div>
+                                )}
                                 <button
                                     onClick={() => handleUpdateConfig(item.id, 'isVisible', !item.isVisible)}
                                     className={`p-2.5 rounded-xl transition-all ${item.isVisible ? 'bg-blue-50 text-blue-600 shadow-sm' : 'bg-gray-200 text-gray-500'}`}

@@ -67,6 +67,11 @@ export const useDashboardNotifications = (user) => {
 
         fetchNotifications(user);
 
+        // Ask for web notification permission if default
+        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().catch(() => {});
+        }
+
         const channelName = `app_notifs:${user.id}`;
         const subscription = supabase
             .channel(channelName)
@@ -83,6 +88,20 @@ export const useDashboardNotifications = (user) => {
                     ((user.role === 'admin' || user.user_group === 'STAFF') && targetGroup === 'STAFF')
                 ) {
                     fetchNotifications(user);
+
+                    // Trigger Web Browser Push Notification if target is current user
+                    if (targetGroup === `USER_${user.id}` && typeof window !== 'undefined' && 'Notification' in window) {
+                        if (Notification.permission === 'granted') {
+                            try {
+                                new Notification('💬 라이브 태그 알림', {
+                                    body: payload.new?.content || '새 메시지에서 회원님이 태그되었습니다.',
+                                    icon: '/favicon.ico'
+                                });
+                            } catch (e) {
+                                console.error('Failed to display browser notification:', e);
+                            }
+                        }
+                    }
                 }
             })
             .subscribe();

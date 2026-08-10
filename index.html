@@ -10,36 +10,107 @@
   <meta http-equiv="Expires" content="0" />
   <script>
     (function() {
-      var APP_VER = '20260728_v105';
-      if (localStorage.getItem('sys_ver') !== APP_VER) {
-        localStorage.setItem('sys_ver', APP_VER);
-        sessionStorage.removeItem('ver_reloaded');
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            regs.forEach(function(r) { r.unregister(); });
-          });
+      // Diagnostic Log Container
+      window.__TV_ERRORS__ = [];
+      
+      function showTvDiagnostic(msg) {
+        window.__TV_ERRORS__.push(msg);
+        console.warn('TV Log:', msg);
+      }
+
+      window.onerror = function(message, source, lineno, colno, error) {
+        showTvDiagnostic('오류: ' + message);
+      };
+
+      window.addEventListener('unhandledrejection', function(e) {
+        showTvDiagnostic('비동기 처리 수신');
+      });
+
+      // Storage & Tizen Polyfills
+      try {
+        var APP_VER = '20260731_v109';
+        if (window.localStorage && localStorage.getItem('sys_ver') !== APP_VER) {
+          localStorage.setItem('sys_ver', APP_VER);
+          if (window.sessionStorage) sessionStorage.removeItem('ver_reloaded');
         }
-        if ('caches' in window) {
-          caches.keys().then(function(keys) {
-            keys.forEach(function(k) { caches.delete(k); });
-          });
-        }
-        if (!sessionStorage.getItem('ver_reloaded')) {
-          sessionStorage.setItem('ver_reloaded', 'true');
-          window.location.reload(true);
-        }
+      } catch(e) {
+        console.warn('Signage storage exception handled:', e);
+      }
+
+      // 1. RegExp \\p{L} Interceptor for Chrome 63 (Samsung Smart Signage)
+      try {
+        var NativeRegExp = window.RegExp;
+        window.RegExp = function(pattern, flags) {
+          if (typeof pattern === 'string' && pattern.indexOf('\\p{') !== -1) {
+            pattern = pattern.replace(/\\p\{L\}/g, '[a-zA-Z가-힣ㄱ-ㅎㅏ-ㅣ0-9]');
+            pattern = pattern.replace(/\\p\{[a-zA-Z0-9_=]+\}/g, '[^\\s]');
+            if (flags && typeof flags === 'string') flags = flags.replace('u', '');
+          }
+          try {
+            return new NativeRegExp(pattern, flags);
+          } catch(err) {
+            return new NativeRegExp('[a-zA-Z0-9가-힣]', 'g');
+          }
+        };
+        window.RegExp.prototype = NativeRegExp.prototype;
+      } catch(e) {}
+
+      // 2. Polyfill queueMicrotask for Chrome 63 (Samsung Smart Signage)
+      if (typeof window.queueMicrotask === 'undefined') {
+        window.queueMicrotask = function queueMicrotask(callback) {
+          if (typeof Promise !== 'undefined' && typeof Promise.resolve === 'function') {
+            Promise.resolve().then(callback).catch(function(err) {
+              setTimeout(function() { throw err; }, 0);
+            });
+          } else {
+            setTimeout(callback, 0);
+          }
+        };
+      }
+
+      // 2. Polyfill globalThis
+      if (typeof globalThis === 'undefined') window.globalThis = window;
+
+      // 3. Polyfill Object.fromEntries
+      if (typeof Object.fromEntries === 'undefined') {
+        Object.fromEntries = function fromEntries(iterable) {
+          return Array.from(iterable).reduce(function(obj, pair) {
+            obj[pair[0]] = pair[1];
+            return obj;
+          }, {});
+        };
+      }
+
+      // 4. Polyfill Array.prototype.flat
+      if (!Array.prototype.flat) {
+        Array.prototype.flat = function(depth) {
+          var flatt = function(arr, d) {
+            return d > 0
+              ? arr.reduce(function(acc, val) {
+                  return acc.concat(Array.isArray(val) ? flatt(val, d - 1) : val);
+                }, [])
+              : arr.slice();
+          };
+          return flatt(this, depth === undefined ? 1 : depth);
+        };
+      }
+
+      // 5. Polyfill ResizeObserver & IntersectionObserver
+      if (typeof window.ResizeObserver === 'undefined') {
+        window.ResizeObserver = function ResizeObserver() {
+          this.observe = function() {};
+          this.unobserve = function() {};
+          this.disconnect = function() {};
+        };
+      }
+      if (typeof window.IntersectionObserver === 'undefined') {
+        window.IntersectionObserver = function IntersectionObserver() {
+          this.observe = function() {};
+          this.unobserve = function() {};
+          this.disconnect = function() {};
+        };
       }
     })();
-    window.addEventListener('error', function(e) {
-      if (e.message && (e.message.indexOf('Importing a module script failed') !== -1 || e.message.indexOf('Loading chunk') !== -1)) {
-        if ('serviceWorker' in navigator) {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            regs.forEach(function(r) { r.unregister(); });
-          });
-        }
-        window.location.reload(true);
-      }
-    });
   </script>
 
   <!-- Custom Icons -->

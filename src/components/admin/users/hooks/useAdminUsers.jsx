@@ -8,6 +8,7 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
     const [filterGroup, setFilterGroup] = useState('ALL');
     const [excludeLeaders, setExcludeLeaders] = useState(false);
     const [showOnlyNonSchoolChurch, setShowOnlyNonSchoolChurch] = useState(false);
+    const [showOnlyNew3Months, setShowOnlyNew3Months] = useState(false);
 
     // 2. Selection & Bulk Update State
     const [selectedUserIds, setSelectedUserIds] = useState(new Set());
@@ -22,6 +23,15 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
 
     // Filter Logic
     const filteredUsers = useMemo(() => {
+        const threeMonthsAgo = new Date();
+        threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+
+        const checkIsNew3M = (u) => {
+            if (!u || !u.created_at) return false;
+            const dt = new Date(u.created_at);
+            return !isNaN(dt.getTime()) && dt >= threeMonthsAgo;
+        };
+
         const rawFiltered = users.filter(user => {
             // Calculate Age from YYMMDD
             let age = '';
@@ -42,20 +52,24 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
                 (age && age === searchTerm) || matchesAge;
 
             const isGuestOrTemp = user.user_group === '게스트' || user.user_group === '미가입' || user.preferences?.is_temporary === true;
+            const isNew3M = checkIsNew3M(user);
 
             const matchesGroup = filterGroup === 'ALL'
                 ? !isGuestOrTemp
-                : filterGroup === 'LEADER'
-                    ? user.is_leader === true
-                    : filterGroup === 'TEMP_GUEST'
-                        ? isGuestOrTemp
-                        : user.user_group === filterGroup && !isGuestOrTemp;
+                : filterGroup === 'NEW_3M'
+                    ? isNew3M && !isGuestOrTemp
+                    : filterGroup === 'LEADER'
+                        ? user.is_leader === true
+                        : filterGroup === 'TEMP_GUEST'
+                            ? isGuestOrTemp
+                            : user.user_group === filterGroup && !isGuestOrTemp;
 
             const isExcludedLeader = excludeLeaders && user.is_leader === true;
             const isNonSchoolChurchFilter = showOnlyNonSchoolChurch && user.preferences?.is_school_church === true;
+            const isNew3MFilterMismatch = showOnlyNew3Months && !isNew3M;
             const isInternalAdmin = user.name === 'admin';
 
-            return !isInternalAdmin && matchesSearch && matchesGroup && !isExcludedLeader && !isNonSchoolChurchFilter;
+            return !isInternalAdmin && matchesSearch && matchesGroup && !isExcludedLeader && !isNonSchoolChurchFilter && !isNew3MFilterMismatch;
         }).sort((a, b) => {
             const isAPending = a.status === 'pending';
             const isBPending = b.status === 'pending';
@@ -102,12 +116,13 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
 
             return {
                 ...user,
+                isNew3M: checkIsNew3M(user),
                 lastActiveAt: lastActiveTime ? lastActiveTime.toISOString() : null,
                 lastActiveFormatted: formatted,
                 hasWebRecord
             };
         });
-    }, [users, searchTerm, filterGroup, excludeLeaders, showOnlyNonSchoolChurch, allLogs]);
+    }, [users, searchTerm, filterGroup, excludeLeaders, showOnlyNonSchoolChurch, showOnlyNew3Months, allLogs]);
 
     // Selection Logic
     const toggleSelectAll = () => {
@@ -269,6 +284,7 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
         filterGroup, setFilterGroup,
         excludeLeaders, setExcludeLeaders,
         showOnlyNonSchoolChurch, setShowOnlyNonSchoolChurch,
+        showOnlyNew3Months, setShowOnlyNew3Months,
         selectedUserIds, setSelectedUserIds,
         bulkTargetGroup, setBulkTargetGroup,
         sendingBulk,

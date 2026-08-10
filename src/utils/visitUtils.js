@@ -48,7 +48,12 @@ export const aggregateVisitSessions = (allLogs, users, locations, startDate = ''
                 weekId: getWeekIdentifier(startAt.toISOString()),
                 dayOfWeek: startAt.toLocaleDateString('ko-KR', { weekday: 'short' }),
                 school: guestSchool,
-                name: guestName.includes('게스트') ? guestName : `${guestName}(게스트)`,
+                name: (guestName || '')
+                    .replace('(guest)', '')
+                    .replace(/@/g, '')
+                    .replace(/\(guest\)/gi, '')
+                    .replace(/\(게스트\)/gi, '')
+                    .trim() || '게스트',
                 userGroup: '게스트',
                 birth: '-',
                 phone: '-',
@@ -166,7 +171,13 @@ export const aggregateVisitSessions = (allLogs, users, locations, startDate = ''
                 weekId: getWeekIdentifier(startAt.toISOString()),
                 dayOfWeek: startAt.toLocaleDateString('ko-KR', { weekday: 'short' }),
                 school: user.school || '-',
-                name: user.name,
+                name: (user.name || '')
+                    .replace('(guest)', '')
+                    .replace(/@/g, '')
+                    .replace(/\(guest\)/gi, '')
+                    .replace(/\(게스트\)/gi, '')
+                    .trim() || '게스트',
+                userGroup: user.user_group || '재학생',
                 birth: user.birth || '-',
                 phone: user.phone || (user.phone_back4 ? `***-****-${user.phone_back4}` : '-'),
                 age: calculateAge(user.birth) || '-',

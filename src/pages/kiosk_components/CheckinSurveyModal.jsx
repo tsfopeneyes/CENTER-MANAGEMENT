@@ -43,8 +43,15 @@ const CheckinSurveyModal = ({
 
     if (!isOpen) return null;
 
+    const [customText, setCustomText] = useState('');
+
+    const activeMode = surveyConfig?.mode || 'SURVEY';
     const question = surveyConfig?.question || '오늘 하이픈에서 무엇을 하고 싶나요?';
     const options = surveyConfig?.options || [];
+    const qaQuestion = surveyConfig?.qaQuestion || '오늘 센터에서 꼭 해보고 싶은 한 가지는 무엇인가요?';
+    const qaPlaceholder = surveyConfig?.qaPlaceholder || '자유롭게 작성해 주세요';
+    const chatPrompt = surveyConfig?.chatPrompt || '센터에 있는 친구들에게 한마디 인사를 남겨보세요!';
+    const chatPlaceholder = surveyConfig?.chatPlaceholder || '예: 3층 빈백존 입성! 보드게임 할 사람 덤벼라~';
 
     const handleToggleSelect = (id) => {
         if (selectedIds.includes(id)) {
@@ -55,8 +62,15 @@ const CheckinSurveyModal = ({
     };
 
     const handleConfirm = () => {
-        // If nothing is selected, default to 'undecided' (id '6' or similar, or just submit empty)
-        onComplete(selectedIds);
+        if (activeMode === 'CHAT_SHOUTOUT' || activeMode === 'QUESTION_QA') {
+            onComplete(customText.trim() ? [customText.trim()] : []);
+        } else if (activeMode === 'HYBRID') {
+            const combined = [...selectedIds];
+            if (customText.trim()) combined.push(customText.trim());
+            onComplete(combined);
+        } else {
+            onComplete(selectedIds);
+        }
     };
 
     // Filter configuration options that match student's selections
@@ -78,34 +92,68 @@ const CheckinSurveyModal = ({
                                 {user?.name ? `${user.name}님 입실 확인` : '입실 설문'}
                             </span>
                             <h3 className="text-2xl sm:text-3xl font-black text-slate-800 tracking-tight mt-2">
-                                {question}
+                                {activeMode === 'CHAT_SHOUTOUT' ? chatPrompt :
+                                 activeMode === 'QUESTION_QA' ? qaQuestion :
+                                 question}
                             </h3>
-                            <p className="text-slate-400 text-xs font-bold">원하는 활동을 자유롭게 선택해 주세요. (중복 선택 가능)</p>
+                            <p className="text-slate-400 text-xs font-bold">
+                                {activeMode === 'CHAT_SHOUTOUT' ? '남겨주신 메시지는 센터 실시간 채팅에 자동 게시됩니다 ✨' :
+                                 activeMode === 'QUESTION_QA' ? '오늘의 생각을 자유롭게 글자로 적어주세요.' :
+                                 '원하는 활동을 자유롭게 선택해 주세요. (중복 선택 가능)'}
+                            </p>
                         </div>
 
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-4 max-h-[50vh] overflow-y-auto pr-1">
-                            {options.map((opt) => {
-                                const isSelected = selectedIds.includes(opt.id);
-                                return (
-                                    <button
-                                        key={opt.id}
-                                        type="button"
-                                        onClick={() => handleToggleSelect(opt.id)}
-                                        className={`p-6 rounded-[2rem] border-2 text-left flex items-center gap-4 transition-all duration-200 active:scale-95 ${isSelected ? 'bg-blue-50 border-blue-500 shadow-lg shadow-blue-50/50' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}
-                                    >
-                                        <span className="text-3xl shrink-0">{opt.emoji}</span>
-                                        <div className="flex-1 min-w-0">
-                                            <p className={`font-black text-sm sm:text-base whitespace-normal break-keep ${isSelected ? 'text-blue-600' : 'text-slate-700'}`}>
-                                                {opt.label}
-                                            </p>
-                                        </div>
-                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'}`}>
-                                            {isSelected && <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>}
-                                        </div>
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        {/* Mode 2: 주관식 오늘의 질문 / Mode 3: 라이브 채팅 한마디 */}
+                        {(activeMode === 'CHAT_SHOUTOUT' || activeMode === 'QUESTION_QA') ? (
+                            <div className="my-4 space-y-3">
+                                <textarea
+                                    value={customText}
+                                    onChange={(e) => setCustomText(e.target.value)}
+                                    placeholder={activeMode === 'CHAT_SHOUTOUT' ? chatPlaceholder : qaPlaceholder}
+                                    rows={4}
+                                    className="w-full p-5 bg-slate-50 border-2 border-slate-200 focus:border-blue-500 focus:bg-white rounded-2xl outline-none font-bold text-slate-800 text-base resize-none transition-all shadow-inner"
+                                />
+                            </div>
+                        ) : (
+                            /* Mode 1 & Mode 4: 객관식 설문 카드 목록 */
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 my-4 max-h-[50vh] overflow-y-auto pr-1">
+                                {options.map((opt) => {
+                                    const isSelected = selectedIds.includes(opt.id);
+                                    return (
+                                        <button
+                                            key={opt.id}
+                                            type="button"
+                                            onClick={() => handleToggleSelect(opt.id)}
+                                            className={`p-6 rounded-[2rem] border-2 text-left flex items-center gap-4 transition-all duration-200 active:scale-95 ${isSelected ? 'bg-blue-50 border-blue-500 shadow-lg shadow-blue-50/50' : 'bg-slate-50 border-slate-100 hover:border-slate-200'}`}
+                                        >
+                                            <span className="text-3xl shrink-0">{opt.emoji}</span>
+                                            <div className="flex-1 min-w-0">
+                                                <p className={`font-black text-sm sm:text-base whitespace-normal break-keep ${isSelected ? 'text-blue-600' : 'text-slate-700'}`}>
+                                                    {opt.label}
+                                                </p>
+                                            </div>
+                                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300 bg-white'}`}>
+                                                {isSelected && <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>}
+                                            </div>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        )}
+
+                        {/* Mode 4: HYBRID 인 경우 채팅 메시지 추가 입력 */}
+                        {activeMode === 'HYBRID' && (
+                            <div className="my-2 space-y-1">
+                                <label className="text-xs font-bold text-slate-600 block">{chatPrompt}</label>
+                                <input
+                                    type="text"
+                                    value={customText}
+                                    onChange={(e) => setCustomText(e.target.value)}
+                                    placeholder={chatPlaceholder}
+                                    className="w-full px-4 py-3 bg-slate-50 border border-slate-200 focus:border-blue-500 focus:bg-white rounded-xl outline-none text-xs font-bold text-slate-800 transition-all"
+                                />
+                            </div>
+                        )}
 
                         <div className="flex gap-4 border-t border-slate-100 pt-6">
                             <button

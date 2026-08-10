@@ -1,10 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
+import legacy from '@vitejs/plugin-legacy'
+
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    legacy({
+      targets: ['chrome >= 60', 'safari >= 11'],
+      polyfills: true
+    })
+  ],
   build: {
+    target: ['chrome60', 'es2015'],
     rollupOptions: {
       output: {
         entryFileNames: `assets/[name].[hash].js`,

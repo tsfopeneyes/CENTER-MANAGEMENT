@@ -14,6 +14,7 @@ import DutyChecklistSettings from './components/DutyChecklistSettings';
 import OperatingHoursSettings from './components/OperatingHoursSettings';
 import StaffPresenceSettings from './components/StaffPresenceSettings';
 import CheckinSurveySettings from './components/CheckinSurveySettings';
+import CheckoutSurveySettings from './components/CheckoutSurveySettings';
 import WebAccessSettings from './components/WebAccessSettings';
 import AdminPageHeader from '../common/AdminPageHeader';
 
@@ -58,7 +59,8 @@ const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, 
         handleUpdateOperatingHours, handleSaveOperatingHours,
         isBadgeSystemEnabled, setIsBadgeSystemEnabled,
         selectedStaffConfig, staffSaving, handleSaveStaffPresenceConfig,
-        checkinSurveyConfig, surveySaving, handleSaveCheckinSurveyConfig
+        checkinSurveyConfig, surveySaving, handleSaveCheckinSurveyConfig,
+        checkoutSurveyConfig, checkoutSurveySaving, handleSaveCheckoutSurveyConfig
     } = useAdminSettings({
         currentAdmin, locations, locationGroups, fetchData, users, allLogs, responses, schoolLogs, notices
     });
@@ -200,6 +202,11 @@ const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, 
                             checkinSurveyConfig={checkinSurveyConfig}
                             onSave={handleSaveCheckinSurveyConfig}
                             isSaving={surveySaving}
+                        />
+                        <CheckoutSurveySettings
+                            checkoutSurveyConfig={checkoutSurveyConfig}
+                            onSave={handleSaveCheckoutSurveyConfig}
+                            isSaving={checkoutSurveySaving}
                         />
                         <DutyChecklistSettings isMaster={isMaster} />
                     </div>

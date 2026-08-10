@@ -97,13 +97,14 @@ export const useStudentDashboard = () => {
     const [specialStats, setSpecialStats] = useState({ isBirthdayVisited: false, uniqueLocationsCount: 0, maxConsecutiveDays: 0, earnedChallengeIds: [] });
     const [selectedBadge, setSelectedBadge] = useState(null);
     const { adminSchedules, calendarCategories, fetchSchedules } = useDashboardCalendar();
-    const [dashboardConfig, setDashboardConfig] = useState([
-        { id: 'stats', label: '활동 통계', isVisible: true, count: 3 },
-        { id: 'programs', label: '프로그램 신청', isVisible: true, count: 10 },
-        { id: 'space_status', isVisible: true, count: 0 }, // Add space_status below programs
+    const DEFAULT_STUDENT_DASHBOARD_ITEMS = [
+        { id: 'operating_status', label: '센터 오픈 현황', isVisible: true, count: 0 },
+        { id: 'live_chat', label: '실시간 라이브 채팅', isVisible: true, count: 0 },
         { id: 'notices', label: '공지사항', isVisible: true, count: 5 },
-        { id: 'gallery', label: '갤러리', isVisible: true, count: 10 }
-    ]);
+        { id: 'programs', label: '프로그램 신청', isVisible: true, count: 10 }
+    ];
+
+    const [dashboardConfig, setDashboardConfig] = useState(DEFAULT_STUDENT_DASHBOARD_ITEMS);
     const [tabConfig, setTabConfig] = useState([
         { id: 'home', label: '홈', isVisible: true },
         { id: 'badges', label: '뱃지', isVisible: true },
@@ -263,7 +264,18 @@ export const useStudentDashboard = () => {
             if (data && data.content) {
                 try {
                     const parsed = JSON.parse(data.content);
-                    if (Array.isArray(parsed)) setDashboardConfig(parsed);
+                    if (Array.isArray(parsed)) {
+                        const filtered = parsed.filter(c => c.id !== 'gallery');
+                        const merged = DEFAULT_STUDENT_DASHBOARD_ITEMS.map(def => {
+                            const found = filtered.find(f => f.id === def.id);
+                            return found ? { ...def, ...found } : def;
+                        });
+                        const ordered = [
+                            ...filtered.map(f => merged.find(m => m.id === f.id)).filter(Boolean),
+                            ...merged.filter(m => !filtered.find(f => f.id === m.id))
+                        ];
+                        setDashboardConfig(ordered);
+                    }
                 } catch (e) {
                     console.error('Failed to parse dashboard config', e);
                 }

@@ -236,19 +236,49 @@ export const useLiveCenterChat = (centerCode, currentUser) => {
 
             if (insertErr) throw insertErr;
 
-            // Send mention notifications to app_notifications table
+            // Send mention notifications to app_notifications table (resolves both UUIDs and User Names)
             if (Array.isArray(taggedUserIds) && taggedUserIds.length > 0) {
-                const uniqueTaggedIds = [...new Set(taggedUserIds)].filter(uid => uid && uid !== currentUser.id && uuidRegex.test(uid));
-                if (uniqueTaggedIds.length > 0) {
-                    const notifInserts = uniqueTaggedIds.map(uid => ({
-                        sender_id: validUserId || null,
-                        target_group: `USER_${uid}`,
-                        content: `[${centerCode} 라이브] ${currentUser.name || '익명'} 님이 회원님을 태그했습니다: "${maskedText.substring(0, 30)}"`
-                    }));
-                    const { error: notifErr } = await supabase.from('app_notifications').insert(notifInserts);
-                    if (notifErr) {
-                        console.error('Failed to insert mention notifications:', notifErr);
+                try {
+                    let resolvedTargetUserIds = [];
+                    for (const rawIdOrName of [...new Set(taggedUserIds)]) {
+                        if (!rawIdOrName || rawIdOrName === currentUser.id) continue;
+                        if (uuidRegex.test(rawIdOrName)) {
+                            resolvedTargetUserIds.push(rawIdOrName);
+                        } else {
+                            const cleanName = rawIdOrName.replace('(guest)', '').replace(/@/g, '').trim();
+                            if (cleanName) {
+                                const { data: matchedUsers } = await supabase
+                                    .from('users')
+                                    .select('id, name')
+                                    .or(`name.eq.${cleanName},name.eq.${cleanName}(guest)`)
+                                    .limit(5);
+
+                                if (matchedUsers && matchedUsers.length > 0) {
+                                    matchedUsers.forEach(u => {
+                                        if (u.id && u.id !== currentUser.id) {
+                                            resolvedTargetUserIds.push(u.id);
+                                        }
+                                    });
+                                }
+                            }
+                        }
                     }
+
+                    resolvedTargetUserIds = [...new Set(resolvedTargetUserIds)];
+
+                    if (resolvedTargetUserIds.length > 0) {
+                        const notifInserts = resolvedTargetUserIds.map(uid => ({
+                            sender_id: validUserId || null,
+                            target_group: `USER_${uid}`,
+                            content: `[${centerCode} 라이브] ${currentUser.name || '익명'} 님이 회원님을 태그했습니다: "${maskedText.substring(0, 30)}"`
+                        }));
+                        const { error: notifErr } = await supabase.from('app_notifications').insert(notifInserts);
+                        if (notifErr) {
+                            console.error('Failed to insert mention notifications:', notifErr);
+                        }
+                    }
+                } catch (mentionNotifErr) {
+                    console.error('Error processing mention notification targets:', mentionNotifErr);
                 }
             }
 
@@ -365,13 +395,14 @@ export const useLiveCenterChat = (centerCode, currentUser) => {
         const rawList = Array.isArray(currentReactions[emoji]) ? currentReactions[emoji] : [];
 
         const myName = currentUser.name || currentUser.user_name || '이용자';
+        const mySchool = currentUser.school || currentUser.user_group || currentUser.school_name || '';
 
-        // Normalize items to { id, name } objects
+        // Normalize items to { id, name, school } objects
         const userList = rawList.map(item => {
             if (typeof item === 'string') {
-                if (item === currentUser.id) return { id: item, name: myName };
-                if (item === targetMsg.user_id) return { id: item, name: targetMsg.user_name };
-                return { id: item, name: '이용자' };
+                if (item === currentUser.id) return { id: item, name: myName, school: mySchool };
+                if (item === targetMsg.user_id) return { id: item, name: targetMsg.user_name, school: targetMsg.user_school || '' };
+                return { id: item, name: '이용자', school: '' };
             }
             return item;
         });
@@ -382,7 +413,7 @@ export const useLiveCenterChat = (centerCode, currentUser) => {
         if (hasReacted) {
             updatedUserList = userList.filter(item => item.id !== currentUser.id);
         } else {
-            updatedUserList = [...userList, { id: currentUser.id, name: myName }];
+            updatedUserList = [...userList, { id: currentUser.id, name: myName, school: mySchool }];
         }
 
         const newReactions = { ...currentReactions };

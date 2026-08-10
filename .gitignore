@@ -9,3 +9,19 @@ coverage
 # Local Netlify folder
 .netlify
 nul.css
+
+# Scratch & temporary debug scripts
+scratch/
+*.cjs
+check_*.js
+clean_*.js
+test_*.js
+debug_*.js
+deep_search_*.js
+execute_*.js
+find_*.js
+inspect_*.js
+login_*.js
+query_*.js
+reset_*.js
+verify_*.js

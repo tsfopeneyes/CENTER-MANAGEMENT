@@ -60,8 +60,26 @@ const LogTableRow = React.memo(({
             <td className="p-3 text-sm font-semibold text-gray-700 whitespace-nowrap">{summary.date}</td>
             <td className="p-3 text-sm text-gray-600">{summary.dayOfWeek}</td>
             <td className="p-3 text-sm text-gray-750 whitespace-nowrap">{summary.school}</td>
-            <td className="p-3 text-sm font-medium text-gray-600">{summary.age}세</td>
-            <td className="p-3 text-sm font-extrabold text-gray-900">{summary.name}</td>
+            <td className="p-3 text-sm font-medium text-gray-600">
+                {summary.age && summary.age !== '-' ? `${summary.age}세` : '-'}
+            </td>
+            <td className="p-3 text-sm font-extrabold text-gray-900 whitespace-nowrap">
+                <div className="flex items-center gap-1.5">
+                    <span>
+                        {(summary.name || '')
+                            .replace('(guest)', '')
+                            .replace(/@/g, '')
+                            .replace(/\(guest\)/gi, '')
+                            .replace(/\(게스트\)/gi, '')
+                            .trim() || '게스트'}
+                    </span>
+                    {summary.userGroup === '게스트' && (
+                        <span className="px-1.5 py-[1px] leading-none rounded text-[9.5px] font-bold bg-purple-100 text-purple-700 border border-purple-200/80 shrink-0 inline-flex items-center">
+                            게스트
+                        </span>
+                    )}
+                </div>
+            </td>
             <td className="p-3 font-mono text-xs text-center font-bold text-blue-600">{summary.startTime}</td>
             <td className="p-3 font-mono text-xs text-center font-bold text-blue-600">{summary.endTime}</td>
             <td className="p-3 text-xs text-gray-700">

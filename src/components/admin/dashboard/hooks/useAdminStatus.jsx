@@ -54,7 +54,6 @@ export const useAdminStatus = ({ users, locations, locationGroups = [], zoneStat
         return activeLocations;
     };
     const filteredLocations = getFilteredLocations();
-
     const totalActive = filteredLocations.reduce((sum, loc) => sum + (zoneStats[loc.id] || 0), 0);
 
     const activeUsersList = Object.entries(currentLocations)
@@ -69,9 +68,17 @@ export const useAdminStatus = ({ users, locations, locationGroups = [], zoneStat
             const isGuestKey = locData?.isGuest || key.startsWith('guest_');
             if (isGuestKey) {
                 const userObj = users.find(u => u.id === key);
+                const rawGuestName = userObj?.name || locData.guestName || '게스트';
+                const cleanGuestName = rawGuestName
+                    .replace('(guest)', '')
+                    .replace(/@/g, '')
+                    .replace(/\(guest\)/gi, '')
+                    .replace(/\(게스트\)/gi, '')
+                    .trim();
+
                 return {
                     id: key,
-                    name: userObj?.name || locData.guestName || '게스트',
+                    name: cleanGuestName || '게스트',
                     school: userObj?.school || locData.guestSchool || '-',
                     user_group: '게스트',
                     currentLocationName: locations.find(l => l.id === locData.locId)?.name || 'Unknown',
@@ -100,7 +107,6 @@ export const useAdminStatus = ({ users, locations, locationGroups = [], zoneStat
             return isToday && isTargetLocation && isNotAdmin;
         });
 
-        // Group logs by user_id or guest log id
         const logsByUser = {};
         todayLocationLogs.forEach(log => {
             const key = log.user_id || `guest_${log.id}`;
@@ -122,16 +128,24 @@ export const useAdminStatus = ({ users, locations, locationGroups = [], zoneStat
             const userObj = users.find(u => u.id === key);
             const isGuest = userObj?.user_group === '게스트' || key.startsWith('guest_') || (firstLog && !firstLog.user_id);
 
+            const userAllLogsToday = allLogs.filter(l => (l.user_id === key || `guest_${l.id}` === key) && new Date(l.created_at) >= todayStart);
+            const checkOutLog = userAllLogsToday.slice().reverse().find(l => l.type === 'CHECKOUT') || uLogs.find(l => l.type === 'CHECKOUT');
+
             if (isGuest) {
-                const guestName = userObj?.name || (firstLog && firstLog.metadata?.guest_name) || '게스트';
+                const rawGuestName = userObj?.name || (firstLog && firstLog.metadata?.guest_name) || '게스트';
+                const cleanGuestName = rawGuestName
+                    .replace('(guest)', '')
+                    .replace(/@/g, '')
+                    .replace(/\(guest\)/gi, '')
+                    .replace(/\(게스트\)/gi, '')
+                    .trim();
                 const guestSchool = userObj?.school || (firstLog && firstLog.metadata?.guest_school) || '-';
-                const checkOutLog = uLogs.find(l => l.type === 'CHECKOUT');
                 const locId = currentLocations[key]?.locId;
                 const isActive = locId === location.id || (!checkOutLog && firstLog?.location_id === location.id);
 
                 return {
                     id: key,
-                    name: guestName.includes('게스트') ? guestName : `${guestName}(게스트)`,
+                    name: cleanGuestName || '게스트',
                     school: guestSchool,
                     user_group: '게스트',
                     isActive,
@@ -144,7 +158,6 @@ export const useAdminStatus = ({ users, locations, locationGroups = [], zoneStat
                 const locId = currentLocations[key]?.locId;
                 const isActive = locId === location.id;
                 const firstLogAtLoc = uLogs.find(log => log.type === 'CHECKIN' || log.type === 'MOVE');
-                const checkOutLog = uLogs.find(l => l.type === 'CHECKOUT');
 
                 return {
                     ...userObj,

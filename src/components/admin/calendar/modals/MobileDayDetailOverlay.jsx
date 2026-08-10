@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronDown, Filter, MoreVertical, Calendar as CalendarIco
 import { format, parseISO, isToday } from 'date-fns';
 import { ko } from 'date-fns/locale';
 import { COLOR_THEMES } from '../calendarConstants';
+import { stripHtml } from '../../../../utils/textUtils';
 
 const MobileDayDetailOverlay = ({
     selectedDate, setSelectedDate,
@@ -124,7 +125,7 @@ const MobileDayDetailOverlay = ({
                                                             )}
                                                             <h4 className="text-[14px] font-bold text-gray-900 truncate tracking-tight">{event.title}</h4>
                                                         </div>
-                                                        <p className="text-[11px] text-gray-400 truncate leading-relaxed opacity-80">{event.content?.replace(/<[^>]*>/g, '') || '-'}</p>
+                                                        <p className="text-[11px] text-gray-400 truncate leading-relaxed opacity-80">{stripHtml(event.content) || '-'}</p>
                                                     </div>
                                                 </div>
                                             </div>

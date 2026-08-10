@@ -31,6 +31,10 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     const [showSignupModal, setShowSignupModal] = useState(false);
     const [activeSession, setActiveSession] = useState(null);
 
+    // Frequent Guest Recommendation Modal State
+    const [showFrequentGuestModal, setShowFrequentGuestModal] = useState(false);
+    const [frequentGuestData, setFrequentGuestData] = useState(null);
+
     // Login Modal States
     const [showLoginModal, setShowLoginModal] = useState(false);
     const [loginName, setLoginName] = useState('');
@@ -269,6 +273,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
 
     // On mount effect
     useEffect(() => {
+        const querySearch = location.search || '';
 
         const savedUser = localStorage.getItem('user');
         if (savedUser) {
@@ -277,7 +282,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 if (parsedUser?.id) {
                     const isAdmin = parsedUser.user_group === '관리자' || parsedUser.role === 'admin';
                     if (isAdmin) {
-                        navigate('/admin', { replace: true });
+                        navigate('/admin' + querySearch, { replace: true });
                         return;
                     }
 
@@ -287,7 +292,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                     } else {
                         // Normal Web App access: navigate straight to student dashboard
                         updateWebSessionPreferences(parsedUser);
-                        navigate('/student', { replace: true });
+                        navigate('/student' + querySearch, { replace: true });
                     }
                     return;
                 }
@@ -301,7 +306,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             try {
                 const parsedAdmin = JSON.parse(savedAdmin);
                 if (parsedAdmin?.id) {
-                    navigate('/admin', { replace: true });
+                    navigate('/admin' + querySearch, { replace: true });
                     return;
                 }
             } catch (e) {}
@@ -449,7 +454,9 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
         });
     };
 
-    // Guest Check-in Submission
+    const [guestPendingInfo, setGuestPendingInfo] = useState(null);
+
+    // Guest Check-in Form Submission -> Transition to Dynamic Check-in Survey (Admin Config)
     const handleGuestCheckinSubmit = async (e) => {
         e.preventDefault();
         if (!name.trim() || !school.trim()) {
@@ -533,8 +540,64 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 console.error('Failed to create/lookup guest user:', gErr);
             }
 
-            // 3. Insert CHECKIN log into logs table ONLY for QR checkin route
-            if (isQRCheckin) {
+            // Check total previous visit count for frequent guest recommendation
+            let previousVisits = 0;
+            if (guestUserId) {
+                try {
+                    const { count } = await supabase
+                        .from('visit_notes')
+                        .select('id', { count: 'exact', head: true })
+                        .eq('user_id', guestUserId);
+                    previousVisits = count || 0;
+                } catch (cErr) {}
+            }
+
+            // Save pending guest info
+            setGuestPendingInfo({
+                guestUserId,
+                cleanName,
+                cleanSchool,
+                finalVisitReason,
+                haifnLoc
+            });
+
+            // Pre-select first dynamic survey option
+            if (dynamicSurveyOptions && dynamicSurveyOptions.length > 0) {
+                setSelectedPurposes([dynamicSurveyOptions[0].label]);
+            }
+
+            // Prompt frequent guests (2+ visits like Park Ruah) to register as formal members
+            if (previousVisits >= 2) {
+                setFrequentGuestData({
+                    name: cleanName,
+                    school: cleanSchool,
+                    visitCount: previousVisits + 1
+                });
+                setShowFrequentGuestModal(true);
+            } else {
+                setStep('SURVEY');
+            }
+        } catch (err) {
+            console.error('Mobile Guest Checkin Error:', err);
+            alert('체크인 처리 중 오류가 발생했습니다: ' + (err.message || '다시 시도해주세요.'));
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Complete Guest Check-in with Selected Survey Purposes
+    const performGuestSurveyComplete = async (surveyPurposes) => {
+        if (!guestPendingInfo) return;
+        setLoading(true);
+        try {
+            const { guestUserId, cleanName, cleanSchool, finalVisitReason, haifnLoc } = guestPendingInfo;
+            const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            const surveyPurposesStr = (surveyPurposes && surveyPurposes.length > 0)
+                ? surveyPurposes.join(', ')
+                : '당 충전하며 쉬고 싶어요';
+
+            // 1. Insert CHECKIN log into logs table ONLY for QR checkin route
+            if (isQRCheckin && guestUserId) {
                 const { error: logErr } = await supabase.from('logs').insert([{
                     user_id: guestUserId,
                     location_id: haifnLoc.id,
@@ -543,8 +606,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 if (logErr) throw logErr;
             }
 
-            // 4. Save visit reason to visit_notes and checkin_surveys
-            const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
+            // 2. Save visit notes (remarks = referral path, purpose = checkin survey choice)
             if (guestUserId) {
                 try {
                     const { data: existingNote } = await supabase
@@ -554,28 +616,27 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         .eq('visit_date', todayKst)
                         .maybeSingle();
 
-                    const noteText = finalVisitReason || '친구 / 지인 추천';
                     if (existingNote?.id) {
                         await supabase.from('visit_notes').update({
-                            remarks: noteText,
-                            purpose: noteText
+                            remarks: finalVisitReason || '친구 / 지인 추천',
+                            purpose: surveyPurposesStr
                         }).eq('id', existingNote.id);
                     } else {
                         await supabase.from('visit_notes').insert([{
                             user_id: guestUserId,
                             visit_date: todayKst,
-                            remarks: noteText,
-                            purpose: noteText
+                            remarks: finalVisitReason || '친구 / 지인 추천',
+                            purpose: surveyPurposesStr
                         }]);
                     }
 
-                    if (finalVisitReason) {
-                        await supabase.from('checkin_surveys').insert([{
-                            user_id: guestUserId,
-                            selections: [finalVisitReason],
-                            created_at: new Date().toISOString()
-                        }]);
-                    }
+                    // Save to checkin_surveys table
+                    await supabase.from('checkin_surveys').insert([{
+                        user_id: guestUserId,
+                        survey_type: 'CHECKIN',
+                        selections: surveyPurposes,
+                        created_at: new Date().toISOString()
+                    }]);
                 } catch (vErr) {
                     console.error('Failed to save guest visit note/survey:', vErr);
                 }
@@ -594,68 +655,24 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             localStorage.setItem('guest_active_session', JSON.stringify(sessionData));
             setActiveSession(sessionData);
 
-            // 5. Trigger Realtime LINE / Discord Notification
-            const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
-            const reasonListText = selectedReasons.length > 0
-                ? selectedReasons.map(r => `▪ ${r}`).join('\n')
-                : '▪ 기타';
-            const customDetailText = customReason.trim()
-                ? `\n📋 상세 내용\n▪ ${customReason.trim()}`
-                : '';
-
-            const alertMessage = `[GUEST CHECK-IN]\n💌 ${cleanName}(${cleanSchool})님이 게스트로 ${haifnLoc.name}에 방문했어요 (${timeStr})\n🧭 방문 경로\n${reasonListText}${customDetailText}`;
-
+            // 3. Trigger Realtime LINE / Discord Notification with separate Referral Path & Check-in Purpose
             try {
-                const { data: settings } = await supabase.from('global_settings').select('*');
-                let lineToken = '', lineGroupId = '', gsWebhookUrl = '', discordWebhookUrl = '';
-
-                if (settings) {
-                    settings.forEach(s => {
-                        if (s.key === 'line_channel_access_token') lineToken = s.value;
-                        if (s.key === 'line_group_id') lineGroupId = s.value;
-                        if (s.key === 'gs_webhook_url') gsWebhookUrl = s.value;
-                        if (s.key === 'discord_webhook_url') discordWebhookUrl = s.value;
-                    });
-                }
-
-                const isHaifnLoc = haifnLoc && (
-                    haifnLoc.name?.includes('하이픈') ||
-                    haifnLoc.name?.includes('HAIFN') ||
-                    haifnLoc.name?.includes('강동')
-                ) && !(
-                    haifnLoc.name?.includes('이높') ||
-                    haifnLoc.name?.includes('ENOUGH_PLACE') ||
-                    haifnLoc.name?.includes('강서')
-                );
-
-                if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
-                    fetch(gsWebhookUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'text/plain' },
-                        body: JSON.stringify({
-                            action: 'LINE_NOTIFY',
-                            token: lineToken,
-                            to: lineGroupId,
-                            message: alertMessage
-                        })
-                    }).catch(e => console.error('LINE Notify error:', e));
-                }
-
-                if (discordWebhookUrl) {
-                    fetch(discordWebhookUrl, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ content: alertMessage })
-                    }).catch(e => console.error('Discord Notify error:', e));
-                }
-            } catch (notifyErr) {
-                console.error('Notification dispatch error:', notifyErr);
+                sendCheckinNotification({
+                    userName: cleanName,
+                    schoolName: cleanSchool,
+                    locationName: haifnLoc.name,
+                    isGuest: true,
+                    referralPath: finalVisitReason,
+                    purposes: surveyPurposes
+                });
+            } catch (notifErr) {
+                console.error('Notification dispatch error:', notifErr);
             }
 
             setStep('SUCCESS');
         } catch (err) {
-            console.error('Mobile Guest Checkin Error:', err);
-            alert('체크인 처리 중 오류가 발생했습니다: ' + (err.message || '다시 시도해주세요.'));
+            console.error('Guest Survey Complete Error:', err);
+            alert('체크인 완료 중 오류가 발생했습니다: ' + (err.message || '다시 시도해주세요.'));
         } finally {
             setLoading(false);
         }
@@ -1068,7 +1085,11 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                                 onClick={() => {
                                     const fallbackLabel = dynamicSurveyOptions?.[0]?.label || '당 충전하며 쉬고 싶어요';
                                     const finalPurposes = selectedPurposes.length > 0 ? selectedPurposes : [fallbackLabel];
-                                    performAutoCheckin(activeUserForSurvey, locParam, finalPurposes);
+                                    if (guestPendingInfo) {
+                                        performGuestSurveyComplete(finalPurposes);
+                                    } else {
+                                        performAutoCheckin(activeUserForSurvey, locParam, finalPurposes);
+                                    }
                                 }}
                                 disabled={loading}
                                 className="w-full h-14 bg-blue-600 hover:bg-blue-700 text-white font-black rounded-2xl transition shadow-lg shadow-blue-500/25 active:scale-[0.98] disabled:opacity-50 text-base tracking-tight flex items-center justify-center gap-2"
@@ -1232,6 +1253,55 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                             ))}
                         </div>
                     </div>
+                </div>
+            )}
+
+            {/* Frequent Guest (Park Ruah etc.) Membership Recommendation Modal */}
+            {showFrequentGuestModal && frequentGuestData && (
+                <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.9 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.9 }}
+                        className="bg-white w-full max-w-sm rounded-3xl p-6 shadow-2xl border border-[#E5E8EB] text-center space-y-4"
+                    >
+                        <div className="w-14 h-14 bg-amber-100 text-amber-600 rounded-full flex items-center justify-center mx-auto text-2xl shadow-inner">
+                            ⭐
+                        </div>
+                        <div className="space-y-1.5">
+                            <span className="inline-block px-3 py-1 bg-amber-50 text-amber-700 text-xs font-bold rounded-full border border-amber-200">
+                                단골 게스트 회원 안내
+                            </span>
+                            <h3 className="text-xl font-extrabold text-gray-900 tracking-tight">
+                                {frequentGuestData.name}님, 벌써 {frequentGuestData.visitCount}번째 방문이시네요! 🎉
+                            </h3>
+                            <p className="text-xs text-gray-600 leading-relaxed font-medium pt-1">
+                                SCI 센터를 자주 이용해 주셔서 감사합니다! 💛<br />
+                                정식 회원으로 등록하시면 매번 게스트 정보를 입력할 필요 없이 모바일 자동 체크인과 다양한 회원 전용 혜택을 이용하실 수 있습니다 ✨
+                            </p>
+                        </div>
+
+                        <div className="space-y-2 pt-2">
+                            <button
+                                onClick={() => {
+                                    setShowFrequentGuestModal(false);
+                                    setShowSignupModal(true);
+                                }}
+                                className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white font-extrabold rounded-2xl shadow-md shadow-amber-500/20 transition text-sm active:scale-[0.98]"
+                            >
+                                ✨ 정식 회원 등록하기
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setShowFrequentGuestModal(false);
+                                    setStep('SURVEY');
+                                }}
+                                className="w-full py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-bold rounded-xl transition text-xs"
+                            >
+                                게스트로 계속 체크인
+                            </button>
+                        </div>
+                    </motion.div>
                 </div>
             )}
 

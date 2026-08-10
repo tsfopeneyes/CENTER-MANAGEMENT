@@ -138,8 +138,81 @@ export const noticesApi = {
         return nextInLine.user_id;
     },
 
+    async incrementViewCount(noticeId) {
+        if (!noticeId) return null;
+        try {
+            const { data: rpcData, error: rpcError } = await supabase.rpc('increment_notice_views', { p_notice_id: noticeId });
+            if (!rpcError) {
+                return typeof rpcData === 'number' ? rpcData : null;
+            }
+
+            // Fallback direct update if RPC is missing
+            const { data, error: selectError } = await supabase
+                .from('notices')
+                .select('view_count')
+                .eq('id', noticeId)
+                .maybeSingle();
+
+            if (selectError) return null;
+
+            const currentViews = data?.view_count || 0;
+            const newViews = currentViews + 1;
+
+            const { error: updateError } = await supabase
+                .from('notices')
+                .update({ view_count: newViews })
+                .eq('id', noticeId);
+
+            if (updateError) {
+                console.warn('Direct view_count update fallback warning:', updateError.message);
+            }
+
+            return newViews;
+        } catch (e) {
+            console.error('Failed to increment notice view count:', e);
+            return null;
+        }
+    },
+
+    async sendNoticePushNotification(noticeObj) {
+        try {
+            const noticeId = noticeObj?.id;
+            const titleText = (noticeObj?.title || '').trim() || (noticeObj?.category === 'PROGRAM' ? '프로그램 안내' : '공지사항');
+            const notificationTitle = titleText;
+            const notificationBody = '지금 바로 앱에서 확인해보세요!';
+            const appNotificationContent = `[${titleText}] 지금 바로 앱에서 확인해보세요!`;
+            const noticeUrl = noticeId ? `/?noticeId=${noticeId}` : '/';
+
+            const { error: pushError } = await supabase.functions.invoke('send-push', {
+                body: {
+                    title: notificationTitle,
+                    body: notificationBody,
+                    targetRegions: noticeObj?.target_regions || [],
+                    noticeId: noticeId,
+                    url: noticeUrl,
+                    data: {
+                        noticeId: noticeId,
+                        url: noticeUrl
+                    }
+                }
+            });
+            if (pushError) console.error("푸쉬 알림 전송 에러:", pushError);
+
+            const adminInfo = JSON.parse(localStorage.getItem('admin_user')) || { id: 'd3885f86-f127-448c-8517-578964d509f7' };
+            await supabase.from('app_notifications').insert([{
+                sender_id: adminInfo.id,
+                target_group: '전체',
+                content: appNotificationContent
+            }]);
+
+        } catch (ex) {
+            console.error("푸쉬 알림 API 호출 실패:", ex);
+        }
+    },
+
     async update(id, updates) {
         const payload = { ...updates };
+        const shouldSendPush = payload.send_push;
         
         // Remove non-table / joined / computed keys that cause Supabase schema errors
         const nonTableKeys = [
@@ -152,11 +225,27 @@ export const noticesApi = {
 
         nonTableKeys.forEach(k => delete payload[k]);
 
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from('notices')
             .update(payload)
-            .eq('id', id);
+            .eq('id', id)
+            .select();
         if (error) throw error;
+
+        if (shouldSendPush) {
+            let noticeObj = (data && data[0]) ? data[0] : updates;
+            if (!noticeObj.title) {
+                const { data: fetched } = await supabase
+                    .from('notices')
+                    .select('title, category, target_regions')
+                    .eq('id', id)
+                    .maybeSingle();
+                if (fetched) {
+                    noticeObj = { ...noticeObj, ...fetched };
+                }
+            }
+            await this.sendNoticePushNotification(noticeObj);
+        }
     },
 
     async delete(id) {
@@ -178,34 +267,14 @@ export const noticesApi = {
             .select();
         if (error) throw error;
         
+        const createdNotice = (data && data[0]) ? data[0] : notice;
+
         // 체크박스 '푸시 알림 발송'이 활성화된 경우에만 푸쉬 전송
         if (shouldSendPush) {
-            try {
-                const notificationTitle = notice.category === 'PROGRAM' ? '🎯 새 프로그램 안내!' : '📢 새 공지사항!';
-                const notificationBody = `[${notice.title}] 등록되었습니다. 앱에서 확인해보세요!`;
-                
-                const { error: pushError } = await supabase.functions.invoke('send-push', {
-                    body: {
-                        title: notificationTitle,
-                        body: notificationBody,
-                        targetRegions: notice.target_regions || []
-                    }
-                });
-                if (pushError) console.error("푸쉬 알림 전송 에러:", pushError);
-
-                const adminInfo = JSON.parse(localStorage.getItem('admin_user')) || { id: 'd3885f86-f127-448c-8517-578964d509f7' };
-                await supabase.from('app_notifications').insert([{
-                    sender_id: adminInfo.id,
-                    target_group: '전체',
-                    content: notificationBody
-                }]);
-
-            } catch (ex) {
-                console.error("푸쉬 알림 API 호출 실패:", ex);
-            }
+            await this.sendNoticePushNotification(createdNotice);
         }
         
-        return data[0];
+        return createdNotice;
     },
 
     async updateProgramStatus(noticeId, status) {
@@ -406,5 +475,51 @@ export const noticesApi = {
             .eq('user_id', userId);
         if (error) throw error;
         return data.map(row => row.option_id);
+    },
+
+    async fetchNoticeReactions(noticeId) {
+        if (!noticeId) return [];
+        const { data, error } = await supabase
+            .from('notice_reactions')
+            .select('user_id, emoji, users(id, name, school, profile_image_url)')
+            .eq('notice_id', noticeId);
+        if (error) {
+            console.warn('notice_reactions fetch error:', error.message);
+            return [];
+        }
+        return data || [];
+    },
+
+    async toggleNoticeReaction(noticeId, userId, emoji) {
+        if (!noticeId || !userId || !emoji) return;
+
+        const { data, error } = await supabase
+            .from('notice_reactions')
+            .select('id')
+            .eq('notice_id', noticeId)
+            .eq('user_id', userId)
+            .eq('emoji', emoji);
+
+        if (error) {
+            console.error('Failed to check notice reaction:', error);
+            throw error;
+        }
+
+        if (data && data.length > 0) {
+            const { error: delErr } = await supabase
+                .from('notice_reactions')
+                .delete()
+                .eq('notice_id', noticeId)
+                .eq('user_id', userId)
+                .eq('emoji', emoji);
+            if (delErr) throw delErr;
+            return { action: 'removed' };
+        } else {
+            const { error: insErr } = await supabase
+                .from('notice_reactions')
+                .insert([{ notice_id: noticeId, user_id: userId, emoji }]);
+            if (insErr) throw insErr;
+            return { action: 'added' };
+        }
     }
 };

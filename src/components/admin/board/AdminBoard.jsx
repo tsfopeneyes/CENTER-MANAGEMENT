@@ -97,6 +97,21 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
         };
     }, [fetchNotices]);
 
+    // Deep-linking: Open notice from URL query parameter
+    useEffect(() => {
+        if (notices.length > 0) {
+            const params = new URLSearchParams(window.location.search);
+            const queryNoticeId = params.get('noticeId');
+            if (queryNoticeId) {
+                const target = notices.find(n => String(n.id) === String(queryNoticeId));
+                if (target) {
+                    setViewNotice(target);
+                    window.history.replaceState({}, '', window.location.pathname);
+                }
+            }
+        }
+    }, [notices]);
+
     const handleFormSave = useCallback((noticeData) => {
         setEditNoticeId(null);
         setSelectedNoticeForEdit(null);
@@ -152,11 +167,6 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
             
             if (newStatus === 'COMPLETED') {
                 if (notice) await noticesApi.finalizeProgramLogs(id, notice);
-                
-                if (setActiveMenu) {
-                    localStorage.setItem('adminLogs_defaultTab', 'PROGRAM');
-                    setActiveMenu('LOGS');
-                }
             } else if (newStatus === 'ACTIVE') {
                  // REVERT: Delete generated PRG logs
                  await noticesApi.revertProgramLogs(id, notice?.title);
@@ -167,8 +177,8 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
         }
     }, [setActiveMenu, notices]);
 
-    const handleOpenParticipants = useCallback((notice) => {
-        setModalNotice(notice);
+    const handleOpenParticipants = useCallback((notice, initialView) => {
+        setModalNotice({ notice, initialView });
     }, []);
 
     const handleCloseParticipants = useCallback(() => {
@@ -268,7 +278,8 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
             {/* Modals */}
             {modalNotice && (
                 <ParticipantModal 
-                    notice={modalNotice}
+                    notice={modalNotice.notice || modalNotice}
+                    initialView={modalNotice.initialView}
                     onClose={handleCloseParticipants}
                     onRefresh={() => fetchNotices()}
                 />

@@ -1,7 +1,7 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Pin, ChevronRight, Image as ImageIcon } from 'lucide-react';
-import { stripHtml } from '../../utils/textUtils';
+import { stripHtml, getFirstParagraph } from '../../utils/textUtils';
 
 const StudentNoticesTab = ({
     filteredNotices,
@@ -45,7 +45,7 @@ const StudentNoticesTab = ({
                                     {n.images?.length > 1 && <div className="absolute bottom-3 right-3 bg-black/60 backdrop-blur-md text-white text-[10px] font-bold px-3 py-1 rounded-full border border-white/10">+{n.images.length - 1}</div>}
                                 </div>
                             )}
-                            <p className="text-sm text-tossGrey600 line-clamp-2 mb-4 leading-relaxed font-medium">{stripHtml(n.content)}</p>
+                            <p className="text-sm text-tossGrey600 line-clamp-1 mb-4 leading-relaxed font-medium">{getFirstParagraph(n.content)}</p>
                             <div className="flex justify-between items-center text-[10px] text-tossGrey400 border-t border-tossGrey100 pt-4 font-bold uppercase tracking-wider">
                                 <span>{new Date(n.created_at).toLocaleDateString()}</span>
                                 <span className="flex items-center gap-1.5 text-tossBlue">상세보기 <ChevronRight size={12} /></span>

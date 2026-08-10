@@ -154,7 +154,14 @@ export const useSignUp = (onSuccess, guestUserId = null) => {
                     p_user_data: userData,
                     p_hashed_password: hashedPassword
                 });
-                if (upgradeError) throw upgradeError;
+                if (upgradeError) {
+                    console.warn('upgrade_guest_account RPC failed, falling back to direct table update:', upgradeError);
+                    const { error: updateError } = await supabase.from('users').update({
+                        ...userData,
+                        password: hashedPassword
+                    }).eq('id', targetUserId);
+                    if (updateError) throw updateError;
+                }
             } else {
                 const fakeEmail = `${formData.phone.replace(/[^0-9]/g, '')}@youth-access.app`;
 

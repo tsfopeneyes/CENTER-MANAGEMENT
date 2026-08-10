@@ -9,6 +9,7 @@ const UserFilters = ({
     filterGroup, setFilterGroup,
     excludeLeaders, setExcludeLeaders,
     showOnlyNonSchoolChurch, setShowOnlyNonSchoolChurch,
+    showOnlyNew3Months, setShowOnlyNew3Months,
     filteredUsers,
     setNotificationModalOpen,
     fetchData
@@ -57,7 +58,7 @@ const UserFilters = ({
 
             <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-white rounded-t-2xl gap-4">
                 <div className="flex gap-1.5 overflow-x-auto no-scrollbar py-1 items-center">
-                    {['ALL:전체', 'LEADER:리더', '청소년:청소년', '졸업생:졸업생', 'STAFF:STAFF', 'TEMP_GUEST:게스트/임시'].map((g) => {
+                    {['ALL:전체', 'NEW_3M:신규 (3개월)', 'LEADER:리더', '청소년:청소년', '졸업생:졸업생', 'STAFF:STAFF', 'TEMP_GUEST:게스트/임시'].map((g) => {
                         const [val, label] = g.split(':');
                         return (
                             <button key={val} onClick={() => {
@@ -67,12 +68,29 @@ const UserFilters = ({
                                     setShowOnlyNonSchoolChurch(false);
                                 }
                             }} className={`px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-bold whitespace-nowrap transition shadow-sm ${filterGroup === val
-                                ? (val === 'TEMP_GUEST' ? 'bg-amber-500 text-white border-amber-500' : 'bg-blue-600 text-white border-blue-600')
+                                ? (val === 'TEMP_GUEST' ? 'bg-amber-500 text-white border-amber-500' : val === 'NEW_3M' ? 'bg-emerald-600 text-white border-emerald-600 font-extrabold' : 'bg-blue-600 text-white border-blue-600')
                                 : 'bg-gray-50 border border-gray-200 text-gray-500 hover:bg-gray-100'}`}>
                                 {label}
                             </button>
                         )
                     })}
+
+                    {filterGroup !== 'NEW_3M' && (
+                        <button
+                            onClick={() => setShowOnlyNew3Months(!showOnlyNew3Months)}
+                            className={`px-3 py-1.5 rounded-lg text-[10px] md:text-xs font-bold whitespace-nowrap transition shadow-sm flex items-center gap-1.5 ml-1 ${showOnlyNew3Months
+                                ? 'bg-emerald-50 text-emerald-700 border border-emerald-300 shadow-emerald-100'
+                                : 'bg-white border border-gray-200 text-gray-500 hover:bg-gray-50'
+                                }`}
+                            title="최근 3개월 이내 가입한 회원만 보기"
+                        >
+                            <div className={`w-3 h-3 rounded-sm border flex items-center justify-center transition-colors ${showOnlyNew3Months ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-gray-300'
+                                }`}>
+                                {showOnlyNew3Months && <svg viewBox="0 0 14 14" className="w-2 h-2 text-white" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 7 6 10 11 4"></polyline></svg>}
+                            </div>
+                            최근 3개월 가입
+                        </button>
+                    )}
 
                     {filterGroup === '청소년' && (
                         <div className="flex items-center gap-2 ml-2 pl-2 border-l border-gray-200">

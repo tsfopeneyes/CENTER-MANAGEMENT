@@ -725,13 +725,14 @@ const StudentDashboard = () => {
                                 }
                             }
                         }}
-                        onViewParticipants={setActiveParticipantNotice}
+                        onViewParticipants={(notice, initialView) => setActiveParticipantNotice({ notice, initialView })}
                     />
                 )}
 
                 {activeParticipantNotice && (
                     <ParticipantModal
-                        notice={activeParticipantNotice}
+                        notice={activeParticipantNotice.notice || activeParticipantNotice}
+                        initialView={activeParticipantNotice.initialView}
                         onClose={() => setActiveParticipantNotice(null)}
                         onRefresh={() => {
                             fetchNotices();

@@ -5,7 +5,7 @@ import { supabase } from '../supabaseClient';
 /**
  * Trigger Realtime LINE / Discord Checkin Notification
  */
-export const sendCheckinNotification = async ({ userName, schoolName, locationName, studentRegion, isGuest = false, purposes = [] }) => {
+export const sendCheckinNotification = async ({ userName, schoolName, locationName, studentRegion, isGuest = false, referralPath = '', purposes = [] }) => {
     try {
         const targetLocName = locationName || (studentRegion === '강서' ? '이높플레이스' : '하이픈');
         const locNameStr = (targetLocName || '').toString();
@@ -38,41 +38,133 @@ export const sendCheckinNotification = async ({ userName, schoolName, locationNa
         if (isGuest) {
             const cleanGuestName = (userName || '알 수 없음').replace('(guest)', '').trim();
             const cleanSchool = schoolName || '-';
-            const surveyText = (purposes && purposes.length > 0)
-                ? `\n🧭 방문 경로\n▪ ${purposes.join('\n▪ ')}`
-                : '';
-            alertMessage = `[GUEST CHECK-IN]\n💌 ${cleanGuestName}(${cleanSchool})님이 게스트로 ${targetLocName}에 방문했어요 (${timeStr})${surveyText}`;
+            
+            let referralText = referralPath ? `\n🧭 방문 경로\n▪ ${referralPath}` : '';
+            let purposeText = '';
+
+            if (purposes && purposes.length > 0) {
+                const referralItems = purposes.filter(p => p.includes('추천') || p.includes('SNS') || p.includes('지나'));
+                const checkinItems = purposes.filter(p => !referralItems.includes(p));
+
+                if (referralItems.length > 0 && !referralText) {
+                    referralText = `\n🧭 방문 경로\n▪ ${referralItems.join('\n▪ ')}`;
+                }
+                if (checkinItems.length > 0) {
+                    purposeText = `\n🎯 방문 목적\n▪ ${checkinItems.join('\n▪ ')}`;
+                }
+            }
+
+            alertMessage = `[GUEST CHECK-IN]\n💌 ${cleanGuestName}(${cleanSchool})님이 게스트로 ${targetLocName}에 방문했어요 (${timeStr})${referralText}${purposeText}`;
         } else {
             const surveyText = (purposes && purposes.length > 0)
-                ? `\n▪ ${purposes.join('\n▪ ')}`
+                ? `\n🎯 방문 목적\n▪ ${purposes.join('\n▪ ')}`
                 : '';
             alertMessage = `[CHECK-IN]\n💌 ${userName}님이 ${targetLocName}에 방문했어요 (${timeStr})${surveyText}`;
         }
 
-        // 1. LINE Notify (Strictly ONLY for Haifn center)
-        if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
-            fetch(gsWebhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify({
-                    action: 'LINE_NOTIFY',
-                    token: lineToken,
-                    to: lineGroupId,
-                    message: alertMessage
-                })
-            }).catch(e => console.error('LINE Notify error:', e));
+        // Trigger Google Sheets Webhook (via Proxy or Direct)
+        if (gsWebhookUrl) {
+            try {
+                fetch(gsWebhookUrl, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        type: isGuest ? 'GUEST_CHECKIN' : 'CHECKIN',
+                        userName,
+                        schoolName,
+                        locationName: targetLocName,
+                        purposes,
+                        timestamp: new Date().toISOString()
+                    })
+                }).catch(e => console.error("GS webhook push error", e));
+            } catch (e) { console.error(e); }
         }
 
-        // 2. Discord Notify
+        // Trigger Discord Webhook
         if (discordWebhookUrl) {
-            fetch(discordWebhookUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ content: alertMessage })
-            }).catch(e => console.error('Discord Notify error:', e));
+            try {
+                fetch(discordWebhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: alertMessage })
+                }).catch(e => console.error("Discord webhook push error", e));
+            } catch (e) { console.error(e); }
         }
-    } catch (e) {
-        console.error('sendCheckinNotification error:', e);
+
+        // Trigger LINE Notification via Proxy
+        const proxyUrl = isHaifnLoc
+            ? 'https://youth-line-proxy.onrender.com/push-to-haifn'
+            : 'https://youth-line-proxy.onrender.com/push-to-enough';
+
+        fetch(proxyUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: alertMessage })
+        }).catch(e => console.error("LINE push error", e));
+
+    } catch (err) {
+        console.error('Checkin Notification Error:', err);
+    }
+};
+
+/**
+ * Trigger Realtime LINE / Discord Checkout Notification
+ */
+export const sendCheckoutNotification = async ({ userName, schoolName, locationName, studentRegion, feedbackText = '' }) => {
+    try {
+        const targetLocName = locationName || (studentRegion === '강서' ? '이높플레이스' : '하이픈');
+        const locNameStr = (targetLocName || '').toString();
+
+        const isHaifnLoc = (
+            locNameStr.includes('하이픈') ||
+            locNameStr.includes('HAIFN') ||
+            locNameStr.includes('강동')
+        ) && !(
+            locNameStr.includes('이높') ||
+            locNameStr.includes('ENOUGH_PLACE') ||
+            locNameStr.includes('강서')
+        );
+
+        const { data: settings } = await supabase.from('global_settings').select('*');
+        let discordWebhookUrl = '';
+
+        if (settings) {
+            settings.forEach(s => {
+                if (s.key === 'discord_webhook_url') discordWebhookUrl = s.value;
+            });
+        }
+
+        const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+        const schoolStr = schoolName ? `(${schoolName})` : '';
+        const feedbackStr = feedbackText ? `\n▪ 이용 소감: ${feedbackText}` : '';
+
+        const alertMessage = `[CHECK-OUT]\n👋 ${userName}${schoolStr}님이 ${targetLocName}에서 퇴실했습니다. (${timeStr})${feedbackStr}`;
+
+        // Trigger Discord Webhook
+        if (discordWebhookUrl) {
+            try {
+                fetch(discordWebhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ content: alertMessage })
+                }).catch(e => console.error("Discord checkout push error", e));
+            } catch (e) { console.error(e); }
+        }
+
+        // Trigger LINE Notification via Proxy
+        const proxyUrl = isHaifnLoc
+            ? 'https://youth-line-proxy.onrender.com/push-to-haifn'
+            : 'https://youth-line-proxy.onrender.com/push-to-enough';
+
+        fetch(proxyUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message: alertMessage })
+        }).catch(e => console.error("LINE checkout push error", e));
+
+    } catch (err) {
+        console.error('Checkout Notification Error:', err);
     }
 };
 
