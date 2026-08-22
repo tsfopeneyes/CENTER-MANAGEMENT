@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <title>SCI CENTER</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <script>
+    (function() {
+      // Diagnostic Log Container
+      window.__TV_ERRORS__ = [];
+      
+      function showTvDiagnostic(msg) {
+        window.__TV_ERRORS__.push(msg);
+        console.warn('TV Log:', msg);
+      }
+
+      window.onerror = function(message, source, lineno, colno, error) {
+        showTvDiagnostic('오류: ' + message);
+      };
+
+      window.addEventListener('unhandledrejection', function(e) {
+        showTvDiagnostic('비동기 처리 수신');
+      });
+
+      // Storage & Tizen Polyfills
+      try {
+        var APP_VER = '20260731_v109';
+        if (window.localStorage && localStorage.getItem('sys_ver') !== APP_VER) {
+          localStorage.setItem('sys_ver', APP_VER);
+          if (window.sessionStorage) sessionStorage.removeItem('ver_reloaded');
+        }
+      } catch(e) {
+        console.warn('Signage storage exception handled:', e);
+      }
+
+      // 1. RegExp \\p{L} Interceptor for Chrome 63 (Samsung Smart Signage)
+      try {
+        var NativeRegExp = window.RegExp;
+        window.RegExp = function(pattern, flags) {
+          if (typeof pattern === 'string' && pattern.indexOf('\\p{') !== -1) {
+            pattern = pattern.replace(/\\p\{L\}/g, '[a-zA-Z가-힣ㄱ-ㅎㅏ-ㅣ0-9]');
+            pattern = pattern.replace(/\\p\{[a-zA-Z0-9_=]+\}/g, '[^\\s]');
+            if (flags && typeof flags === 'string') flags = flags.replace('u', '');
+          }
+          try {
+            return new NativeRegExp(pattern, flags);
+          } catch(err) {
+            return new NativeRegExp('[a-zA-Z0-9가-힣]', 'g');
+          }
+        };
+        window.RegExp.prototype = NativeRegExp.prototype;
+      } catch(e) {}
+
+      // 2. Polyfill queueMicrotask for Chrome 63 (Samsung Smart Signage)
+      if (typeof window.queueMicrotask === 'undefined') {
+        window.queueMicrotask = function queueMicrotask(callback) {
+          if (typeof Promise !== 'undefined' && typeof Promise.resolve === 'function') {
+            Promise.resolve().then(callback).catch(function(err) {
+              setTimeout(function() { throw err; }, 0);
+            });
+          } else {
+            setTimeout(callback, 0);
+          }
+        };
+      }
+
+      // 2. Polyfill globalThis
+      if (typeof globalThis === 'undefined') window.globalThis = window;
+
+      // 3. Polyfill Object.fromEntries
+      if (typeof Object.fromEntries === 'undefined') {
+        Object.fromEntries = function fromEntries(iterable) {
+          return Array.from(iterable).reduce(function(obj, pair) {
+            obj[pair[0]] = pair[1];
+            return obj;
+          }, {});
+        };
+      }
+
+      // 4. Polyfill Array.prototype.flat
+      if (!Array.prototype.flat) {
+        Array.prototype.flat = function(depth) {
+          var flatt = function(arr, d) {
+            return d > 0
+              ? arr.reduce(function(acc, val) {
+                  return acc.concat(Array.isArray(val) ? flatt(val, d - 1) : val);
+                }, [])
+              : arr.slice();
+          };
+          return flatt(this, depth === undefined ? 1 : depth);
+        };
+      }
+
+      // 5. Polyfill ResizeObserver & IntersectionObserver
+      if (typeof window.ResizeObserver === 'undefined') {
+        window.ResizeObserver = function ResizeObserver() {
+          this.observe = function() {};
+          this.unobserve = function() {};
+          this.disconnect = function() {};
+        };
+      }
+      if (typeof window.IntersectionObserver === 'undefined') {
+        window.IntersectionObserver = function IntersectionObserver() {
+          this.observe = function() {};
+          this.unobserve = function() {};
+          this.disconnect = function() {};
+        };
+      }
+    })();
+  </script>
+
+  <!-- Custom Icons -->
+  <link rel="icon" type="image/png" href="/favicon.png" />
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+
+  <!-- App appearance for home screen -->
+  <meta name="apple-mobile-web-app-title" content="SCI CENTER">
+  <meta name="application-name" content="SCI CENTER">
+  <!-- PWA Manifest -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#4338ca">
+  <meta name="color-scheme" content="light">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <style>
+    #root {
+      transition: opacity 0.5s ease-in;
+    }
+
+    /* Prevent content jump before splash screen z-index takes over */
+    body {
+      margin: 0;
+      background: #4338ca;
+      /* Indigo-700 to match splash */
+    }
+  </style>
+  <script type="module" crossorigin src="/assets/index.DUi53yWL.js"></script>
+  <link rel="stylesheet" crossorigin href="/assets/index.omKKv5aO.css">
+  <script type="module">import.meta.url;import("_").catch(()=>1);(async function*(){})().next();if(location.protocol!="file:"){window.__vite_is_modern_browser=true}</script>
+  <script type="module">!function(){if(window.__vite_is_modern_browser)return;console.warn("vite: loading legacy chunks, syntax error above and the same error below should be ignored");var e=document.getElementById("vite-legacy-polyfill"),n=document.createElement("script");n.src=e.src,n.onload=function(){System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))},document.body.appendChild(n)}();</script>
+</head>
+
+<body>
+  <div id="root"></div>
+  <script nomodule>!function(){var e=document,t=e.createElement("script");if(!("noModule"in t)&&"onbeforeload"in t){var n=!1;e.addEventListener("beforeload",(function(e){if(e.target===t)n=!0;else if(!e.target.hasAttribute("nomodule")||!n)return;e.preventDefault()}),!0),t.type="module",t.src=".",e.head.appendChild(t),t.remove()}}();</script>
+  <script nomodule crossorigin id="vite-legacy-polyfill" src="/assets/polyfills-legacy.BL10JYzX.js"></script>
+  <script nomodule crossorigin id="vite-legacy-entry" data-src="/assets/index-legacy.Csq7iEVF.js">System.import(document.getElementById('vite-legacy-entry').getAttribute('data-src'))</script>
+</body>
+
+</html>
