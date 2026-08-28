@@ -40,6 +40,7 @@ import CoffeeChatModal from '../components/student/modals/CoffeeChatModal';
 import StudentCheckinSurveyModal from '../components/student/modals/StudentCheckinSurveyModal';
 import { useCoffeeChatRealtime } from '../hooks/useCoffeeChatRealtime';
 import { supabase } from '../supabaseClient';
+import { requestSupabaseFunction } from '../utils/supabaseRest';
 import { buildTutorialNotice, buildTutorialPrograms, isTutorialNotice, isTutorialProgram } from '../components/student/studentTutorialData';
 import { getTodayVisitState } from '../utils/visitLifecycle';
 
@@ -71,6 +72,27 @@ const TUTORIAL_CENTER_STEPS = [
 // 튜토리얼은 기능은 유지하되, 자동 실행은 사용자 버튼으로만 시작합니다.
 const STUDENT_ONBOARDING_TUTORIAL_ENABLED = true;
 const STUDENT_ONBOARDING_TUTORIAL_AUTOSTART = false;
+
+const formatCoffeeChatRequestedAt = (value) => {
+    if (!value) return '신청 시간 확인 불가';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '신청 시간 확인 불가';
+    return new Intl.DateTimeFormat('ko-KR', {
+        month: 'long', day: 'numeric', hour: 'numeric', minute: '2-digit'
+    }).format(date);
+};
+
+const formatCoffeeChatAge = (birth) => {
+    if (!birth) return '나이 미입력';
+    const date = new Date(birth);
+    if (Number.isNaN(date.getTime())) return '나이 미입력';
+    const today = new Date();
+    let age = today.getFullYear() - date.getFullYear();
+    const birthdayPassed = today.getMonth() > date.getMonth()
+        || (today.getMonth() === date.getMonth() && today.getDate() >= date.getDate());
+    if (!birthdayPassed) age -= 1;
+    return `${Math.max(age, 0)}세`;
+};
 
 const StudentDashboard = () => {
     const hookData = useStudentDashboard();
@@ -342,19 +364,42 @@ const StudentDashboard = () => {
     }, [location.state, user?.id, user?.name]);
 
     const [incomingRequest, setIncomingRequest] = useState(null);
+    const [pendingRequests, setPendingRequests] = useState([]);
+    const [showPendingRequestList, setShowPendingRequestList] = useState(false);
+    const [rejectingRequestId, setRejectingRequestId] = useState(null);
+    const [inlineRejectionReasons, setInlineRejectionReasons] = useState({});
+    const [acceptingRequestId, setAcceptingRequestId] = useState(null);
+    const [inlineAcceptanceMessages, setInlineAcceptanceMessages] = useState({});
     const [rejectionPromptOpen, setRejectionPromptOpen] = useState(false);
     const [rejectionReason, setRejectionReason] = useState('');
     const [statusAlert, setStatusAlert] = useState(null);
+    const [appNotice, setAppNotice] = useState(null);
     const [pendingCount, setPendingCount] = useState(0);
     const [studentChatStatus, setStudentChatStatus] = useState(null);
     const [activeChat, setActiveChat] = useState(null);
     const [dismissedRejectedChatId, setDismissedRejectedChatId] = useState(() => {
         return localStorage.getItem('dismissed_rejected_chat_id') || '';
     });
+    const [dismissedAcceptedChatId, setDismissedAcceptedChatId] = useState(() => {
+        return localStorage.getItem('dismissed_accepted_chat_id') || '';
+    });
 
     const handleDismissRejection = (chatId) => {
         localStorage.setItem('dismissed_rejected_chat_id', chatId);
         setDismissedRejectedChatId(chatId);
+    };
+
+    const handleDismissAcceptance = (chatId) => {
+        localStorage.setItem('dismissed_accepted_chat_id', chatId);
+        setDismissedAcceptedChatId(chatId);
+    };
+
+    const fetchPendingCoffeeChats = async (staffId) => {
+        const result = await requestSupabaseFunction('dispatch-notification', {
+            action: 'get-pending-coffee-chat',
+            staffId,
+        });
+        return result?.coffeeChats || (result?.coffeeChat ? [result.coffeeChat] : []);
     };
 
     const fetchCoffeeChatStats = async () => {
@@ -363,25 +408,52 @@ const StudentDashboard = () => {
         try {
             if (isStaff) {
                 // Pending Count
-                const { count } = await supabase
+                const { data: directPendingChats, error: pendingChatsError } = await supabase
                     .from('coffee_chats')
-                    .select('*', { count: 'exact', head: true })
+                    .select('*')
                     .eq('staff_id', user.id)
-                    .eq('status', 'PENDING');
-                setPendingCount(count || 0);
+                    .eq('status', 'PENDING')
+                    .order('created_at', { ascending: false });
+                let pendingChats = !pendingChatsError ? (directPendingChats || []) : [];
+                // With RLS, an unauthorized table read can look exactly like
+                // an empty result instead of reporting an error. In either
+                // case, ask the authenticated staff endpoint before deciding
+                // that there are no pending requests.
+                try {
+                    const securePendingChats = await fetchPendingCoffeeChats(user.id);
+                    if (securePendingChats.length > 0 || pendingChatsError || pendingChats.length === 0) {
+                        pendingChats = securePendingChats;
+                    }
+                } catch (fallbackError) {
+                    console.error('Failed to load pending coffee chat fallback:', fallbackError);
+                }
+                setPendingRequests(pendingChats);
+                setPendingCount(pendingChats.length);
 
-                // Active Chat within 30 minutes
-                const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+                // Active Chat until its separately tracked end time
+                const currentTime = new Date().toISOString();
                 const { data: activeChats } = await supabase
                     .from('coffee_chats')
                     .select('*')
                     .eq('staff_id', user.id)
                     .eq('status', 'ACCEPTED')
-                    .gt('accepted_at', thirtyMinutesAgo)
-                    .order('accepted_at', { ascending: false })
+                    .gt('ends_at', currentTime)
+                    .order('ends_at', { ascending: false })
                     .limit(1);
-                if (activeChats && activeChats.length > 0) {
-                    const chat = activeChats[0];
+                let activeChatData = activeChats?.[0] || null;
+                if (!activeChatData) {
+                    try {
+                        const result = await requestSupabaseFunction('dispatch-notification', {
+                            action: 'get-active-coffee-chat',
+                            staffId: user.id,
+                        });
+                        activeChatData = result?.coffeeChat || null;
+                    } catch (fallbackError) {
+                        console.error('Failed to load active coffee chat fallback:', fallbackError);
+                    }
+                }
+                if (activeChatData) {
+                    const chat = activeChatData;
                     const { data: studentUser } = await supabase
                         .from('users')
                         .select('name, user_group')
@@ -390,13 +462,17 @@ const StudentDashboard = () => {
                     setActiveChat({
                         ...chat,
                         users: { 
-                            name: studentUser?.name || '학생',
-                            user_group: studentUser?.user_group 
+                            name: studentUser?.name || chat.student_name || '학생',
+                            user_group: studentUser?.user_group || chat.student_group
                         }
                     });
                 } else {
                     setActiveChat(null);
                 }
+            } else {
+                // Prevent a previously loaded staff-only control card from
+                // remaining on screen after switching into student preview.
+                setActiveChat(null);
             }
             const { data, error } = await supabase
                 .from('coffee_chats')
@@ -404,8 +480,23 @@ const StudentDashboard = () => {
                 .eq('student_id', user.id)
                 .order('created_at', { ascending: false })
                 .limit(1);
-            if (!error && data && data.length > 0) {
-                const chat = data[0];
+            // Direct table reads are kept as the normal path. Some older
+            // student sessions are blocked by coffee_chats RLS, so use the
+            // narrowly-scoped server fallback before deciding there is no
+            // request to show on the home card.
+            let chat = !error && data && data.length > 0 ? data[0] : null;
+            if (!chat) {
+                try {
+                    const result = await requestSupabaseFunction('dispatch-notification', {
+                        action: 'get-coffee-chat-status',
+                        studentId: user.id,
+                    });
+                    chat = result?.coffeeChat || null;
+                } catch (fallbackError) {
+                    console.error('Failed to load coffee chat status fallback:', fallbackError);
+                }
+            }
+            if (chat) {
                 const { data: staffUser } = await supabase
                     .from('users')
                     .select('name, user_group')
@@ -428,12 +519,9 @@ const StudentDashboard = () => {
 
     const handleEndChatEarly = async (chatId) => {
         try {
-            const clearTime = new Date(Date.now() - 30 * 60 * 1000 - 1000).toISOString();
-            const { error } = await supabase
-                .from('coffee_chats')
-                .update({ accepted_at: clearTime })
-                .eq('id', chatId);
-            if (error) throw error;
+            await requestSupabaseFunction('dispatch-notification', {
+                action: 'update-active-coffee-chat', coffeeChatId: chatId, operation: 'END'
+            });
             alert('커피챗이 종료되었습니다. 이제 대화 가능 상태로 복귀합니다! ☕');
             fetchCoffeeChatStats();
         } catch (e) {
@@ -443,13 +531,10 @@ const StudentDashboard = () => {
 
     const handleExtendChat = async (chatId) => {
         try {
-            const extendTime = new Date().toISOString();
-            const { error } = await supabase
-                .from('coffee_chats')
-                .update({ accepted_at: extendTime })
-                .eq('id', chatId);
-            if (error) throw error;
-            alert('커피챗 시간이 지금부터 30분 연장되었습니다! ⏰');
+            await requestSupabaseFunction('dispatch-notification', {
+                action: 'update-active-coffee-chat', coffeeChatId: chatId, operation: 'EXTEND'
+            });
+            alert('종료 예정 시각이 30분 연장되었습니다! ⏰');
             fetchCoffeeChatStats();
         } catch (e) {
             alert('연장 처리 실패: ' + e.message);
@@ -457,6 +542,8 @@ const StudentDashboard = () => {
     };
 
     const handleIncomingRequest = async (chat) => {
+        setRejectionPromptOpen(false);
+        setRejectionReason('');
         try {
             const { data, error } = await supabase
                 .from('users')
@@ -492,18 +579,31 @@ const StudentDashboard = () => {
         fetchCoffeeChatStats();
     };
 
-    const handleAcceptRequest = async (chatId) => {
+    const updateCoffeeChatRequestStatus = async (chatId, status, message = '') => {
+        await requestSupabaseFunction('dispatch-notification', {
+            action: 'update-coffee-chat-status',
+            coffeeChatId: chatId,
+            status,
+            ...(status === 'REJECTED' ? { rejectionReason: message } : { acceptanceMessage: message }),
+        });
+    };
+
+    const handleAcceptRequest = async (chatId, acceptanceMessage, { closeRequestModal = true } = {}) => {
+        if (!acceptanceMessage?.trim()) {
+            alert('수락 메시지를 입력해주세요.');
+            return;
+        }
         try {
-            const { error } = await supabase
-                .from('coffee_chats')
-                .update({ 
-                    status: 'ACCEPTED',
-                    accepted_at: new Date().toISOString()
-                })
-                .eq('id', chatId);
-            if (error) throw error;
-            alert('커피챗 신청을 수락했습니다! 30분간 대화 상태로 잠금 처리됩니다. ☕');
-            setIncomingRequest(null);
+            await updateCoffeeChatRequestStatus(chatId, 'ACCEPTED', acceptanceMessage.trim());
+            setAppNotice({
+                tone: 'success',
+                title: '커피챗 신청을 수락했어요',
+                message: '30분 동안 대화 상태로 표시됩니다. ☕',
+            });
+            if (closeRequestModal) setIncomingRequest(null);
+            setAcceptingRequestId(null);
+            setPendingRequests((requests) => requests.filter((request) => request.id !== chatId));
+            setPendingCount((count) => Math.max(0, count - 1));
             fetchCoffeeChatStats();
         } catch (e) {
             alert('수락 처리 실패: ' + e.message);
@@ -516,15 +616,12 @@ const StudentDashboard = () => {
             return;
         }
         try {
-            const { error } = await supabase
-                .from('coffee_chats')
-                .update({ 
-                    status: 'REJECTED',
-                    rejection_reason: rejectionReason.trim()
-                })
-                .eq('id', incomingRequest.id);
-            if (error) throw error;
-            alert('커피챗 신청을 거절했습니다.');
+            await updateCoffeeChatRequestStatus(incomingRequest.id, 'REJECTED', rejectionReason.trim());
+            setAppNotice({
+                tone: 'neutral',
+                title: '커피챗 신청을 거절했어요',
+                message: '작성한 사유가 학생에게 전달됩니다.',
+            });
             setIncomingRequest(null);
             setRejectionPromptOpen(false);
             setRejectionReason('');
@@ -543,14 +640,24 @@ const StudentDashboard = () => {
                 .eq('staff_id', user.id)
                 .eq('status', 'PENDING')
                 .order('created_at', { ascending: false })
-                .limit(1);
-            if (!error && data && data.length > 0) {
-                handleIncomingRequest(data[0]);
+            let requests = !error ? (data || []) : [];
+            try {
+                const secureRequests = await fetchPendingCoffeeChats(user.id);
+                if (secureRequests.length > 0 || error || requests.length === 0) {
+                    requests = secureRequests;
+                }
+            } catch (fallbackError) {
+                if (error) throw fallbackError;
+            }
+            setPendingRequests(requests);
+            if (requests.length > 0) {
+                setShowPendingRequestList(true);
             } else {
                 alert('대기 중인 커피챗 신청이 없습니다.');
             }
         } catch (e) {
             console.error('Failed to trigger pending modal:', e);
+            alert(`신청 내용을 불러오지 못했습니다. ${e.message || '다시 로그인한 뒤 시도해주세요.'}`);
         }
     };
 
@@ -561,26 +668,17 @@ const StudentDashboard = () => {
         
         fetchCoffeeChatStats();
 
-        const isStaff = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'staff' || user?.user_group?.toLowerCase() === 'staff' || user?.user_group === '관리자';
-        if (isStaff) {
-            const fetchPendingRequestsOnLoad = async () => {
-                try {
-                    const { data, error } = await supabase
-                        .from('coffee_chats')
-                        .select('*')
-                        .eq('staff_id', user.id)
-                        .eq('status', 'PENDING')
-                        .order('created_at', { ascending: false })
-                        .limit(1);
-                    if (!error && data && data.length > 0) {
-                        handleIncomingRequest(data[0]);
-                    }
-                } catch (e) {
-                    console.error('Failed to fetch pending requests on load:', e);
-                }
-            };
-            fetchPendingRequestsOnLoad();
-        }
+        // Realtime can be unavailable on mobile/PWA sessions. Refresh the
+        // coffee-chat state while the dashboard stays open so a saved request
+        // still becomes visible without requiring a full page reload.
+        const refreshCoffeeChatStatus = () => fetchCoffeeChatStats();
+        const refreshInterval = window.setInterval(refreshCoffeeChatStatus, 10_000);
+        window.addEventListener('focus', refreshCoffeeChatStatus);
+
+        return () => {
+            window.clearInterval(refreshInterval);
+            window.removeEventListener('focus', refreshCoffeeChatStatus);
+        };
     }, [user]);
 
     useEffect(() => {
@@ -830,6 +928,26 @@ const StudentDashboard = () => {
             return current;
         });
     };
+
+    const findNoticeForNotification = (notification) => {
+        // 새 알림은 notice_id로 정확히 연결하고, 예전에 만들어진 알림은
+        // 본문에 포함된 제목으로 찾아 기존 소식도 계속 열 수 있게 한다.
+        return notification.notice_id
+            ? notices.find((notice) => String(notice.id) === String(notification.notice_id))
+            : notices.find((notice) => notice.title && notification.content?.includes(notice.title));
+    };
+
+    const openNotificationNotice = (notification) => {
+        const targetNotice = findNoticeForNotification(notification);
+        if (!targetNotice) return;
+        setShowNotificationsModal(false);
+        openNoticeDetailForStudent(targetNotice, 'notification');
+    };
+
+    const notificationsForModal = notifications.map((notification) => ({
+        ...notification,
+        is_notice_linked: Boolean(findNoticeForNotification(notification))
+    }));
 
     const handleTutorialProgramOpen = (notice) => {
         setTutorialSession((current) => {
@@ -1161,6 +1279,38 @@ const StudentDashboard = () => {
             localStorage.removeItem(`student_onboarding_session_${user.id}`);
             setShowOnboardingTutorial(false);
         }
+    };
+
+    const handleInlineReject = async (request) => {
+        const reason = inlineRejectionReasons[request.id]?.trim();
+        if (!reason) {
+            alert('거절 사유를 입력해주세요.');
+            return;
+        }
+        try {
+            await updateCoffeeChatRequestStatus(request.id, 'REJECTED', reason);
+            setAppNotice({
+                tone: 'neutral',
+                title: '커피챗 신청을 거절했어요',
+                message: '작성한 사유가 학생에게 전달됩니다.',
+            });
+            setPendingRequests((requests) => requests.filter((item) => item.id !== request.id));
+            setPendingCount((count) => Math.max(0, count - 1));
+            setRejectingRequestId(null);
+            setInlineRejectionReasons((reasons) => {
+                const next = { ...reasons };
+                delete next[request.id];
+                return next;
+            });
+            fetchCoffeeChatStats();
+        } catch (e) {
+            alert('거절 처리 실패: ' + e.message);
+        }
+    };
+
+    const handleInlineAccept = async (request) => {
+        const message = inlineAcceptanceMessages[request.id]?.trim();
+        await handleAcceptRequest(request.id, message, { closeRequestModal: false });
     };
 
     const startTutorial = () => {
@@ -1622,9 +1772,10 @@ const StudentDashboard = () => {
 
                 {showNotificationsModal && (
                     <NotificationsModal 
-                        notifications={notifications}
+                        notifications={notificationsForModal}
                         setShowNotificationsModal={setShowNotificationsModal}
                         markNotificationsAsRead={markNotificationsAsRead}
+                        onNotificationOpen={openNotificationNotice}
                     />
                 )}
 
@@ -1641,13 +1792,117 @@ const StudentDashboard = () => {
                         student={user}
                         tutorialMode={showOnboardingTutorial && tutorialSession.step === 'homeCoffeeChat'}
                         onClose={() => setSelectedStaffForChat(null)}
-                        onSuccess={() => {
+                        onSuccess={(coffeeChat) => {
                             setSelectedStaffForChat(null);
+                            if (coffeeChat) {
+                                setStudentChatStatus({
+                                    ...coffeeChat,
+                                    users: {
+                                        name: selectedStaffForChat.name || '선생님',
+                                        user_group: selectedStaffForChat.user_group
+                                    }
+                                });
+                            }
+                            // Keep the card in sync with existing requests as
+                            // well as the just-created request.
+                            fetchCoffeeChatStats();
                             if (showOnboardingTutorial && tutorialSession.step === 'homeCoffeeChat') {
                                 setTutorialSession((current) => ({ ...current, step: 'centerNav' }));
                             }
                         }}
                     />
+                )}
+
+                {showPendingRequestList && (
+                    <div
+                        className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]"
+                        onClick={() => setShowPendingRequestList(false)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="bg-white rounded-3xl p-5 w-full max-w-sm shadow-2xl space-y-4 border border-tossGrey100"
+                            onClick={(e) => e.stopPropagation()}
+                        >
+                            <div className="flex items-center justify-between gap-3">
+                                <div>
+                                    <h4 className="text-lg font-black text-tossGrey900">대기 중인 커피챗 신청</h4>
+                                    <p className="mt-1 text-xs font-semibold text-tossGrey500">확인할 신청을 선택해 주세요.</p>
+                                </div>
+                                <button
+                                    type="button"
+                                    aria-label="닫기"
+                                    onClick={() => setShowPendingRequestList(false)}
+                                    className="p-2 rounded-full bg-tossGrey100 text-tossGrey500"
+                                >
+                                    <X size={16} className="stroke-[3]" />
+                                </button>
+                            </div>
+
+                            <div className="max-h-[60vh] overflow-y-auto space-y-2 pr-1">
+                                {pendingRequests.map((request) => (
+                                    <div
+                                        key={request.id}
+                                        className="w-full rounded-2xl border border-tossGrey100 bg-tossGrey50 p-3 text-left"
+                                    >
+                                        <div className="flex items-center justify-between gap-3">
+                                            <span className="text-sm font-black text-tossGrey900">{request.student_name || '학생'}</span>
+                                            <span className="text-[11px] font-semibold text-tossGrey400">{formatCoffeeChatRequestedAt(request.created_at)}</span>
+                                        </div>
+                                        <p className="mt-0.5 text-[11px] font-semibold text-tossGrey500">
+                                            {request.student_school || '학교 미입력'} · {formatCoffeeChatAge(request.student_birth)}
+                                        </p>
+                                        <div className="mt-2 space-y-1.5 border-t border-tossGrey200/70 pt-2">
+                                            <div className="flex gap-2 text-xs leading-relaxed">
+                                                <span className="shrink-0 font-bold text-tossGrey400">주제</span>
+                                                <p className="font-bold text-tossGrey800">{request.topics?.length ? request.topics.join(', ') : '작성하지 않았어요.'}</p>
+                                            </div>
+                                            <div className="flex gap-2 text-xs leading-relaxed">
+                                                <span className="shrink-0 font-bold text-tossGrey400">하고 싶은 말</span>
+                                                <p className="whitespace-pre-wrap font-semibold text-tossGrey700">{request.message || '작성하지 않았어요.'}</p>
+                                            </div>
+                                        </div>
+                                        {rejectingRequestId === request.id ? (
+                                            <div className="mt-2 space-y-2">
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    placeholder="거절 사유를 입력해 주세요"
+                                                    value={inlineRejectionReasons[request.id] || ''}
+                                                    onChange={(event) => setInlineRejectionReasons((reasons) => ({ ...reasons, [request.id]: event.target.value }))}
+                                                    className="w-full rounded-xl border border-tossGrey200 bg-white px-3 py-2.5 text-xs font-semibold text-tossGrey900 outline-none focus:border-tossBlue"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <button type="button" onClick={() => setRejectingRequestId(null)} className="flex-1 rounded-xl bg-tossGrey200 py-2 text-xs font-bold text-tossGrey600">취소</button>
+                                                    <button type="button" onClick={() => handleInlineReject(request)} className="flex-1 rounded-xl bg-red-500 py-2 text-xs font-bold text-white">거절 전송</button>
+                                                </div>
+                                            </div>
+                                        ) : acceptingRequestId === request.id ? (
+                                            <div className="mt-2 space-y-2">
+                                                <input
+                                                    type="text"
+                                                    autoFocus
+                                                    placeholder="수락 메시지를 입력해 주세요"
+                                                    value={inlineAcceptanceMessages[request.id] || ''}
+                                                    onChange={(event) => setInlineAcceptanceMessages((messages) => ({ ...messages, [request.id]: event.target.value }))}
+                                                    className="w-full rounded-xl border border-tossGrey200 bg-white px-3 py-2.5 text-xs font-semibold text-tossGrey900 outline-none focus:border-tossBlue"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <button type="button" onClick={() => setAcceptingRequestId(null)} className="flex-1 rounded-xl bg-tossGrey200 py-2 text-xs font-bold text-tossGrey600">취소</button>
+                                                    <button type="button" onClick={() => handleInlineAccept(request)} className="flex-1 rounded-xl bg-tossBlue py-2 text-xs font-bold text-white">수락 전송</button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div className="mt-2 flex gap-2">
+                                                <button type="button" onClick={() => { setAcceptingRequestId(null); setRejectingRequestId(request.id); }} className="flex-1 rounded-xl bg-tossGrey200 py-2 text-xs font-bold text-tossGrey600">거절</button>
+                                                <button type="button" onClick={() => { setRejectingRequestId(null); setAcceptingRequestId(request.id); }} className="flex-1 rounded-xl bg-tossBlue py-2 text-xs font-bold text-white">수락</button>
+                                            </div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        </motion.div>
+                    </div>
                 )}
 
                 {incomingRequest && (
@@ -1692,7 +1947,22 @@ const StudentDashboard = () => {
                                 )}
                             </div>
 
-                            {!rejectionPromptOpen ? (
+                            {acceptingRequestId === incomingRequest.id ? (
+                                <div className="space-y-3 pt-1 text-left">
+                                    <label className="text-xs font-bold text-tossGrey500 ml-1">수락 메시지 입력</label>
+                                    <input
+                                        type="text"
+                                        placeholder="예: 10분 뒤 상담실에서 만나요!"
+                                        value={inlineAcceptanceMessages[incomingRequest.id] || ''}
+                                        onChange={(event) => setInlineAcceptanceMessages((messages) => ({ ...messages, [incomingRequest.id]: event.target.value }))}
+                                        className="w-full p-3 bg-tossGrey50 border border-tossGrey200 rounded-xl outline-none focus:border-tossBlue text-sm font-semibold text-tossGrey900"
+                                    />
+                                    <div className="flex gap-2">
+                                        <button onClick={() => setAcceptingRequestId(null)} className="flex-1 py-3 bg-tossGrey100 text-tossGrey500 rounded-xl font-bold text-xs">취소</button>
+                                        <button onClick={() => handleAcceptRequest(incomingRequest.id, inlineAcceptanceMessages[incomingRequest.id])} className="flex-1 py-3 bg-tossBlue text-white rounded-xl font-bold text-xs">수락 전송</button>
+                                    </div>
+                                </div>
+                            ) : !rejectionPromptOpen ? (
                                 <div className="flex gap-2.5">
                                     <button
                                         onClick={() => setRejectionPromptOpen(true)}
@@ -1701,7 +1971,7 @@ const StudentDashboard = () => {
                                         거절하기
                                     </button>
                                     <button
-                                        onClick={() => handleAcceptRequest(incomingRequest.id)}
+                                        onClick={() => setAcceptingRequestId(incomingRequest.id)}
                                         className="flex-1 py-3 bg-tossBlue text-white rounded-xl font-bold text-sm transition-all hover:bg-tossBlue/90 shadow-sm"
                                     >
                                         수락하기
@@ -1740,6 +2010,33 @@ const StudentDashboard = () => {
                     </div>
                 )}
 
+                {appNotice && (
+                    <div
+                        className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]"
+                        onClick={() => setAppNotice(null)}
+                    >
+                        <motion.div
+                            initial={{ scale: 0.95, opacity: 0 }}
+                            animate={{ scale: 1, opacity: 1 }}
+                            className="w-full max-w-sm rounded-3xl border border-tossGrey100 bg-white p-6 text-center shadow-2xl"
+                            onClick={(event) => event.stopPropagation()}
+                        >
+                            <div className={`mx-auto flex h-12 w-12 items-center justify-center rounded-full text-2xl ${appNotice.tone === 'success' ? 'bg-tossBlue/10' : 'bg-tossGrey100'}`}>
+                                {appNotice.tone === 'success' ? '☕' : '✉️'}
+                            </div>
+                            <h4 className="mt-4 text-lg font-black text-tossGrey900">{appNotice.title}</h4>
+                            <p className="mt-2 text-sm font-semibold leading-relaxed text-tossGrey600">{appNotice.message}</p>
+                            <button
+                                type="button"
+                                onClick={() => setAppNotice(null)}
+                                className="mt-5 w-full rounded-xl bg-tossBlue py-3 text-sm font-bold text-white"
+                            >
+                                확인
+                            </button>
+                        </motion.div>
+                    </div>
+                )}
+
                 {statusAlert && (
                     <div 
                         className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/40 backdrop-blur-[2px]"
@@ -1762,6 +2059,11 @@ const StudentDashboard = () => {
                                     {statusAlert.status === 'ACCEPTED' ? (
                                         <>
                                             <strong className="text-tossGrey900 font-extrabold">{statusAlert.staff_name} 쌤</strong>이 대화를 수락하셨습니다.<br />지금 쌤이 계신 곳으로 가보세요!
+                                            {statusAlert.accepted_message && (
+                                                <span className="block mt-2.5 p-3 bg-blue-50 text-tossBlue rounded-xl text-xs font-bold text-left border border-blue-100">
+                                                    💬 쌤의 메시지: "{statusAlert.accepted_message}"
+                                                </span>
+                                            )}
                                         </>
                                     ) : (
                                         <>
@@ -1969,11 +2271,13 @@ const StudentDashboard = () => {
                     onCheckPendingRequest={triggerPendingModal}
                     pendingCount={pendingCount}
                     studentChatStatus={studentChatStatus}
-                    activeChat={activeChat}
+                    activeChat={hookData.impersonatedUser ? null : activeChat}
                     onEndChat={handleEndChatEarly}
                     onExtendChat={handleExtendChat}
                     dismissedRejectedChatId={dismissedRejectedChatId}
                     onDismissRejection={handleDismissRejection}
+                    dismissedAcceptedChatId={dismissedAcceptedChatId}
+                    onDismissAcceptance={handleDismissAcceptance}
                     onRegisterRegularUser={() => setShowRegisterModal(true)}
                     visitStatus={displayedVisitStatus}
                     tutorialMode={showOnboardingTutorial && ['home', 'homeOpenStatus', 'homeCoffeeChat'].includes(tutorialSession.step)}

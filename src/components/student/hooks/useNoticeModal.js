@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { noticesApi } from '../../../api/noticesApi';
 
-const useNoticeModal = ({ notice, user, context, responses }) => {
-    const [joinCount, setJoinCount] = useState(0);
+const useNoticeModal = ({ notice, user, context, responses, tutorialMode = false }) => {
+    const [joinCount, setJoinCount] = useState(notice?.current_applicants || 0);
     const [waitlistCount, setWaitlistCount] = useState(0);
     const [liked, setLiked] = useState(false);
     const [likeCount, setLikeCount] = useState(0);
@@ -127,13 +127,17 @@ const useNoticeModal = ({ notice, user, context, responses }) => {
     };
 
     useEffect(() => {
-        if (!context) {
-            fetchLikeStatus();
-            fetchParticipantCounts();
-            fetchPollData();
-            fetchReactions();
-        }
-    }, [notice.id, user, responses?.[notice.id]]);
+        // `context` only describes where the detail view was opened from
+        // (notification, calendar, home, etc.). It must not decide whether
+        // live data is loaded. Only tutorial records are intentionally local.
+        if (tutorialMode) return;
+
+        setJoinCount(notice?.current_applicants || 0);
+        fetchLikeStatus();
+        fetchParticipantCounts();
+        fetchPollData();
+        fetchReactions();
+    }, [notice.id, user?.id, responses?.[notice.id], tutorialMode]);
 
     const handleOptionClick = (optionId, isEditing) => {
         if (isEditing || isPollExpired) return;

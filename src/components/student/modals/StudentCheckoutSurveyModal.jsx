@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, Check, X, Sparkles, HeartHandshake } from 'lucide-react';
 import { requestSupabaseRest } from '../../../utils/supabaseRest';
@@ -24,6 +24,7 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
     const [chatShoutoutText, setChatShoutoutText] = useState('');
 
     const [isSubmitting, setIsSubmitting] = useState(false);
+    const submissionLockRef = useRef(false);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -69,7 +70,8 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
     };
 
     const handleConfirmCheckoutSubmit = async () => {
-        if (isSubmitting) return;
+        if (submissionLockRef.current) return;
+        submissionLockRef.current = true;
         setIsSubmitting(true);
 
         try {
@@ -143,6 +145,20 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
             await onSurveySkipped?.();
         } finally {
             setIsSubmitting(false);
+            submissionLockRef.current = false;
+            onClose();
+        }
+    };
+
+    const handleSkipCheckoutSurvey = async () => {
+        if (submissionLockRef.current) return;
+        submissionLockRef.current = true;
+        setIsSubmitting(true);
+        try {
+            await onSurveySkipped?.();
+        } finally {
+            setIsSubmitting(false);
+            submissionLockRef.current = false;
             onClose();
         }
     };
@@ -159,10 +175,8 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
                     {/* Header */}
                     <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-6 text-white relative shrink-0">
                         <button
-                            onClick={async () => {
-                                await onSurveySkipped?.();
-                                onClose();
-                            }}
+                            onClick={handleSkipCheckoutSurvey}
+                            disabled={isSubmitting}
                             className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
                         >
                             <X size={18} />
@@ -297,11 +311,9 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
                     <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
                         <button
                             type="button"
-                            onClick={async () => {
-                                await onSurveySkipped?.();
-                                onClose();
-                            }}
-                            className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"
+                            onClick={handleSkipCheckoutSurvey}
+                            disabled={isSubmitting}
+                            className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors disabled:opacity-50"
                         >
                             건너뛰고 퇴실하기
                         </button>

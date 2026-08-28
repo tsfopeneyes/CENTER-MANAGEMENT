@@ -1,5 +1,6 @@
 import React from 'react';
 import { Share2, Database, ShieldAlert } from 'lucide-react';
+import { isHaifnRotatingQrEnabled } from '../../../../utils/kioskQr';
 
 const IntegrationConfig = ({
     gsWebhookUrl,
@@ -31,6 +32,7 @@ const IntegrationConfig = ({
     handleSaveIntegrations,
     handleGoogleSheetsBackup
 }) => {
+    const rotatingHaifnQrEnabled = isHaifnRotatingQrEnabled();
     const Toggle = ({ enabled, onChange, label }) => (
         <button
             type="button"
@@ -223,7 +225,9 @@ const IntegrationConfig = ({
                             <span>📱</span> 센터별 현장 체크인 QR 코드
                         </h4>
                         <p className="text-xs text-gray-400 mt-1">
-                            각 센터 입구 포스터나 안내판에 부착하여 방문 학생들이 스마트폰으로 바로 체크인할 수 있는 센터 전용 QR 코드입니다.
+                            {rotatingHaifnQrEnabled
+                                ? '하이픈은 키오스크에서 자동 변경되는 QR을 사용하고, 이높플레이스는 기존 고정 QR을 사용합니다.'
+                                : '전환 준비 중에는 하이픈과 이높플레이스 모두 기존 고정 QR을 계속 사용할 수 있습니다.'}
                         </p>
                     </div>
                 </div>
@@ -235,36 +239,43 @@ const IntegrationConfig = ({
                             <span className="px-3 py-1 bg-red-50 text-[#E63946] border border-red-100 text-xs font-extrabold rounded-full">
                                 📍 하이픈 (강동 센터)
                             </span>
-                            <span className="text-xs font-bold text-gray-400 font-mono">loc=HAIFN</span>
+                            <span className={`text-xs font-bold ${rotatingHaifnQrEnabled ? 'text-emerald-600' : 'text-gray-400 font-mono'}`}>
+                                {rotatingHaifnQrEnabled ? '60초 자동 변경' : 'loc=HAIFN'}
+                            </span>
                         </div>
 
-                        <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
-                            <div className="flex flex-col items-center shrink-0">
+                        {rotatingHaifnQrEnabled ? <div className="bg-white p-5 rounded-2xl border border-emerald-100 shadow-xs">
+                            <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center text-2xl mb-4">🔐</div>
+                            <div className="text-sm font-extrabold text-gray-800 mb-2">하이픈 키오스크 화면에서만 발급됩니다</div>
+                            <p className="text-xs text-gray-500 font-medium leading-relaxed">
+                                저장하거나 출력할 수 있는 고정 주소는 폐기되었습니다. 키오스크에 표시되는 최신 QR을 현장에서 스캔해야 체크인과 체크아웃이 가능합니다.
+                            </p>
+                        </div> : <>
+                            <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
                                 <img
                                     src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=HAIFN')}`}
                                     alt="HAIFN Checkin QR"
-                                    className="w-36 h-36 object-contain rounded-lg"
+                                    className="w-36 h-36 object-contain rounded-lg shrink-0"
                                 />
-                            </div>
-                            <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
-                                <div className="text-[11px] font-bold text-gray-400">QR 연결 전용 주소</div>
-                                <div className="text-xs font-extrabold text-blue-600 font-mono break-all bg-blue-50/50 p-2 rounded-lg border border-blue-100/60">
-                                    https://app.schoolchurchimpact.org/checkin?loc=HAIFN
+                                <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
+                                    <div className="text-[11px] font-bold text-gray-400">전환 전 사용 주소</div>
+                                    <div className="text-xs font-extrabold text-blue-600 font-mono break-all bg-blue-50/50 p-2 rounded-lg border border-blue-100/60">
+                                        https://app.schoolchurchimpact.org/checkin?loc=HAIFN
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-
-                        <div className="pt-1">
                             <a
                                 href={`https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=HAIFN')}`}
                                 target="_blank"
                                 rel="noreferrer"
                                 download="haifn_checkin_qr.png"
-                                className="flex-1 min-w-[140px] px-3.5 py-2.5 bg-[#191f28] text-white text-xs font-bold rounded-xl hover:bg-black transition shadow-sm inline-flex items-center justify-center gap-1.5"
+                                className="px-3.5 py-2.5 bg-[#191f28] text-white text-xs font-bold rounded-xl hover:bg-black transition shadow-sm inline-flex items-center justify-center"
                             >
-                                <span>📥 QR 원본 다운로드</span>
+                                📥 기존 QR 원본 다운로드
                             </a>
-                        </div>
+                        </>}
+
+                        {rotatingHaifnQrEnabled && <div className="text-[11px] font-bold text-gray-400">최초 사용 시 키오스크에서 관리자 PIN으로 기기를 활성화해야 합니다.</div>}
                     </div>
 
                     {/* 2. 이높플레이스 (강서 센터) */}

@@ -12,6 +12,9 @@ import { formatToLocalISO, formatProgramSchedule } from '../utils/dateUtils';
 import { TAB_NAMES } from '../constants/appConstants';
 import { trackUserWebActivity } from '../utils/userActivityUtils';
 import { sendCategoryNotification } from '../utils/integrationUtils';
+import { normalizeSchoolName } from '../utils/userUtils';
+import { buildGuestPrivacyPreferences, classifyGuestIdentityMatch, parseGuestBirthDate } from '../utils/guestBirthUtils';
+import SignUpForm from '../components/auth/SignUpForm';
 
 const isInternalAccount = (user) => {
     if (!user) return false;
@@ -93,10 +96,20 @@ const PublicProgramDetail = () => {
     const [activeTab, setActiveTab] = useState('intro');
     const [isGuestModalOpen, setIsGuestModalOpen] = useState(false);
     const [isSuccessModalOpen, setIsSuccessModalOpen] = useState(false);
+    const [shouldSuggestGuestConversion, setShouldSuggestGuestConversion] = useState(false);
+    const [conversionGuest, setConversionGuest] = useState(null);
+    const [showGuestConversionForm, setShowGuestConversionForm] = useState(false);
     const [guestForm, setGuestForm] = useState({
         name: '',
         school: '',
-        phone: ''
+        phone: '',
+        birth: '',
+        privacyConsent: false,
+        guardianName: '',
+        guardianPhone: '',
+        guardianRelation: '',
+        guardianConsent: false,
+        customAnswers: {},
     });
     const [submitting, setSubmitting] = useState(false);
     const [selectedMissionForDetail, setSelectedMissionForDetail] = useState(null);
@@ -141,14 +154,78 @@ const PublicProgramDetail = () => {
         setGuestForm(prev => ({ ...prev, phone: formatted }));
     };
 
+    const countPriorProgramApplications = async (userId) => {
+        const { count, error } = await supabase
+            .from('notice_responses')
+            .select('id', { count: 'exact', head: true })
+            .eq('user_id', userId)
+            .eq('status', 'JOIN');
+        if (error) throw error;
+        return count || 0;
+    };
+
+    const getCustomGuestFields = () => (Array.isArray(notice?.guest_properties?.custom_fields)
+        ? notice.guest_properties.custom_fields
+        : []).filter(field => field?.id && String(field?.label || '').trim());
+
+    const guestBirthToInputDate = (birth) => {
+        const value = String(birth || '');
+        if (!/^\d{6}$/.test(value) || ['000000', '999999', '990101'].includes(value)) return '';
+        const yy = Number(value.slice(0, 2));
+        const currentYY = new Date().getFullYear() % 100;
+        const year = yy <= currentYY ? 2000 + yy : 1900 + yy;
+        return `${year}-${value.slice(2, 4)}-${value.slice(4, 6)}`;
+    };
+
+    const openGuestApplicationForm = (guest = null) => {
+        setGuestForm({
+            name: guest?.name?.replace(/\(guest\)/gi, '').trim() || '',
+            school: guest?.school || '',
+            phone: guest?.phone?.startsWith('000-0000-') ? '' : (guest?.phone || ''),
+            birth: guestBirthToInputDate(guest?.birth),
+            privacyConsent: false,
+            guardianName: guest?.guardian_name || '',
+            guardianPhone: guest?.guardian_phone || '',
+            guardianRelation: guest?.guardian_relation || '',
+            guardianConsent: false,
+            customAnswers: {},
+        });
+        setIsGuestModalOpen(true);
+    };
+
     const handleGuestSubmit = async (e) => {
         e.preventDefault();
-        const gp = notice.guest_properties || { allow_guest: true, require_school: true, require_phone: true };
-        const reqSchool = gp.require_school !== false;
-        const reqPhone = gp.require_phone !== false;
+        const reqSchool = true;
+        const reqPhone = true;
+        const birthInfo = parseGuestBirthDate(guestForm.birth);
+
+        if (!birthInfo) {
+            alert('생년월일을 정확히 입력해주세요.');
+            return;
+        }
+        if (!guestForm.privacyConsent) {
+            alert('프로그램 신청을 위한 개인정보 수집·이용에 동의해주세요.');
+            return;
+        }
+        if (birthInfo.isUnder14 && (!guestForm.guardianName.trim() || !guestForm.guardianPhone.trim() || !guestForm.guardianRelation.trim() || !guestForm.guardianConsent)) {
+            alert('만 14세 미만은 법정대리인 정보와 동의가 필요합니다.');
+            return;
+        }
+        if (birthInfo.isUnder14 && guestForm.guardianPhone.replace(/[^0-9]/g, '').length < 10) {
+            alert('법정대리인 연락처를 정확히 입력해주세요.');
+            return;
+        }
 
         if (reqPhone && guestForm.phone.replace(/[^0-9]/g, '').length < 11) {
             alert('연락처 11자리를 올바르게 입력해주세요.');
+            return;
+        }
+
+        const missingRequiredCustomField = getCustomGuestFields().find(field =>
+            field.required === true && !String(guestForm.customAnswers?.[field.id] || '').trim()
+        );
+        if (missingRequiredCustomField) {
+            alert(`필수 항목을 입력해주세요: ${missingRequiredCustomField.label}`);
             return;
         }
 
@@ -159,9 +236,10 @@ const PublicProgramDetail = () => {
             const registrationNotice = await loadOpenProgramForRegistration();
             let userId = null;
             let loggedInUser = null;
+            let hadPriorGuestProgramApplications = false;
             
             // 1. Check for existing user by phone (only if phone is required and provided)
-            if (reqPhone && guestForm.phone) {
+            if (guestForm.phone) {
                 const { data: existingUser, error: userCheckErr } = await supabase
                     .from('users')
                     .select('*')
@@ -177,7 +255,41 @@ const PublicProgramDetail = () => {
                         return;
                     }
                     userId = existingUser.id;
-                    loggedInUser = existingUser;
+                    const identityMatch = classifyGuestIdentityMatch(existingUser, guestForm.phone, birthInfo.yymmdd);
+                    if (identityMatch === 'BIRTH_MISMATCH') {
+                        alert('같은 연락처의 기록과 생년월일이 일치하지 않아 기존 계정에 연결하지 않았습니다. 입력 정보를 확인하거나 센터에 문의해주세요.');
+                        setSubmitting(false);
+                        return;
+                    }
+                    if (existingUser.user_group === '게스트') {
+                        // A legacy guest with no real birth can be completed now,
+                        // but only a later application with both phone and birth
+                        // matching is strong enough to trigger conversion guidance.
+                        hadPriorGuestProgramApplications = identityMatch === 'VERIFIED'
+                            && (await countPriorProgramApplications(existingUser.id)) > 0;
+                        const guestUpdates = {
+                            birth: birthInfo.yymmdd,
+                            guardian_name: birthInfo.isUnder14 ? guestForm.guardianName.trim() : null,
+                            guardian_phone: birthInfo.isUnder14 ? guestForm.guardianPhone.trim() : null,
+                            guardian_relation: birthInfo.isUnder14 ? guestForm.guardianRelation.trim() : null,
+                            preferences: buildGuestPrivacyPreferences(existingUser.preferences, birthInfo.isUnder14, {
+                                purpose: 'guest_program_application_and_age_analysis',
+                            }),
+                        };
+                        const { data: updatedGuest, error: updateGuestError } = await supabase
+                            .from('users').update(guestUpdates).eq('id', existingUser.id).select().single();
+                        if (updateGuestError) throw updateGuestError;
+                        loggedInUser = updatedGuest;
+                    } else {
+                        localStorage.setItem('pendingProgramJoin', id);
+                        setIsGuestModalOpen(false);
+                        setSubmitting(false);
+                        alert('입력한 연락처와 생년월일로 가입된 정식 회원 계정이 있습니다. 기존 계정으로 로그인한 뒤 신청해주세요.');
+                        navigate(`/?programLogin=${encodeURIComponent(id)}`, {
+                            state: { fromProgram: true, programId: id }
+                        });
+                        return;
+                    }
                     // 2. Check if already signed up for this program
                     const { data: existingResponse, error: respCheckErr } = await supabase
                         .from('notice_responses')
@@ -199,17 +311,9 @@ const PublicProgramDetail = () => {
  
             if (!userId) {
                 // Create a new guest user
-                let phoneVal = '';
-                let back4 = '';
-                if (reqPhone && guestForm.phone) {
-                    phoneVal = guestForm.phone;
-                    const phoneParts = guestForm.phone.split('-');
-                    back4 = phoneParts.length >= 3 ? phoneParts[2] : '';
-                } else {
-                    const random4 = String(Math.floor(1000 + Math.random() * 9000));
-                    phoneVal = `000-0000-${random4}`;
-                    back4 = random4;
-                }
+                const phoneVal = guestForm.phone;
+                const phoneParts = guestForm.phone.split('-');
+                const back4 = phoneParts.length >= 3 ? phoneParts[2] : '';
                 const newUserId = '00000000-0000-0000-0000-' + Math.floor(100000000000 + Math.random() * 900000000000);
                 const memoText = `[가입일: ${new Date().toLocaleDateString()}] [공유링크 프로그램 비회원 신청]`;
 
@@ -219,9 +323,16 @@ const PublicProgramDetail = () => {
                         id: newUserId,
                         name: `${guestForm.name}(guest)`,
                         gender: 'M',
-                        school: reqSchool ? guestForm.school : '비회원 소속',
+                        school: normalizeSchoolName(guestForm.school),
+                        birth: birthInfo.yymmdd,
                         phone: phoneVal,
                         phone_back4: back4,
+                        guardian_name: birthInfo.isUnder14 ? guestForm.guardianName.trim() : null,
+                        guardian_phone: birthInfo.isUnder14 ? guestForm.guardianPhone.trim() : null,
+                        guardian_relation: birthInfo.isUnder14 ? guestForm.guardianRelation.trim() : null,
+                        preferences: buildGuestPrivacyPreferences(null, birthInfo.isUnder14, {
+                            purpose: 'guest_program_application_and_age_analysis',
+                        }),
                         user_group: '게스트',
                         password: '0000',
                         role: 'student',
@@ -243,7 +354,8 @@ const PublicProgramDetail = () => {
                     notice_id: parseInt(id),
                     user_id: userId,
                     status: 'JOIN',
-                    is_attended: false
+                    is_attended: false,
+                    application_answers: guestForm.customAnswers || {}
                 });
  
             if (regErr) throw regErr;
@@ -263,11 +375,14 @@ const PublicProgramDetail = () => {
             if (loggedInUser) {
                 localStorage.setItem('user', JSON.stringify(loggedInUser));
                 localStorage.setItem('pendingProgramJoin', id);
+                setLoggedInUser(loggedInUser);
             }
  
             setIsGuestModalOpen(false);
+            setShouldSuggestGuestConversion(hadPriorGuestProgramApplications && loggedInUser?.user_group === '게스트');
+            setConversionGuest(hadPriorGuestProgramApplications && loggedInUser?.user_group === '게스트' ? loggedInUser : null);
             setIsSuccessModalOpen(true);
-            setGuestForm({ name: '', school: '', phone: '' });
+            setGuestForm({ name: '', school: '', phone: '', birth: '', privacyConsent: false, guardianName: '', guardianPhone: '', guardianRelation: '', guardianConsent: false, customAnswers: {} });
 
         } catch (err) {
             console.error('Guest Registration Error:', err);
@@ -304,6 +419,10 @@ const PublicProgramDetail = () => {
                 return;
             }
 
+            const hadPriorGuestProgramApplications = dbUser.user_group === '게스트'
+                ? (await countPriorProgramApplications(dbUser.id)) > 0
+                : false;
+
             const { error: regErr } = await supabase
                 .from('notice_responses')
                 .insert({
@@ -330,6 +449,8 @@ const PublicProgramDetail = () => {
 
             localStorage.setItem('pendingProgramJoin', id);
             setIsRegistered(true);
+            setShouldSuggestGuestConversion(hadPriorGuestProgramApplications);
+            setConversionGuest(hadPriorGuestProgramApplications ? dbUser : null);
             setIsSuccessModalOpen(true);
         } catch (err) {
             console.error('Registration Error:', err);
@@ -819,6 +940,7 @@ const PublicProgramDetail = () => {
                                                  setShowParticipantModal(true);
                                              } else if (loggedInUser) {
                                                  if (isRegistered) navigate('/student');
+                                                 else if (loggedInUser.user_group === '게스트') openGuestApplicationForm(loggedInUser);
                                                  else handleRegisterLoggedIn();
                                              } else {
                                                  handleActionClick();
@@ -977,7 +1099,7 @@ const PublicProgramDetail = () => {
                                     )
                                 ) : (
                                     <button 
-                                        onClick={handleRegisterLoggedIn}
+                                        onClick={() => loggedInUser.user_group === '게스트' ? openGuestApplicationForm(loggedInUser) : handleRegisterLoggedIn()}
                                         disabled={submitting}
                                         className="w-full bg-blue-600 text-white rounded-2xl py-4 font-black shadow-lg shadow-blue-200 text-base transition active:scale-[0.98] disabled:bg-gray-200 disabled:shadow-none"
                                     >
@@ -997,7 +1119,7 @@ const PublicProgramDetail = () => {
                                     {/* Secondary Button: Subtle guest application */}
                                     {(notice.guest_properties?.allow_guest !== false) && (
                                         <button 
-                                            onClick={() => setIsGuestModalOpen(true)}
+                                            onClick={() => openGuestApplicationForm()}
                                             className="w-full bg-slate-50 hover:bg-slate-100 text-slate-500 rounded-2xl py-3 font-bold text-xs border border-slate-100 transition active:scale-[0.98]"
                                         >
                                             로그인 없이 비회원으로 신청하기
@@ -1111,18 +1233,31 @@ const PublicProgramDetail = () => {
 
             {/* Guest Form Modal */}
             {isGuestModalOpen && (() => {
-                const gp = notice.guest_properties || { allow_guest: true, require_school: true, require_phone: true };
-                const reqSchool = gp.require_school !== false;
-                const reqPhone = gp.require_phone !== false;
+                const reqSchool = true;
+                const reqPhone = true;
+                const guestBirthInfo = parseGuestBirthDate(guestForm.birth);
+                const customGuestFields = getCustomGuestFields();
+                const hasMissingRequiredCustomAnswer = customGuestFields.some(field =>
+                    field.required === true && !String(guestForm.customAnswers?.[field.id] || '').trim()
+                );
                 
                 const isSubmitDisabled = submitting || 
                     !guestForm.name || 
+                    !guestBirthInfo ||
+                    !guestForm.privacyConsent ||
+                    (guestBirthInfo?.isUnder14 && (
+                        !guestForm.guardianName.trim() ||
+                        guestForm.guardianPhone.replace(/[^0-9]/g, '').length < 10 ||
+                        !guestForm.guardianRelation.trim() ||
+                        !guestForm.guardianConsent
+                    )) ||
+                    hasMissingRequiredCustomAnswer ||
                     (reqSchool && !guestForm.school) || 
                     (reqPhone && guestForm.phone.replace(/[^0-9]/g, '').length < 11);
 
                 return (
                     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
-                        <div className="bg-white rounded-[2rem] w-full max-w-md p-6 relative shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+                        <div className="bg-white rounded-[2rem] w-full max-w-md max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl animate-in fade-in zoom-in-95 duration-200">
                             <button 
                                 onClick={() => setIsGuestModalOpen(false)}
                                 className="absolute right-6 top-6 p-2 hover:bg-gray-100 rounded-full transition text-gray-400"
@@ -1189,6 +1324,78 @@ const PublicProgramDetail = () => {
                                     </div>
                                 )}
 
+                                <div>
+                                    <label className="block text-[11px] font-black text-gray-400 mb-1.5 ml-1 uppercase">생년월일</label>
+                                    <div className="relative">
+                                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
+                                        <input type="date" name="birth" required max={new Date().toLocaleDateString('en-CA')} value={guestForm.birth} onChange={handleGuestFormChange} className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:bg-white outline-none font-bold text-sm" />
+                                    </div>
+                                </div>
+
+                                {parseGuestBirthDate(guestForm.birth)?.isUnder14 && (
+                                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 space-y-2">
+                                        <p className="text-xs font-bold text-amber-800">만 14세 미만은 법정대리인의 동의가 필요합니다.</p>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <input name="guardianName" required value={guestForm.guardianName} onChange={handleGuestFormChange} placeholder="보호자 이름" className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold outline-none" />
+                                            <input name="guardianRelation" required value={guestForm.guardianRelation} onChange={handleGuestFormChange} placeholder="관계 (예: 부모)" className="rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold outline-none" />
+                                        </div>
+                                        <input name="guardianPhone" type="tel" required value={guestForm.guardianPhone} onChange={(e) => setGuestForm(prev => ({ ...prev, guardianPhone: e.target.value.replace(/[^0-9-]/g, '').slice(0, 13) }))} placeholder="보호자 연락처" className="w-full rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold outline-none" />
+                                        <label className="flex items-start gap-2 text-[11px] font-medium text-amber-900">
+                                            <input name="guardianConsent" type="checkbox" checked={guestForm.guardianConsent} onChange={(e) => setGuestForm(prev => ({ ...prev, guardianConsent: e.target.checked }))} className="mt-0.5" />
+                                            법정대리인이 개인정보 수집·이용 내용을 확인하고 동의합니다.
+                                        </label>
+                                    </div>
+                                )}
+
+                                {customGuestFields.map(field => (
+                                    <div key={field.id}>
+                                        <label className="block text-[11px] font-black text-gray-400 mb-1.5 ml-1">
+                                            {field.label} {field.required ? '(필수)' : '(선택)'}
+                                        </label>
+                                        {field.type === 'textarea' ? (
+                                            <textarea
+                                                required={field.required}
+                                                value={guestForm.customAnswers?.[field.id] || ''}
+                                                onChange={(e) => setGuestForm(prev => ({
+                                                    ...prev,
+                                                    customAnswers: { ...prev.customAnswers, [field.id]: e.target.value }
+                                                }))}
+                                                rows={3}
+                                                className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:bg-white outline-none font-bold text-sm resize-none"
+                                            />
+                                        ) : field.type === 'select' ? (
+                                            <select
+                                                required={field.required}
+                                                value={guestForm.customAnswers?.[field.id] || ''}
+                                                onChange={(e) => setGuestForm(prev => ({
+                                                    ...prev,
+                                                    customAnswers: { ...prev.customAnswers, [field.id]: e.target.value }
+                                                }))}
+                                                className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:bg-white outline-none font-bold text-sm"
+                                            >
+                                                <option value="">선택해주세요</option>
+                                                {(field.options || []).map(option => <option key={option} value={option}>{option}</option>)}
+                                            </select>
+                                        ) : (
+                                            <input
+                                                type="text"
+                                                required={field.required}
+                                                value={guestForm.customAnswers?.[field.id] || ''}
+                                                onChange={(e) => setGuestForm(prev => ({
+                                                    ...prev,
+                                                    customAnswers: { ...prev.customAnswers, [field.id]: e.target.value }
+                                                }))}
+                                                className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:bg-white outline-none font-bold text-sm"
+                                            />
+                                        )}
+                                    </div>
+                                ))}
+
+                                <label className="flex items-start gap-2 rounded-xl bg-gray-50 p-3 text-[11px] leading-relaxed text-gray-600">
+                                    <input name="privacyConsent" type="checkbox" required checked={guestForm.privacyConsent} onChange={(e) => setGuestForm(prev => ({ ...prev, privacyConsent: e.target.checked }))} className="mt-0.5" />
+                                    <span><strong>필수 개인정보 수집·이용 동의</strong><br />이름·학교·연락처·생년월일과 위에서 입력한 프로그램별 추가 신청 정보를 신청자 확인, 프로그램 운영 및 연령대 분석에 사용하며 게스트 계정 삭제 또는 정식 회원 전환 시까지 보관합니다.</span>
+                                </label>
+
                                 <button
                                     type="submit"
                                     disabled={isSubmitDisabled}
@@ -1212,17 +1419,63 @@ const PublicProgramDetail = () => {
                         <h3 className="text-lg font-black text-gray-900 mb-2">신청이 완료되었습니다!</h3>
                         <p className="text-xs font-semibold text-gray-500 mb-6 leading-relaxed">
                             프로그램 참여 정보가 안전하게 전달되었습니다.<br />
-                            프로그램 일정에 맞춰 늦지 않게 방문해 주세요! ✨
+                            {shouldSuggestGuestConversion
+                                ? '이전에도 게스트로 신청한 기록이 있어요. 정식 회원으로 전환하면 신청과 방문 기록을 한 계정에서 계속 확인할 수 있습니다.'
+                                : '프로그램 일정에 맞춰 늦지 않게 방문해 주세요! ✨'}
                         </p>
+                        {shouldSuggestGuestConversion && conversionGuest && (
+                            <button
+                                onClick={() => {
+                                    setIsSuccessModalOpen(false);
+                                    setShowGuestConversionForm(true);
+                                }}
+                                className="w-full py-4 mb-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-2xl font-black text-sm transition-all active:scale-[0.98] shadow-lg shadow-amber-100"
+                            >
+                                ✨ 정식 회원으로 전환하기
+                            </button>
+                        )}
                         <button
                             onClick={() => {
                                 setIsSuccessModalOpen(false);
                                 navigate('/student');
                             }}
-                            className="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white rounded-2xl font-black text-sm transition-all active:scale-[0.98] shadow-lg shadow-blue-100"
+                            className={`w-full py-4 rounded-2xl font-black text-sm transition-all active:scale-[0.98] ${shouldSuggestGuestConversion ? 'bg-gray-100 text-gray-600 hover:bg-gray-200' : 'bg-blue-600 hover:bg-blue-700 text-white shadow-lg shadow-blue-100'}`}
                         >
-                            내 신청 내역 확인하기
+                            {shouldSuggestGuestConversion ? '다음에 전환하고 신청 내역 보기' : '내 신청 내역 확인하기'}
                         </button>
+                    </div>
+                </div>
+            )}
+
+            {showGuestConversionForm && conversionGuest && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-[120] flex items-center justify-center p-4">
+                    <div className="bg-white rounded-[2rem] w-full max-w-md max-h-[90vh] overflow-y-auto p-6 relative shadow-2xl">
+                        <button onClick={() => setShowGuestConversionForm(false)} className="absolute right-5 top-5 p-2 text-gray-400 hover:bg-gray-100 rounded-full">
+                            <X size={20} />
+                        </button>
+                        <div className="mb-5 pr-10">
+                            <h2 className="text-xl font-black text-gray-900">하이픈 정식 회원 전환</h2>
+                            <p className="text-xs font-semibold text-gray-500 mt-1">기존 프로그램 신청 기록을 유지하면서 정식 회원으로 전환합니다.</p>
+                        </div>
+                        <SignUpForm
+                            guestUserId={conversionGuest.id}
+                            prefilledData={{
+                                name: conversionGuest.name?.replace(/\(guest\)/gi, '').trim() || '',
+                                school: conversionGuest.school || '',
+                                birth: conversionGuest.birth || '',
+                                phone: conversionGuest.phone?.startsWith('000-0000-') ? '' : (conversionGuest.phone || ''),
+                                guardianName: conversionGuest.guardian_name || '',
+                                guardianPhone: conversionGuest.guardian_phone || '',
+                                guardianRelation: conversionGuest.guardian_relation || '',
+                            }}
+                            onSuccess={() => {
+                                setShowGuestConversionForm(false);
+                                localStorage.removeItem('user');
+                                alert('정식 회원 전환이 완료되었습니다. 새 비밀번호로 로그인해주세요.');
+                                navigate('/');
+                            }}
+                            onCancel={() => setShowGuestConversionForm(false)}
+                        />
                     </div>
                 </div>
             )}

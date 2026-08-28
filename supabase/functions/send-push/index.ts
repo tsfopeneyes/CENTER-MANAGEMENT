@@ -12,13 +12,23 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
+const normalizeSchoolName = (name: string = '') => name
+  .replace(/\s+/g, '')
+  .replace(/여자고등학교$/, '여고')
+  .replace(/여자중학교$/, '여중')
+  .replace(/과학고등학교$/, '과고')
+  .replace(/외국어고등학교$/, '외고')
+  .replace(/고등학교$/, '고')
+  .replace(/중학교$/, '중')
+  .replace(/초등학교$/, '초');
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders })
   }
 
   try {
-    const { title, body, userIds, targetRegions } = await req.json()
+    const { title, body, userIds, targetRegions, noticeId } = await req.json()
 
     // 1. 보안을 위해 환경변수에서 Firebase 키를 가져옵니다.
     const serviceAccountStr = Deno.env.get('FIREBASE_SERVICE_ACCOUNT');
@@ -36,27 +46,58 @@ serve(async (req) => {
     const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '';
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Fetch tokens based on userIds or targetRegions if provided
+    // A notice's target must always come from its saved source record, never
+    // from a browser-provided region value. This keeps the push recipient list
+    // aligned with the notice even when an old tab has stale form data.
+    let effectiveTargetRegions = Array.isArray(targetRegions) ? targetRegions : [];
+    if (noticeId) {
+      const { data: sourceNotice, error: sourceNoticeError } = await supabase
+        .from('notices')
+        .select('target_regions')
+        .eq('id', noticeId)
+        .maybeSingle();
+
+      if (sourceNoticeError || !sourceNotice) {
+        throw new Error('The source notice for this push notification could not be found.');
+      }
+      effectiveTargetRegions = Array.isArray(sourceNotice.target_regions)
+        ? sourceNotice.target_regions.filter(Boolean)
+        : [];
+    }
+
+    // No selection or both center regions means a notice for everyone.
+    if (effectiveTargetRegions.length >= 2) {
+      effectiveTargetRegions = [];
+    }
+
+    // Fetch tokens based on userIds or the verified notice region if provided
     let query = supabase.from('users').select('fcm_token, school, role').not('fcm_token', 'is', null);
+    let targetSchoolKeys: Set<string> | null = null;
     if (userIds && userIds.length > 0) {
       query = query.in('id', userIds);
-    } else if (targetRegions && Array.isArray(targetRegions) && targetRegions.length > 0) {
+    } else if (effectiveTargetRegions.length > 0) {
       // 1. Get school names associated with target regions (e.g. ['강동'] or ['강서'])
-      const { data: schools } = await supabase
+      const { data: schools, error: schoolsError } = await supabase
         .from('schools')
         .select('name')
-        .in('region', targetRegions);
+        .in('region', effectiveTargetRegions);
+      if (schoolsError) throw schoolsError;
 
-      const targetSchoolNames = (schools || []).map((s: { name: string }) => s.name).filter(Boolean);
+      targetSchoolKeys = new Set((schools || [])
+        .map((school: { name: string }) => normalizeSchoolName(school.name))
+        .filter(Boolean));
 
-      if (targetSchoolNames.length > 0) {
-        // Target users from those schools OR admin/staff roles
-        query = query.or(`school.in.("${targetSchoolNames.join('","')}"),role.in.(admin,staff,master)`);
-      }
+      // Regional program alerts belong only to students in schools assigned
+      // to that region. An unknown/empty region mapping must send to nobody,
+      // never fall through to a broadcast.
     }
     
-    const { data: users, error } = await query;
+    const { data: queriedUsers, error } = await query;
     if (error) throw error;
+
+    const users = targetSchoolKeys
+      ? (queriedUsers || []).filter((user) => targetSchoolKeys.has(normalizeSchoolName(user.school || '')))
+      : (queriedUsers || []);
 
     // Deduplicate FCM tokens to prevent duplicate pushes to the same device
     const rawTokens = users.map(u => u.fcm_token).filter(Boolean);

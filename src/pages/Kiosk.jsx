@@ -10,6 +10,7 @@ import KioskInputSection from './kiosk_components/KioskInputSection';
 import KioskWelcomeSection from './kiosk_components/KioskWelcomeSection';
 import KioskFeedbackOverlay from './kiosk_components/KioskFeedbackOverlay';
 import KioskModals from './kiosk_components/KioskModals';
+import { isHaifnRotatingQrEnabled } from '../utils/kioskQr';
 
 const Kiosk = () => {
     const navigate = useNavigate();
@@ -27,6 +28,10 @@ const Kiosk = () => {
     } = useKioskManager(navigate);
 
     const [engName, setEngName] = useState('SCI CENTER');
+    const [isHaifn, setIsHaifn] = useState(() => {
+        const locationName = String(selectedLocation?.name || '');
+        return locationName.includes('하이픈') || locationName.includes('HAIFN') || locationName.includes('강동');
+    });
 
     useEffect(() => {
         const fetchBranchName = async () => {
@@ -41,10 +46,13 @@ const Kiosk = () => {
                         const name = grp.name;
                         if (name.includes('하이픈') || name.includes('HAIFN') || name.includes('강동')) {
                             setEngName('HAIFN');
+                            setIsHaifn(true);
                         } else if (name.includes('이높플레이스') || name.includes('ENOUGH_PLACE') || name.includes('이높') || name.includes('강서')) {
                             setEngName('ENOUGH PLACE');
+                            setIsHaifn(false);
                         } else {
                             setEngName(name.toUpperCase());
+                            setIsHaifn(false);
                         }
                     }
                 } catch (err) {
@@ -127,6 +135,8 @@ const Kiosk = () => {
                             resetState={resetState}
                             matchingUsers={matchingUsers}
                             processKioskAction={processKioskAction}
+                            isHaifn={isHaifn && isHaifnRotatingQrEnabled()}
+                            selectedLocation={selectedLocation}
                         />
                     </div>
 

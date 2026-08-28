@@ -126,11 +126,6 @@ export const noticesApi = {
                 is_read: false
             }]);
 
-            await supabase.from('app_notifications').insert([{
-                sender_id: adminId,
-                target_group: `USER_${nextInLine.user_id}`,
-                content: promoMessage
-            }]);
         } catch (msgErr) {
             console.error('Failed to send promotion notification:', msgErr);
         }
@@ -182,12 +177,19 @@ export const noticesApi = {
             const notificationBody = '지금 바로 앱에서 확인해보세요!';
             const appNotificationContent = `[${titleText}] 지금 바로 앱에서 확인해보세요!`;
             const noticeUrl = noticeId ? `/?noticeId=${noticeId}` : '/';
+            const targetRegions = Array.isArray(noticeObj?.target_regions) ? noticeObj.target_regions.filter(Boolean) : [];
+            // A single regional target is delivered only to that region in the
+            // in-app bell list. No target (or both regions) means a notice for
+            // everyone.
+            const notificationTarget = targetRegions.length === 1
+                ? `REGION_${targetRegions[0]}`
+                : '전체';
 
             const { error: pushError } = await supabase.functions.invoke('send-push', {
                 body: {
                     title: notificationTitle,
                     body: notificationBody,
-                    targetRegions: noticeObj?.target_regions || [],
+                    targetRegions,
                     noticeId: noticeId,
                     url: noticeUrl,
                     data: {
@@ -201,8 +203,10 @@ export const noticesApi = {
             const adminInfo = JSON.parse(localStorage.getItem('admin_user')) || { id: 'd3885f86-f127-448c-8517-578964d509f7' };
             await supabase.from('app_notifications').insert([{
                 sender_id: adminInfo.id,
-                target_group: '전체',
-                content: appNotificationContent
+                target_group: notificationTarget,
+                content: appNotificationContent,
+                notice_id: noticeId || null,
+                notification_type: 'NOTICE'
             }]);
 
         } catch (ex) {

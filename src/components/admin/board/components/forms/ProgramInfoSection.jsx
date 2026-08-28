@@ -39,6 +39,21 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
         reward: Number(formData.haifn_reward) > 0
     });
 
+    const customGuestFields = Array.isArray(formData.guest_properties?.custom_fields)
+        ? formData.guest_properties.custom_fields
+        : [];
+    const updateCustomGuestFields = (fields) => {
+        const gp = formData.guest_properties || { allow_guest: true };
+        updateField('guest_properties', { ...gp, require_school: true, require_phone: true, custom_fields: fields });
+    };
+    const addCustomGuestField = () => updateCustomGuestFields([
+        ...customGuestFields,
+        { id: `guest_field_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, label: '', type: 'text', required: false, options: [] },
+    ]);
+    const updateCustomGuestField = (index, patch) => updateCustomGuestFields(
+        customGuestFields.map((field, fieldIndex) => fieldIndex === index ? { ...field, ...patch } : field)
+    );
+
     const toggleSection = (key) => {
         setOpenSections(prev => ({ ...prev, [key]: !prev[key] }));
     };
@@ -790,42 +805,54 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
 
                     {formData.guest_properties?.allow_guest !== false && (
                         <div className="p-5 pt-3 border-t border-slate-100 bg-slate-50/40 space-y-3 animate-fade-in">
-                            <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">수집할 개인 정보 항목 선택</span>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                                <div className="flex items-center gap-2 p-3 bg-white border border-slate-200/60 rounded-xl opacity-70">
-                                    <User className="text-slate-400 shrink-0" size={15} />
-                                    <span className="text-xs font-bold text-slate-600">이름 (필수 수집)</span>
-                                </div>
+                            <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">필수 수집 정보</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+                                {[
+                                    { icon: User, label: '이름' },
+                                    { icon: School, label: '학교 / 소속' },
+                                    { icon: Smartphone, label: '연락처' },
+                                    { icon: Calendar, label: '생년월일' },
+                                    { icon: CheckSquare, label: '개인정보 동의' },
+                                ].map(({ icon: Icon, label }) => (
+                                    <div key={label} className="flex items-center gap-2 p-3 bg-blue-50/60 border border-blue-300 text-blue-700 rounded-xl">
+                                        <Icon className="shrink-0" size={15} />
+                                        <span className="text-xs font-bold">{label} (필수)</span>
+                                    </div>
+                                ))}
+                            </div>
+                            <p className="text-[11px] text-slate-500 font-medium">게스트 중복 방지와 안전한 신청 기록 연결을 위해 기본 정보는 선택 해제할 수 없습니다.</p>
 
-                                <div 
-                                    className={`flex items-center gap-2 p-3 border rounded-xl cursor-pointer transition-all duration-200 ${
-                                        formData.guest_properties?.require_school !== false 
-                                            ? 'bg-blue-50/60 border-blue-400 text-blue-700 font-bold' 
-                                            : 'bg-white border-slate-200/60 text-slate-400 hover:bg-slate-50'
-                                    }`}
-                                    onClick={() => {
-                                        const gp = formData.guest_properties || { allow_guest: true, require_school: true, require_phone: true };
-                                        updateField('guest_properties', { ...gp, require_school: !gp.require_school });
-                                    }}
-                                >
-                                    <School className="shrink-0" size={15} />
-                                    <span className="text-xs font-bold">학교 / 소속</span>
+                            <div className="pt-3 mt-3 border-t border-slate-200 space-y-3">
+                                <div className="flex items-center justify-between gap-3">
+                                    <div>
+                                        <span className="text-[10px] font-bold text-slate-400 block uppercase tracking-wider">프로그램별 추가 수집 항목</span>
+                                        <p className="text-[11px] text-slate-500 mt-1">질문을 추가하고 필수 또는 선택으로 지정하세요.</p>
+                                    </div>
+                                    <button type="button" onClick={addCustomGuestField} className="shrink-0 px-3 py-2 bg-blue-600 text-white rounded-xl text-xs font-bold hover:bg-blue-700">+ 항목 추가</button>
                                 </div>
-
-                                <div 
-                                    className={`flex items-center gap-2 p-3 border rounded-xl cursor-pointer transition-all duration-200 ${
-                                        formData.guest_properties?.require_phone !== false 
-                                            ? 'bg-blue-50/60 border-blue-400 text-blue-700 font-bold' 
-                                            : 'bg-white border-slate-200/60 text-slate-400 hover:bg-slate-50'
-                                    }`}
-                                    onClick={() => {
-                                        const gp = formData.guest_properties || { allow_guest: true, require_school: true, require_phone: true };
-                                        updateField('guest_properties', { ...gp, require_phone: !gp.require_phone });
-                                    }}
-                                >
-                                    <Smartphone className="shrink-0" size={15} />
-                                    <span className="text-xs font-bold">연락처</span>
-                                </div>
+                                {customGuestFields.map((field, index) => (
+                                    <div key={field.id || index} className="bg-white border border-slate-200 rounded-xl p-3 space-y-2">
+                                        <div className="flex gap-2">
+                                            <input type="text" value={field.label || ''} onChange={(event) => updateCustomGuestField(index, { label: event.target.value })} placeholder="질문 또는 수집 항목명" className="flex-1 min-w-0 px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold outline-none focus:border-blue-400" />
+                                            <button type="button" onClick={() => updateCustomGuestFields(customGuestFields.filter((_, fieldIndex) => fieldIndex !== index))} className="p-2 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-lg" aria-label="추가 항목 삭제"><Trash size={16} /></button>
+                                        </div>
+                                        <div className="grid grid-cols-2 gap-2">
+                                            <select value={field.type || 'text'} onChange={(event) => updateCustomGuestField(index, { type: event.target.value })} className="px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold bg-white">
+                                                <option value="text">단답형</option>
+                                                <option value="textarea">장문형</option>
+                                                <option value="select">선택형</option>
+                                            </select>
+                                            <label className="flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-lg text-xs font-bold text-slate-600">
+                                                <input type="checkbox" checked={field.required === true} onChange={(event) => updateCustomGuestField(index, { required: event.target.checked })} />
+                                                {field.required ? '필수 항목' : '선택 항목'}
+                                            </label>
+                                        </div>
+                                        {field.type === 'select' && (
+                                            <input type="text" value={(field.options || []).join(', ')} onChange={(event) => updateCustomGuestField(index, { options: event.target.value.split(',').map(option => option.trim()).filter(Boolean) })} placeholder="선택지를 쉼표로 구분" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs font-medium outline-none focus:border-blue-400" />
+                                        )}
+                                    </div>
+                                ))}
+                                {customGuestFields.length === 0 && <div className="py-4 text-center text-xs text-slate-400 border border-dashed border-slate-200 rounded-xl">추가 수집 항목이 없습니다.</div>}
                             </div>
                         </div>
                     )}

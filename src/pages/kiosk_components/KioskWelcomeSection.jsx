@@ -69,12 +69,12 @@ const KioskWelcomeSection = ({ setShowSignupForm, setShowGuestForm, selectedLoca
                 
                 {/* Subtitle */}
                 <p className="text-slate-500 font-bold text-sm sm:text-[15px] mb-10 leading-relaxed tracking-wide opacity-90 max-w-md">
-                    전화번호 뒤 4자리를 입력해서 <br className="hidden sm:block" />
-                    공간에 체크인 해주세요!
+                    {branchName === '하이픈' ? '휴대폰 카메라로 QR을 스캔해서' : '전화번호 뒤 4자리를 입력해서'} <br className="hidden sm:block" />
+                    공간에 체크인·체크아웃해 주세요!
                 </p>
 
                 {/* Interactive Action Buttons */}
-                <div className="flex flex-col sm:flex-row gap-4">
+                {branchName !== '하이픈' && <div className="flex flex-col sm:flex-row gap-4">
                     <button
                         onClick={() => setShowSignupForm(true)}
                         className="flex-grow py-5 bg-gradient-to-b from-slate-900 to-slate-950 text-white rounded-2xl font-black text-sm sm:text-base flex items-center justify-center gap-2.5 hover:from-slate-850 hover:to-slate-900 active:scale-98 transition-all shadow-xl shadow-slate-950/10 border border-slate-800/80 group/btn"
@@ -92,11 +92,11 @@ const KioskWelcomeSection = ({ setShowSignupForm, setShowGuestForm, selectedLoca
                         <span>게스트 입장</span>
                         <ArrowRight size={14} className="opacity-0 -ml-1 group-hover/btn2:opacity-100 group-hover/btn2:translate-x-1 transition-all" />
                     </button>
-                </div>
+                </div>}
             </div>
 
             {/* App Install Info Bar (Sophisticated styling) */}
-            <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 bg-white/40 backdrop-blur-xl p-6 rounded-[2rem] border border-white/70 shadow-sm">
+            {branchName !== '하이픈' && <div className="flex flex-col sm:flex-row items-center gap-6 sm:gap-8 bg-white/40 backdrop-blur-xl p-6 rounded-[2rem] border border-white/70 shadow-sm">
                 <div className="p-2.5 bg-white rounded-xl border border-slate-100 shrink-0 shadow-sm">
                     <QRCodeSVG value="https://app.schoolchurchimpact.org" size={80} level="H" />
                 </div>
@@ -113,7 +113,7 @@ const KioskWelcomeSection = ({ setShowSignupForm, setShowGuestForm, selectedLoca
                         Quick Access
                     </div>
                 </div>
-            </div>
+            </div>}
         </motion.div>
     );
 };

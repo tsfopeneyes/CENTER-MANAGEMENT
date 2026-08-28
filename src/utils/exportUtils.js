@@ -86,11 +86,12 @@ export const exportLogsToExcel = (logs, users, locations, notices) => {
 
 /**
  * Export program participants to Excel
- * @param {Object} notice - The notice/program object
- * @param {Object} list - Participant list { JOIN: [], ... }
+ * @param {Array} participants - Program participant rows
+ * @param {string} noticeTitle - Program title
+ * @param {Array} customFields - Program-specific application fields
  */
-export const exportParticipantsToExcel = (notice, list) => {
-    if (!list.JOIN || list.JOIN.length === 0) {
+export const exportParticipantsToExcel = (participants, noticeTitle, customFields = []) => {
+    if (!participants || participants.length === 0) {
         alert('참여 신청 인원이 없습니다.');
         return;
     }
@@ -103,20 +104,26 @@ export const exportParticipantsToExcel = (notice, list) => {
         alert('마스터 PIN 번호가 올바르지 않습니다. 전화번호는 뒷자리 4자리만 표시됩니다.');
     }
 
-    const exportData = list.JOIN.map((user, idx) => ({
-        '순번': idx + 1,
-        '이름': user.name,
-        '소속': user.school || '-',
-        '전화번호': showFullPhone ? (user.phone || user.phone_back4 || '-') : (user.phone_back4 || '-'),
-        '출석여부': user.is_attended ? '참석' : '미참석'
-    }));
+    const exportData = participants.map((user, idx) => {
+        const customAnswers = Object.fromEntries(
+            customFields.map(field => [field.label, user.application_answers?.[field.id] || '-'])
+        );
+        return {
+            '순번': idx + 1,
+            '이름': user.name,
+            '소속': user.school || '-',
+            '전화번호': showFullPhone ? (user.phone || user.phone_back4 || '-') : (user.phone_back4 || '-'),
+            ...customAnswers,
+            '출석여부': user.is_attended ? '참석' : '미참석'
+        };
+    });
 
     const worksheet = XLSX.utils.json_to_sheet(exportData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "참여자명단");
 
     // Add info row at the top or adjust Column widths
-    const fileName = `[명단]_${notice.title}_${format(new Date(), 'yyyyMMdd')}.xlsx`;
+    const fileName = `[명단]_${noticeTitle}_${format(new Date(), 'yyyyMMdd')}.xlsx`;
     XLSX.writeFile(workbook, fileName);
 };
 

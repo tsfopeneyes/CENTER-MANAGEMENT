@@ -50,6 +50,8 @@ const StudentHomeTab = ({
     onExtendChat,
     dismissedRejectedChatId,
     onDismissRejection,
+    dismissedAcceptedChatId,
+    onDismissAcceptance,
     onRegisterRegularUser,
     visitStatus,
     tutorialMode = false,
@@ -57,6 +59,12 @@ const StudentHomeTab = ({
 }) => {
     // 뱃지 관련 로직 제거됨
     const isGuest = user?.user_group === '게스트';
+    const [coffeeChatClock, setCoffeeChatClock] = useState(() => Date.now());
+
+    useEffect(() => {
+        const timer = window.setInterval(() => setCoffeeChatClock(Date.now()), 30_000);
+        return () => window.clearInterval(timer);
+    }, []);
     const today = startOfDay(new Date());
     const matchesSelectedRegion = (cardRegion) => {
         if (!selectedRegion || selectedRegion === 'ALL') return true;
@@ -160,6 +168,21 @@ const StudentHomeTab = ({
                                         <span>하이픈 등록</span>
                                     </button>
                                 )}
+
+                                {/* Personal notifications, including coffee-chat requests. */}
+                                <button
+                                    type="button"
+                                    onClick={() => setShowNotificationsModal(true)}
+                                    aria-label={unreadNotificationCount > 0 ? `새 알림 ${unreadNotificationCount}건 확인` : '새로운 소식 확인'}
+                                    className="relative p-1.5 bg-white/10 hover:bg-white/20 transition-colors rounded-full border border-white/10 text-white/90 shadow-sm"
+                                >
+                                    <Bell size={16} />
+                                    {unreadNotificationCount > 0 && (
+                                        <span className="absolute -right-1 -top-1 flex min-w-[16px] h-4 items-center justify-center rounded-full border-2 border-tossBlue bg-tossError px-1 text-[9px] font-black leading-none text-white">
+                                            {unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}
+                                        </span>
+                                    )}
+                                </button>
                                 
                                 {/* Settings Icon */}
                                 <button 
@@ -319,7 +342,9 @@ const StudentHomeTab = ({
 
                 {studentChatStatus && (() => {
                     const isPending = studentChatStatus.status === 'PENDING';
-                    const isAccepted = studentChatStatus.status === 'ACCEPTED' && new Date(studentChatStatus.accepted_at) > new Date(Date.now() - 30 * 60 * 1000);
+                    const isAccepted = studentChatStatus.status === 'ACCEPTED' &&
+                                       new Date(studentChatStatus.ends_at || (new Date(studentChatStatus.accepted_at).getTime() + 30 * 60 * 1000)) > new Date();
+                    const isAcceptedNotice = isAccepted && studentChatStatus.id !== dismissedAcceptedChatId;
                     const isRejected = studentChatStatus.status === 'REJECTED' && 
                                        studentChatStatus.id !== dismissedRejectedChatId &&
                                        new Date(studentChatStatus.created_at) > new Date(Date.now() - 24 * 60 * 60 * 1000);
@@ -336,20 +361,25 @@ const StudentHomeTab = ({
                         >
                             <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 ${
                                 isPending ? 'bg-tossGrey100 text-tossGrey500' :
-                                isAccepted ? 'bg-green-50 text-green-500' :
+                                isAcceptedNotice ? 'bg-green-50 text-green-500' :
+                                isAccepted ? 'bg-amber-50 text-amber-500' :
                                 'bg-red-50 text-red-500'
                             }`}>
                                 <Coffee size={20} />
                             </div>
                             <div className="text-left flex-1 min-w-0">
                                 <h5 className="text-[14px] font-black text-tossGrey900 leading-tight">
-                                    {isPending ? '커피챗 신청 대기 중' : isAccepted ? '커피챗 신청 수락됨!' : '커피챗 신청 거절 안내'}
+                                    {isPending ? '커피챗 신청 대기 중' : isAccepted ? (isAcceptedNotice ? '커피챗 신청 수락됨!' : '커피챗 진행 중') : '커피챗 신청 거절 안내'}
                                 </h5>
                                 <p className="text-[11px] font-semibold text-tossGrey500 mt-1 truncate">
                                     {isPending ? (
                                         `${staffName} 쌤의 대화 수락을 기다리고 있어요.`
+                                    ) : isAcceptedNotice ? (
+                                        studentChatStatus.accepted_message
+                                            ? `${staffName} 쌤: "${studentChatStatus.accepted_message}"`
+                                            : `${staffName} 쌤이 수락하셨습니다. 지금 대화하러 가보세요!`
                                     ) : isAccepted ? (
-                                        `${staffName} 쌤이 수락하셨습니다. 지금 대화하러 가보세요!`
+                                        `${staffName} 쌤과 커피챗 진행 중이에요.`
                                     ) : (
                                         `${staffName} 쌤: "${studentChatStatus.rejection_reason || '지금은 바빠서 다음에 나눠요'}"`
                                     )}
@@ -363,43 +393,78 @@ const StudentHomeTab = ({
                                     <X size={16} className="stroke-[2.5]" />
                                 </button>
                             )}
+                            {isAcceptedNotice && (
+                                <button
+                                    onClick={() => onDismissAcceptance(studentChatStatus.id)}
+                                    aria-label="수락 안내 닫기"
+                                    className="p-1 hover:bg-tossGrey100 rounded-full text-tossGrey400 hover:text-tossGrey600 transition-colors shrink-0 self-start"
+                                >
+                                    <X size={16} className="stroke-[2.5]" />
+                                </button>
+                            )}
                         </motion.div>
                     );
                 })()}
 
-                {activeChat && (
+                {activeChat && (() => {
+                    const startedAt = new Date(activeChat.accepted_at).getTime();
+                    const elapsedMinutes = Number.isFinite(startedAt)
+                        ? Math.max(0, Math.floor((coffeeChatClock - startedAt) / 60_000))
+                        : 0;
+                    const endAt = new Date(activeChat.ends_at || (startedAt + 30 * 60_000));
+                    const endTimeLabel = Number.isNaN(endAt.getTime())
+                        ? '시간 확인 중'
+                        : endAt.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+                    return (
                     <motion.div
                         initial={{ opacity: 0, y: -10 }}
                         animate={{ opacity: 1, y: 0 }}
-                        className="p-5 rounded-toss-xl bg-white border border-tossGrey100 shadow-toss-standard flex flex-col gap-4"
+                        className="relative overflow-hidden rounded-toss-xl border border-amber-100/80 bg-gradient-to-br from-white via-white to-amber-50/60 p-5 shadow-toss-standard flex flex-col gap-4"
                     >
+                        <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-amber-200/20 blur-2xl" />
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-amber-50 text-amber-500 flex items-center justify-center shrink-0 animate-pulse">
+                            <div className="relative w-11 h-11 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0 ring-1 ring-amber-100">
                                 <Coffee size={20} />
+                                <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-white bg-amber-500 animate-pulse" />
                             </div>
                             <div className="text-left flex-1 min-w-0">
-                                <h5 className="text-[14px] font-black text-tossGrey900 leading-tight">진행 중인 커피챗</h5>
-                                <p className="text-[11px] font-bold text-tossGrey500 mt-1.5 whitespace-nowrap overflow-hidden text-ellipsis">
-                                    <strong className="text-tossGrey900 font-extrabold">{activeChat.users?.name || '학생'}</strong> 학생과 커피챗 진행 중입니다.
+                                <div className="flex items-center gap-2">
+                                    <h5 className="text-[14px] font-black text-tossGrey900 leading-tight">진행 중인 커피챗</h5>
+                                    <span className="rounded-full bg-amber-100 px-1.5 py-0.5 text-[9px] font-black text-amber-700">LIVE</span>
+                                </div>
+                                <p className="text-[11px] font-bold text-tossGrey500 mt-1 whitespace-nowrap overflow-hidden text-ellipsis">
+                                    <strong className="text-tossGrey900 font-extrabold">{activeChat.users?.name || '학생'}</strong> 학생과 대화하고 있어요.
                                 </p>
+                            </div>
+                        </div>
+                        <div className="flex items-center justify-between rounded-2xl border border-amber-100 bg-white/80 px-3.5 py-2.5 shadow-sm">
+                            <div className="flex items-center gap-2 text-[11px] font-black text-amber-700">
+                                <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-amber-50"><Clock3 size={13} /></span>
+                                <span>진행 {elapsedMinutes}분</span>
+                            </div>
+                            <div className="text-right">
+                                <span className="block text-[9px] font-bold text-tossGrey400">종료 예정</span>
+                                <span className="text-xs font-black text-tossGrey800">{endTimeLabel}</span>
                             </div>
                         </div>
                         <div className="flex gap-2">
                             <button
                                 onClick={() => onEndChat(activeChat.id)}
-                                className="flex-1 bg-tossGrey100 hover:bg-tossGrey200 text-tossGrey600 text-xs font-black py-2.5 rounded-xl transition-colors active:scale-98"
+                                className="flex-1 border border-tossGrey200 bg-white hover:bg-tossGrey50 text-tossGrey600 text-xs font-black py-2.5 rounded-xl transition-colors active:scale-98"
                             >
                                 대화 종료
                             </button>
                             <button
                                 onClick={() => onExtendChat(activeChat.id)}
-                                className="flex-1 bg-tossBlue text-white text-xs font-black py-2.5 rounded-xl hover:bg-tossBlue/90 transition-colors active:scale-98"
+                                className="flex-1 bg-tossBlue text-white text-xs font-black py-2.5 rounded-xl hover:bg-tossBlue/90 shadow-[0_5px_12px_rgba(49,130,246,0.2)] transition-colors active:scale-98"
                             >
                                 30분 연장
                             </button>
                         </div>
                     </motion.div>
-                )}
+                    );
+                })()}
 
                 {/* Dynamic Section Renderer based on dashboardConfig order */}
                 {dashboardConfig.map((item) => {

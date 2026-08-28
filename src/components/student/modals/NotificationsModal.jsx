@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { X, Bell } from 'lucide-react';
 import useModalClose from '../../../hooks/useModalClose';
 
-const NotificationsModal = ({ notifications, setShowNotificationsModal, markNotificationsAsRead }) => {
+const NotificationsModal = ({ notifications, setShowNotificationsModal, markNotificationsAsRead, onNotificationOpen }) => {
     useModalClose(true, () => setShowNotificationsModal(false));
     return (
                     <motion.div
@@ -38,11 +38,19 @@ const NotificationsModal = ({ notifications, setShowNotificationsModal, markNoti
                                     </div>
                                 ) : (
                                     <div className="space-y-3">
-                                        {notifications.map((notif, idx) => (
-                                            <div key={idx} className="p-4 bg-white rounded-2xl border border-gray-100 shadow-sm">
+                                        {notifications.map((notif) => {
+                                            const isLinkedNotice = Boolean(notif.is_notice_linked);
+                                            return (
+                                            <button
+                                                type="button"
+                                                key={notif.id}
+                                                disabled={!isLinkedNotice}
+                                                onClick={() => onNotificationOpen?.(notif)}
+                                                className={`w-full p-4 bg-white rounded-2xl border border-gray-100 shadow-sm text-left transition-all ${isLinkedNotice ? 'hover:border-blue-200 hover:shadow-md active:scale-[0.99]' : ''}`}
+                                            >
                                                 <div className="flex justify-between items-start mb-2">
                                                     <span className="text-[10px] uppercase font-black tracking-widest text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md">
-                                                        {notif.target_group === '전체' ? '공지' : 
+                                                        {notif.notification_type === 'NOTICE' || notif.target_group === '전체' || notif.target_group?.startsWith('REGION_') ? '공지' :
                                                          notif.target_group?.startsWith('USER_') ? '알림' : 
                                                          notif.target_group}
                                                     </span>
@@ -53,8 +61,9 @@ const NotificationsModal = ({ notifications, setShowNotificationsModal, markNoti
                                                 <p className="text-sm text-gray-700 font-bold leading-relaxed whitespace-pre-wrap">
                                                     {notif.content}
                                                 </p>
-                                            </div>
-                                        ))}
+                                                {isLinkedNotice && <p className="mt-2 text-xs font-bold text-blue-500">눌러서 글 보기</p>}
+                                            </button>
+                                        )})}
                                     </div>
                                 )}
                             </div>

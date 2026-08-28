@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { MessageSquare, MessageCircle, Send, AlertTriangle, Shield, Info, Sparkles, Flag, CheckCircle2, Trash2, Eye, EyeOff, RotateCcw, Image as ImageIcon, X, Smile, ExternalLink } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { useLiveCenterChat } from '../../../hooks/useLiveCenterChat';
+import { normalizeSchoolName } from '../../../utils/schoolUtils';
 
 // Safe Motion Fallback for Samsung Smart Signage / Tizen Browsers
 const motion = {
@@ -151,7 +152,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                 if (schoolsData && Array.isArray(schoolsData)) {
                     schoolsData.forEach(s => {
                         if (s.name && s.region) {
-                            sMap.set(s.name.trim(), s.region.trim());
+                            sMap.set(normalizeSchoolName(s.name), s.region.trim());
                         }
                     });
                 }
@@ -425,7 +426,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
         }
 
         const schoolName = typeof u.school === 'string' ? u.school.trim() : '';
-        const mappedRegion = sMap?.get(schoolName) || '';
+        const mappedRegion = sMap?.get(normalizeSchoolName(schoolName)) || '';
         const region = typeof u.region === 'string' && u.region ? u.region : mappedRegion;
 
         if (

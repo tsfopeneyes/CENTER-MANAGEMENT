@@ -17,6 +17,9 @@ const AttendanceSection = ({
     onUserClick
 }) => {
     const isOpenProgram = notice.is_recruiting === false;
+    const customFields = Array.isArray(notice.guest_properties?.custom_fields)
+        ? notice.guest_properties.custom_fields
+        : [];
 
     return (
         <div className="flex-1 overflow-y-auto p-4 md:p-6 space-y-4 md:space-y-6 bg-gray-50">
@@ -67,7 +70,7 @@ const AttendanceSection = ({
                         <UserPlus size={14} /> 명단 추가 (지급)
                     </button>
                     <button 
-                        onClick={() => exportParticipantsToExcel(participantList.JOIN, notice.title)}
+                        onClick={() => exportParticipantsToExcel(participantList.JOIN, notice.title, customFields)}
                         className="md:hidden flex-1 text-center px-3 py-2 bg-green-50 text-green-700 text-xs font-bold rounded-lg hover:bg-green-100 transition shadow-sm border border-green-200/50 flex items-center justify-center gap-1"
                     >
                         <ClipboardList size={14} /> 엑셀 다운로드
@@ -105,6 +108,14 @@ const AttendanceSection = ({
                                 <div className="col-span-2 md:col-span-2 flex flex-col justify-center">
                                     <span className="text-xs text-gray-600 truncate font-semibold">{user.school}</span>
                                     <span className="text-[10px] text-gray-400 font-medium tracking-wider mt-0.5">{user.phone_back4}</span>
+                                    {customFields.map(field => {
+                                        const answer = user.application_answers?.[field.id];
+                                        return answer ? (
+                                            <span key={field.id} className="text-[10px] text-blue-600 font-semibold mt-0.5 break-words">
+                                                {field.label}: {answer}
+                                            </span>
+                                        ) : null;
+                                    })}
                                 </div>
                                 <div className="col-span-1 flex justify-center">
                                     {isOpenProgram ? (

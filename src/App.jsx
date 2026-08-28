@@ -15,6 +15,7 @@ import { trackUserWebActivity } from './utils/userActivityUtils'
 
 import StandaloneLiveChat from './pages/StandaloneLiveChat'
 import TvSignageViewer from './pages/TvSignageViewer'
+import AppAlertDialog from './components/common/AppAlertDialog'
 
 function App() {
     const [isLoading, setIsLoading] = useState(() => {
@@ -81,6 +82,7 @@ function App() {
     return (
         <>
             {isLoading && <SplashScreen finishLoading={handleFinishLoading} />}
+            <AppAlertDialog />
             <BrowserRouter>
                 <Routes>
                     <Route path="/" element={<Landing />} />

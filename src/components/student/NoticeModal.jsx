@@ -352,7 +352,7 @@ const NoticeModal = ({
         isSubmittingPoll, pollResults,
         pollTotalVotes, pollTimeLeft, isPollExpired,
         handleOptionClick, handleSubmitVote,
-    } = useNoticeModal({ notice, user, context, responses });
+    } = useNoticeModal({ notice, user, context, responses, tutorialMode });
 
     const isTutorialSocial = tutorialMode && ['noticeRead', 'noticeComment', 'noticeCommentResult'].includes(tutorialStep);
     const isTutorialOpenDetail = tutorialMode && tutorialStep === 'openDetail';
@@ -1441,7 +1441,7 @@ const NoticeModal = ({
                              {notice.challenge_success_message || "모든 미션을 완벽히 해결하셨습니다! 대단해요 🎉"}
                          </div>
                          <div className="flex gap-2 w-full mt-2">
-                             {notice.challenge_show_hyphen_btn && (user?.role === 'GUEST' || user?.user_group === '게스트') && (
+                             {notice.challenge_show_haifn_btn && (user?.role === 'GUEST' || user?.user_group === '게스트') && (
                                  <button
                                      onClick={() => {
                                          setShowSuccessPopup(false);

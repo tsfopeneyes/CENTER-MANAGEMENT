@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Clock, DoorOpen, DoorClosed, Calendar } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
+import { requestSupabaseFunction } from '../../../utils/supabaseRest';
 import UserAvatar from '../../common/UserAvatar';
 import { startOfDay, addDays, startOfWeek } from 'date-fns';
 
@@ -11,6 +13,7 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
     const [dutyStaff, setDutyStaff] = useState({ "하이픈": "", "이높플레이스": "" });
     const [staffList, setStaffList] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [busyStaffNotice, setBusyStaffNotice] = useState(null);
 
     const fetchHoursAndStaffConfig = async () => {
         try {
@@ -189,17 +192,29 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
                 
                 let busyStaffIds = new Set();
                 try {
-                    const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+                    const currentTime = new Date().toISOString();
                     const { data: activeChats } = await supabase
                         .from('coffee_chats')
                         .select('staff_id')
                         .eq('status', 'ACCEPTED')
-                        .gt('accepted_at', thirtyMinutesAgo);
+                        .gt('ends_at', currentTime);
                     if (activeChats) {
                         busyStaffIds = new Set(activeChats.map(c => c.staff_id));
                     }
                 } catch (e) {
                     console.error('Failed to fetch active coffee chats status:', e);
+                }
+                // RLS can return an empty array instead of an error for this
+                // shared availability signal. The endpoint returns only busy
+                // staff IDs, not any student or conversation information.
+                try {
+                    const busyStatus = await requestSupabaseFunction('dispatch-notification', {
+                        action: 'get-busy-coffee-chat-staff',
+                        staffIds: fetchIds,
+                    });
+                    busyStaffIds = new Set(busyStatus?.staffIds || []);
+                } catch (e) {
+                    console.error('Failed to load secure busy staff status:', e);
                 }
                 
                 if (!userError && userData) {
@@ -500,7 +515,7 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
                                 <div 
                                     onClick={() => {
                                         if (effectiveDutyMember.isBusy) {
-                                            alert('현재 대화가 진행 중입니다. 30분 뒤에 다시 신청해 주세요! ☕');
+                                            setBusyStaffNotice(effectiveDutyMember.name || '선생님');
                                             return;
                                         }
                                         onStaffClick && onStaffClick(effectiveDutyMember);
@@ -539,7 +554,7 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
                                         <div 
                                             onClick={() => {
                                                 if (member.isBusy) {
-                                                    alert('현재 대화가 진행 중입니다. 30분 뒤에 다시 신청해 주세요! ☕');
+                                                    setBusyStaffNotice(member.name || '선생님');
                                                     return;
                                                 }
                                                 onStaffClick && onStaffClick(member);
@@ -565,6 +580,30 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
                     </div>
                 </div>
             )}
+            {busyStaffNotice && createPortal(
+                <div
+                    className="fixed inset-0 z-[1100] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]"
+                    onClick={() => setBusyStaffNotice(null)}
+                >
+                    <div
+                        className="w-full max-w-sm rounded-3xl border border-tossGrey100 bg-white p-6 text-center shadow-2xl"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-amber-50 text-2xl">☕</div>
+                        <h4 className="mt-4 text-lg font-black text-tossGrey900">지금은 대화 중이에요</h4>
+                        <p className="mt-2 text-sm font-semibold leading-relaxed text-tossGrey600">
+                            <strong className="text-tossGrey900">{busyStaffNotice} 쌤</strong>이 현재 커피챗 중입니다.<br />30분 뒤에 다시 신청해 주세요.
+                        </p>
+                        <button
+                            type="button"
+                            onClick={() => setBusyStaffNotice(null)}
+                            className="mt-5 w-full rounded-xl bg-tossBlue py-3 text-sm font-bold text-white"
+                        >
+                            확인
+                        </button>
+                    </div>
+                </div>
+            , document.body)}
         </div>
     );
 };

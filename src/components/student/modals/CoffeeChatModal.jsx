@@ -52,7 +52,7 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess, tutorialMode = fa
                 return;
             }
             // 1. Insert into Supabase
-            await requestSupabaseFunction('dispatch-notification', {
+            const result = await requestSupabaseFunction('dispatch-notification', {
                 action: 'create-coffee-chat',
                 studentId: student.id,
                 staffId: staff.id,
@@ -146,7 +146,9 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess, tutorialMode = fa
             }
 
             alert(`${staff.name} 쌤에게 커피챗 신청이 완료되었습니다! 💙`);
-            onSuccess();
+            // Pass the saved row back so the student home card can appear
+            // immediately without waiting for a Realtime event or reload.
+            onSuccess(result?.coffeeChat || null);
         } catch (err) {
             console.error('Coffee Chat Request Error:', err);
             alert('신청 처리 중 오류가 발생했습니다: ' + err.message);

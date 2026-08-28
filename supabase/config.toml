@@ -2,7 +2,7 @@
 # https://supabase.com/docs/guides/local-development/cli/config
 # A string used to distinguish different Supabase projects on the same host. Defaults to the
 # working directory name when running `supabase init`.
-project_id = "ENTER"
+project_id = "erecqalsxoxrufggvmcc"
 
 [api]
 enabled = true
@@ -418,3 +418,10 @@ enabled = true
 # Slack authenticates requests with its own HMAC signature, not a Supabase JWT.
 verify_jwt = false
 import_map = "./functions/slack-tsf/deno.json"
+
+[functions.kiosk-qr]
+enabled = true
+# Kiosk activation and QR scans happen before a member signs in. Requests are
+# authenticated with the kiosk credential or a short-lived signed QR token.
+verify_jwt = false
+import_map = "./functions/kiosk-qr/deno.json"

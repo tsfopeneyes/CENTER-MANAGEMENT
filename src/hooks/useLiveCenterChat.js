@@ -270,7 +270,8 @@ export const useLiveCenterChat = (centerCode, currentUser) => {
                         const notifInserts = resolvedTargetUserIds.map(uid => ({
                             sender_id: validUserId || null,
                             target_group: `USER_${uid}`,
-                            content: `[${centerCode} 라이브] ${currentUser.name || '익명'} 님이 회원님을 태그했습니다: "${maskedText.substring(0, 30)}"`
+                            content: `[${centerCode} 라이브] ${currentUser.name || '익명'} 님이 회원님을 태그했습니다: "${maskedText.substring(0, 30)}"`,
+                            notification_type: 'PERSONAL'
                         }));
                         const { error: notifErr } = await supabase.from('app_notifications').insert(notifInserts);
                         if (notifErr) {

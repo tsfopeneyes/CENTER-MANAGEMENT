@@ -43,6 +43,7 @@ import { useDashboardNotifications } from './dashboard/useDashboardNotifications
 import { useRealtimePresence } from './dashboard/useRealtimePresence';
 import { useDashboardBadges } from './dashboard/useDashboardBadges';
 import { useDashboardCalendar } from './dashboard/useDashboardCalendar';
+import { resolveSchoolRegion } from '../utils/schoolRegionUtils';
 
 export const useStudentDashboard = () => {
     const navigate = useNavigate();
@@ -230,24 +231,24 @@ export const useStudentDashboard = () => {
 
     }, [navigate, fetchStats, fetchBadgeData, fetchNotifications, fetchSchedules]); // Removed dependencies that cause loops
 
-        useEffect(() => {
-        if (effectiveUser?.school) {
-            supabase
-                .from('schools')
-                .select('region')
-                .eq('name', effectiveUser.school)
-                .maybeSingle()
-                .then(({ data, error }) => {
-                    if (!error && data && data.region) {
-                        setStudentRegion(data.region);
-                    } else {
-                        const mappedName = effectiveUser.school.includes('강서') ? '강서' : '강동';
-                        setStudentRegion(mappedName);
-                    }
-                });
-        } else {
+    useEffect(() => {
+        let cancelled = false;
+
+        if (!effectiveUser?.school) {
             setStudentRegion(null);
+            return () => { cancelled = true; };
         }
+
+        resolveSchoolRegion(effectiveUser.school)
+            .then((region) => {
+                if (!cancelled) setStudentRegion(region);
+            })
+            .catch((error) => {
+                console.error('Failed to resolve student school region:', error);
+                if (!cancelled) setStudentRegion(null);
+            });
+
+        return () => { cancelled = true; };
     }, [effectiveUser?.school]);
 
     // Handled by useRealtimePresence and useDashboardCalendar
@@ -465,27 +466,6 @@ export const useStudentDashboard = () => {
 
 
 
-    const filteredNotices = notices.filter(n =>
-        n.category === CATEGORIES.NOTICE
-    );
-
-    const allPrograms = notices.filter(n => {
-        if (n.category !== CATEGORIES.PROGRAM) return false;
-        if (n.is_private && responses[n.id] !== 'JOIN') return false;
-        const targets = n.target_regions || [];
-        if (targets.length === 0 || targets.length === 2) return true;
-        
-        // Admin preview switcher logic (skip when impersonating a student)
-        if (!impersonatedUser && (user?.role === 'admin' || user?.user_group === '관리자')) {
-            if (selectedRegion === 'GANGDONG') return targets.includes('강동');
-            if (selectedRegion === 'GANGSEO') return targets.includes('강서');
-            return true; // Show all if 'ALL'
-        }
-        
-        if (!studentRegion) return false;
-        return targets.includes(studentRegion);
-    });
-
     const isNoticeEnded = (n) => {
         if (n.program_status === 'COMPLETED' || n.program_status === 'CANCELLED') return true;
         if ((n.guest_properties?.is_ended ?? n.is_ended) === true) return true;
@@ -499,18 +479,70 @@ export const useStudentDashboard = () => {
         return new Date() >= pEndDate;
     };
 
+    // 종료 여부와 별개로 프로그램 일정에 오늘이 포함되면 자정까지 노출한다.
+    // 단일 일정(program_date)과 여러 날 일정(start/end)을 모두 같은 기준으로 처리한다.
+    const isProgramScheduledToday = (n) => {
+        const today = startOfDay(new Date());
+        const startValue = n.program_start_date || n.program_date || n.program_end_date;
+        const endValue = n.program_end_date || n.program_date || n.program_start_date;
+        if (!startValue && !endValue) return false;
+
+        const startDate = startOfDay(parseISO(startValue || endValue));
+        const endDate = startOfDay(parseISO(endValue || startValue));
+        if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) return false;
+
+        return today >= startDate && today <= endDate;
+    };
+
+    const isVisibleForStudentRegion = (notice) => {
+        const targets = Array.isArray(notice.target_regions) ? notice.target_regions.filter(Boolean) : [];
+        if (targets.length === 0 || targets.length >= 2) return true;
+
+        // 프로그램을 신청한 게스트는 학교가 자유 입력이라 지역 매핑이
+        // 비어 있어도 오늘 일정만큼은 신청 내역에서 사라지지 않도록 한다.
+        const guestApplicationStatus = responses[notice.id];
+        if (
+            effectiveUser?.user_group === '게스트' &&
+            notice.category === CATEGORIES.PROGRAM &&
+            ['JOIN', 'WAITLIST'].includes(guestApplicationStatus) &&
+            isProgramScheduledToday(notice)
+        ) {
+            return true;
+        }
+
+        // 관리자 미리보기에서는 선택한 지역을 기준으로 보여 준다.
+        if (!impersonatedUser && (user?.role === 'admin' || user?.user_group === '관리자')) {
+            if (selectedRegion === 'GANGDONG') return targets.includes('강동');
+            if (selectedRegion === 'GANGSEO') return targets.includes('강서');
+            return true;
+        }
+
+        return Boolean(studentRegion && targets.includes(studentRegion));
+    };
+
+    const filteredNotices = notices.filter(n =>
+        n.category === CATEGORIES.NOTICE && isVisibleForStudentRegion(n)
+    );
+
+    const allPrograms = notices.filter(n => {
+        if (n.category !== CATEGORIES.PROGRAM) return false;
+        if (n.is_private && responses[n.id] !== 'JOIN') return false;
+        return isVisibleForStudentRegion(n);
+    });
+
     const filteredPrograms = allPrograms.filter(n => {
         if (n.program_status === 'CANCELLED') return false;
 
-        // 종료 시간이 지났거나 수동 종료된 프로그램은 '진행 중인 프로그램' 탭에서 제외하고 '나의 참여 내역'으로 이동
-        if (isNoticeEnded(n)) return false;
+        // 종료됐더라도 일정이 오늘이면 당일 자정까지 학생 화면에 유지한다.
+        const isScheduledToday = isProgramScheduledToday(n);
+        if (isNoticeEnded(n) && !isScheduledToday) return false;
 
         const todayStart = startOfDay(new Date());
         const pDateStr = n.program_end_date || n.program_date || n.program_start_date;
         const pDate = pDateStr ? parseISO(pDateStr) : null;
         const isTodayOrFuture = pDate ? pDate >= todayStart : true;
 
-        return isTodayOrFuture;
+        return isScheduledToday || isTodayOrFuture;
     });
 
     const homeNotices = filteredNotices.slice(0, 3);
@@ -521,17 +553,18 @@ export const useStudentDashboard = () => {
 
         const todayStart = startOfDay(new Date());
         const isJoined = responses[n.id] === 'JOIN' || responses[n.id] === 'WAITLIST';
+        const isScheduledToday = isProgramScheduledToday(n);
 
         const pDateStr = n.program_end_date || n.program_date || n.program_start_date;
         const pDate = pDateStr ? parseISO(pDateStr) : null;
         const isTodayOrFuture = pDate ? pDate >= todayStart : true;
 
         if (isJoined) {
-            return isTodayOrFuture;
+            return isScheduledToday || isTodayOrFuture;
         }
 
-        if (isNoticeEnded(n)) return false;
-        return isTodayOrFuture;
+        if (isNoticeEnded(n) && !isScheduledToday) return false;
+        return isScheduledToday || isTodayOrFuture;
     }).slice(0, 10);
 
 

@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Check, X, ChevronRight, CheckCircle, MapPin } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { sendCheckinNotification } from '../../../utils/integrationUtils';
+import { resolveSchoolRegion } from '../../../utils/schoolRegionUtils';
 
 const DEFAULT_SURVEY_OPTIONS = [
     { id: '1', emoji: '🍽️', label: '당 충전하며 쉬고 싶어요', recommendTitle: '2F SQUARE, 3F ROUND 빈백존', recommendText: '2층 냉장고에서 간식 먹고, 3층 빈백에서 뒹굴뒹굴' },
@@ -125,23 +126,32 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
             // 2. If Live Chat Shoutout is present, post to center_daily_chats
             const shoutoutText = chatShoutoutText.trim();
             if (shoutoutText) {
-                const centerCode = (locationName && (locationName.includes('이높') || locationName.includes('강서')))
+                const checkedInRegion = locationName && (locationName.includes('이높') || locationName.includes('강서'))
+                    ? '강서'
+                    : locationName && (locationName.includes('하이픈') || locationName.includes('강동'))
+                        ? '강동'
+                        : await resolveSchoolRegion(user?.school).catch(() => null);
+                const centerCode = checkedInRegion === '강서'
                     ? '이높플레이스'
-                    : (user?.school?.includes('강서') ? '이높플레이스' : '하이픈');
+                    : checkedInRegion === '강동'
+                        ? '하이픈'
+                        : null;
                 const validUserId = (user?.id && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(user.id))
                     ? user.id
                     : null;
 
-                const { error: chatErr } = await supabase.from('center_daily_chats').insert([{
-                    center_code: centerCode,
-                    user_id: validUserId,
-                    user_name: user.name || '익명',
-                    user_avatar: user.profile_image_url || null,
-                    user_role: '학생',
-                    message: `[CHECK-IN] ${shoutoutText}`,
-                    is_hidden: false,
-                    report_count: 0
-                }]);
+                const { error: chatErr } = centerCode
+                    ? await supabase.from('center_daily_chats').insert([{
+                        center_code: centerCode,
+                        user_id: validUserId,
+                        user_name: user.name || '익명',
+                        user_avatar: user.profile_image_url || null,
+                        user_role: '학생',
+                        message: `[CHECK-IN] ${shoutoutText}`,
+                        is_hidden: false,
+                        report_count: 0
+                    }])
+                    : { error: new Error('학생의 센터 지역을 확인할 수 없어 라이브 한마디 전송을 건너뛰었습니다.') };
 
                 if (chatErr) {
                     console.error('Failed to auto-post checkin shoutout to live chat:', chatErr);

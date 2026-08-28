@@ -210,11 +210,22 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 noticeData.is_challenge = formData.is_challenge || false;
                 noticeData.challenge_missions = formData.challenge_missions || [];
                 noticeData.challenge_success_message = formData.challenge_success_message || '';
-                noticeData.challenge_show_hyphen_btn = formData.challenge_show_hyphen_btn || false;
+                noticeData.challenge_show_haifn_btn = formData.challenge_show_haifn_btn || false;
                 const gp = formData.guest_properties || { allow_guest: true, require_school: true, require_phone: true };
                 const configuredHosts = (formData.hosts || []).filter(h => h && h.host_id);
                 noticeData.guest_properties = {
                     ...gp,
+                    require_school: true,
+                    require_phone: true,
+                    custom_fields: (Array.isArray(gp.custom_fields) ? gp.custom_fields : [])
+                        .filter(field => String(field?.label || '').trim())
+                        .map(field => ({
+                            id: field.id,
+                            label: String(field.label).trim(),
+                            type: ['text', 'textarea', 'select'].includes(field.type) ? field.type : 'text',
+                            required: field.required === true,
+                            options: field.type === 'select' ? (field.options || []).filter(Boolean) : [],
+                        })),
                     cached_hosts: configuredHosts.length > 0 ? configuredHosts : (gp.cached_hosts || []),
                     challenge_has_time: challengeHasTime,
                     enable_post_program_button: formData.enable_post_program_button || false,

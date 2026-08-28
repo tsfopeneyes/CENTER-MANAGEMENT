@@ -2,6 +2,7 @@ import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Delete, Scan, SwitchCamera, ChevronRight, CheckCircle } from 'lucide-react';
 import { Scanner } from '@yudiel/react-qr-scanner';
+import HaifnRotatingQr from './HaifnRotatingQr';
 
 const KioskInputSection = ({
     status,
@@ -14,8 +15,14 @@ const KioskInputSection = ({
     setFacingMode,
     resetState,
     matchingUsers,
-    processKioskAction
+    processKioskAction,
+    isHaifn,
+    selectedLocation
 }) => {
+    if (isHaifn) {
+        return <HaifnRotatingQr selectedLocation={selectedLocation} />;
+    }
+
     return (
         <AnimatePresence mode="wait">
             {status === 'IDLE' && (

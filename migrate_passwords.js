@@ -15,7 +15,7 @@ envFile.split('\n').forEach(line => {
 });
 
 const supabaseUrl = envVars['VITE_SUPABASE_URL'];
-const serviceRoleKey = envVars['VITE_SUPABASE_SERVICE_ROLE_KEY'];
+const serviceRoleKey = envVars['SUPABASE_SERVICE_ROLE_KEY'];
 
 if (!serviceRoleKey) {
     console.error("\n❌ 오류: VITE_SUPABASE_SERVICE_ROLE_KEY 가 .env 파일에 없습니다!");

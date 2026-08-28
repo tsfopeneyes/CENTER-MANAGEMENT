@@ -1,5 +1,12 @@
 // QR scans can hand an installed web app over to Samsung Internet mid-request.
 // Plain fetch avoids the Supabase client's internally aborted signal in that window.
+import { supabase } from '../supabaseClient';
+
+const getRequestToken = async () => {
+    const { data } = await supabase.auth.getSession();
+    return data?.session?.access_token || import.meta.env.VITE_SUPABASE_ANON_KEY;
+};
+
 export const requestSupabaseRest = async (path, options = {}, attempts = 2, timeoutMs = 8000) => {
     let lastError;
     const method = (options.method || 'GET').toUpperCase();
@@ -12,6 +19,7 @@ export const requestSupabaseRest = async (path, options = {}, attempts = 2, time
         let timeoutId;
         try {
             const controller = new AbortController();
+            const token = await getRequestToken();
             timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
             const response = await fetch(
                 `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/${path}`,
@@ -19,7 +27,7 @@ export const requestSupabaseRest = async (path, options = {}, attempts = 2, time
                     ...options,
                     headers: {
                         apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-                        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                        Authorization: `Bearer ${token}`,
                         ...(options.headers || {})
                     },
                     signal: controller.signal
@@ -57,6 +65,7 @@ export const requestSupabaseFunction = async (functionName, body, attempts = 2, 
         let timeoutId;
         try {
             const controller = new AbortController();
+            const token = await getRequestToken();
             timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
             const response = await fetch(
                 `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/${functionName}`,
@@ -64,7 +73,7 @@ export const requestSupabaseFunction = async (functionName, body, attempts = 2, 
                     method: 'POST',
                     headers: {
                         apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
-                        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                        Authorization: `Bearer ${token}`,
                         'Content-Type': 'application/json',
                     },
                     body: JSON.stringify(body),
