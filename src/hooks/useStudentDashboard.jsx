@@ -610,6 +610,7 @@ export const useStudentDashboard = () => {
         setImpersonatedUser,
         setUser,
         activeTab,
+        setActiveTab,
         handleLogout,
         selectedRegion,
         setSelectedRegion,

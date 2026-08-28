@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, Check, X, Sparkles, HeartHandshake } from 'lucide-react';
-import { supabase } from '../../../supabaseClient';
-import { sendCheckoutNotification } from '../../../utils/integrationUtils';
+import { requestSupabaseRest } from '../../../utils/supabaseRest';
 
 const DEFAULT_CHECKOUT_OPTIONS = [
     { id: '1', emoji: '😊', label: '교제 및 휴식', recommendTitle: '휴식 세션 완료', recommendText: '편안한 휴식이 되었기를 바랍니다!' },
@@ -11,7 +10,7 @@ const DEFAULT_CHECKOUT_OPTIONS = [
     { id: '4', emoji: '☕', label: '스처쌤 만남', recommendTitle: '커피챗 완료', recommendText: '유익한 대화의 시간이었기를 진심으로 바래요!' }
 ];
 
-const StudentCheckoutSurveyModal = ({ isOpen, onClose, onConfirmCheckout, user, locationName }) => {
+const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySkipped, user, locationName }) => {
     const [mode, setMode] = useState('SURVEY'); // 'SURVEY' | 'FEEDBACK_QA' | 'CHAT_SHOUTOUT' | 'HYBRID'
     const [questionText, setQuestionText] = useState('오늘 센터에서의 시간은 어떠셨나요?');
     const [qaQuestionText, setQaQuestionText] = useState('오늘 센터 이용 소감이나 하고 싶은 말을 남겨주세요!');
@@ -32,12 +31,10 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onConfirmCheckout, user, 
         setChatShoutoutText('');
         const fetchConfig = async () => {
             try {
-                const { data } = await supabase
-                    .from('notices')
-                    .select('content')
-                    .eq('category', 'SYSTEM')
-                    .eq('title', 'CHECKOUT_SURVEY_CONFIG')
-                    .maybeSingle();
+                const configs = await requestSupabaseRest(
+                    'notices?select=content&category=eq.SYSTEM&title=eq.CHECKOUT_SURVEY_CONFIG&limit=1'
+                );
+                const data = configs?.[0];
 
                 if (data?.content) {
                     const parsed = JSON.parse(data.content);
@@ -93,17 +90,23 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onConfirmCheckout, user, 
                 textAns = chatShoutoutText.trim();
             }
 
+            const userId = user?.id || user?.userId || null;
+
             // Save to checkin_surveys with survey_type = 'CHECKOUT'
-            await supabase.from('checkin_surveys').insert({
-                user_id: user?.id || null,
+            await requestSupabaseRest('checkin_surveys', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                user_id: userId,
                 survey_type: 'CHECKOUT',
                 selections: finalSelections,
                 text_answer: textAns,
                 mode: mode,
                 created_at: new Date().toISOString()
+                })
             });
 
-            // Format survey response text for visit_notes and LINE notification
+            // Format survey response text for the checkout notification.
             let surveySummaryText = '';
             if (finalSelections.length > 0) {
                 surveySummaryText = finalSelections.join(', ');
@@ -115,40 +118,29 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onConfirmCheckout, user, 
             // Auto-post to live chat unconditionally for shoutout/hybrid modes
             if (textAns && (mode === 'CHAT_SHOUTOUT' || mode === 'HYBRID')) {
                 const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-                const validUserId = (user?.id && uuidRegex.test(user.id)) ? user.id : null;
+                const validUserId = (userId && uuidRegex.test(userId)) ? userId : null;
                 const centerCode = (locationName && locationName.includes('이높')) ? '이높플레이스' : '하이픈';
                 
-                await supabase.from('center_daily_chats').insert({
+                await requestSupabaseRest('center_daily_chats', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
                     center_code: centerCode,
-                    user_id: validUserId,
+                    user_id: validUserId || userId,
                     user_name: user?.name || '익명',
                     user_avatar: user?.profile_image_url || null,
                     school_name: user?.school || null,
                     message: `[CHECK-OUT] ${textAns}`
+                    })
                 });
             }
 
-            // Send LINE/Discord Notification
-            try {
-                sendCheckoutNotification({
-                    userName: user?.name || '학생',
-                    schoolName: user?.school || '',
-                    locationName: locationName || '하이픈',
-                    feedbackText: surveySummaryText || '퇴실 완료'
-                });
-            } catch (notifErr) {
-                console.error('Checkout notification error:', notifErr);
-            }
-
-            // Execute actual checkout logic callback
-            if (onConfirmCheckout) {
-                await onConfirmCheckout(surveySummaryText);
-            }
+            await onSurveySaved?.(surveySummaryText);
         } catch (err) {
             console.error('Checkout survey save error:', err);
-            if (onConfirmCheckout) {
-                await onConfirmCheckout();
-            }
+            // The visitor has already checked out. If the optional survey fails,
+            // complete the flow with the basic checkout notification instead.
+            await onSurveySkipped?.();
         } finally {
             setIsSubmitting(false);
             onClose();
@@ -167,8 +159,8 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onConfirmCheckout, user, 
                     {/* Header */}
                     <div className="bg-gradient-to-r from-emerald-600 to-teal-600 p-6 text-white relative shrink-0">
                         <button
-                            onClick={() => {
-                                if (onConfirmCheckout) onConfirmCheckout();
+                            onClick={async () => {
+                                await onSurveySkipped?.();
                                 onClose();
                             }}
                             className="absolute top-5 right-5 w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center transition-all"
@@ -179,7 +171,7 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onConfirmCheckout, user, 
                             <HeartHandshake size={14} /> 퇴실 설문 & 소감
                         </div>
                         <h2 className="text-xl md:text-2xl font-black tracking-tight leading-snug">
-                            오늘도 수고 많으셨습니다! 👋
+                            조만간 또 만나요🖐️
                         </h2>
                         <p className="text-emerald-100 text-xs md:text-sm mt-1 font-medium">
                             {user?.name || '학생'}님, 퇴실 전 오늘 센터 이용 소감을 들려주세요.
@@ -305,8 +297,8 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onConfirmCheckout, user, 
                     <div className="p-5 border-t border-slate-100 bg-slate-50/50 flex items-center justify-between shrink-0">
                         <button
                             type="button"
-                            onClick={() => {
-                                if (onConfirmCheckout) onConfirmCheckout();
+                            onClick={async () => {
+                                await onSurveySkipped?.();
                                 onClose();
                             }}
                             className="px-4 py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 transition-colors"

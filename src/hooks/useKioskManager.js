@@ -3,14 +3,23 @@ import { supabase } from '../supabaseClient';
 import { isConsecutiveWorkingDay } from '../utils/analyticsUtils';
 import confetti from 'canvas-confetti';
 import { TERMS_VERSION } from '../constants/appConstants';
+import { areExternalNotificationsMuted, dispatchServerNotification, dispatchVisitSlackAlert, serverIntegrationsEnabled } from '../utils/serverIntegration';
+import { getTodayVisitState, recordVisitEvent } from '../utils/visitLifecycle';
 
 const sendRealtimeNotification = async (user, type, location, metadata = {}) => {
-    let lineToken = localStorage.getItem('line_channel_access_token');
-    let lineGroupId = localStorage.getItem('line_group_id');
-    let gsWebhookUrl = localStorage.getItem('gs_webhook_url');
-    let discordWebhookUrl = localStorage.getItem('discord_webhook_url');
+    if (areExternalNotificationsMuted()) return { muted: true };
+    let lineToken = '';
+    let lineGroupId = '';
+    let gsWebhookUrl = '';
+    let discordWebhookUrl = '';
+    let lineNotificationsEnabled = localStorage.getItem('line_notifications_enabled') !== 'false';
 
-    try {
+    if (!serverIntegrationsEnabled()) {
+        lineToken = localStorage.getItem('line_channel_access_token') || '';
+        lineGroupId = localStorage.getItem('line_group_id') || '';
+        gsWebhookUrl = localStorage.getItem('gs_webhook_url') || '';
+        discordWebhookUrl = localStorage.getItem('discord_webhook_url') || '';
+        try {
         const { data: settings } = await supabase.from('global_settings').select('*');
         if (settings && settings.length > 0) {
             settings.forEach(s => {
@@ -32,8 +41,23 @@ const sendRealtimeNotification = async (user, type, location, metadata = {}) => 
                 }
             });
         }
-    } catch (e) {
+        } catch (e) {
         console.error("Failed to fetch latest global_settings for realtime notification:", e);
+        }
+    }
+
+    try {
+        const { data: lineSetting } = await supabase
+            .from('global_settings')
+            .select('value')
+            .eq('key', 'line_notifications_enabled')
+            .maybeSingle();
+        if (lineSetting?.value !== undefined) {
+            lineNotificationsEnabled = lineSetting.value !== 'false';
+            localStorage.setItem('line_notifications_enabled', String(lineNotificationsEnabled));
+        }
+    } catch (error) {
+        console.error('Failed to load LINE notification setting:', error);
     }
 
     // 0. Check if it is Haifn branch to prevent LINE usage on ENOUGH_PLACE
@@ -102,18 +126,38 @@ const sendRealtimeNotification = async (user, type, location, metadata = {}) => 
     } else if (type === 'CHECKOUT') {
         const isGuest = user.user_group === '게스트' || user.name?.includes('(guest)');
         const durationText = metadata.duration ? `\n🕑 ${metadata.duration} 이용` : '';
+        const purposeText = metadata.purpose
+            ? `\n▪ ${metadata.purpose.split(', ').join('\n▪ ')}`
+            : '';
         if (isGuest) {
             const cleanName = user.name.replace('(guest)', '').trim();
-            const cleanSchool = user.school || '-';
-            message = `[GUEST CHECK-OUT]\n👋 ${cleanName}(${cleanSchool})님이 ${location.name}에서 나갔어요${durationText}`;
+            message = `[GUEST CHECK-OUT]\n💙 ${cleanName}님이 ${location.name}에서 퇴실했어요 (${timeStr})${durationText}${purposeText}`;
         } else {
-            const purposeText = metadata.purpose 
-                ? `\n▪ ${metadata.purpose.split(', ').join('\n▪ ')}` 
-                : '';
-            message = `[CHECK-OUT]\n💙 ${user.name}님이 ${location.name}에서 나갔어요 (${timeStr})${durationText}${purposeText}`;
+            message = `[CHECK-OUT]\n💙 ${user.name}님이 ${location.name}에서 퇴실했어요 (${timeStr})${durationText}${purposeText}`;
         }
     } else {
         message = `🔔 [이동] ${user.name}님이 ${location.name}에 이동했습니다. (${timeStr})`;
+    }
+
+    if (serverIntegrationsEnabled()) {
+        try {
+            await dispatchServerNotification({
+                message,
+                sendLine: lineNotificationsEnabled && (type === 'CHECKIN' || type === 'CHECKOUT') && isHaifnBranch,
+                sendSlack: false,
+                lineTarget: 'haifn',
+            });
+        } catch (error) {
+            console.error('Server notification dispatch failed:', error);
+        }
+        if (isHaifnBranch) {
+            await dispatchVisitSlackAlert({ message, userId: user.id, eventType: type, locationName: location?.name || '' });
+        }
+        return;
+    }
+
+    if (isHaifnBranch) {
+        await dispatchVisitSlackAlert({ message, userId: user.id, eventType: type, locationName: location?.name || '' });
     }
 
     console.log("sendRealtimeNotification diagnostic:", {
@@ -139,7 +183,7 @@ const sendRealtimeNotification = async (user, type, location, metadata = {}) => 
     }
 
     // 2. Send LINE Message via Google Apps Script Webhook (For CHECKIN & CHECKOUT at Haifn branch)
-    if ((type === 'CHECKIN' || type === 'CHECKOUT') && lineToken && lineGroupId && gsWebhookUrl && isHaifnBranch) {
+    if (lineNotificationsEnabled && (type === 'CHECKIN' || type === 'CHECKOUT') && lineToken && lineGroupId && gsWebhookUrl && isHaifnBranch) {
         try {
             await fetch(gsWebhookUrl, {
                 method: 'POST',
@@ -314,31 +358,14 @@ export const useKioskManager = (navigate) => {
         setStatus('LOADING');
 
         try {
-            // A. Determine next log type (In/Move/Out)
-            const { data: lastLogs } = await supabase
-                .from('logs')
-                .select('*')
-                .eq('user_id', user.id)
-                .order('created_at', { ascending: false })
-                .limit(1);
-
+            // A. Use the same visit state as QR and mobile screens so a late
+            // scan after 22:00 cannot be interpreted as a new check-in.
+            const visitState = await getTodayVisitState(user.id);
             let nextType = 'CHECKIN';
-            if (lastLogs && lastLogs.length > 0) {
-                const lastLog = lastLogs[0];
-                const isToday = new Date(lastLog.created_at).toDateString() === new Date().toDateString();
-
-                if (!isToday) {
-                    // If the last log is not from today, this is their first scan of the day, so it MUST be a CHECKIN
-                    nextType = 'CHECKIN';
-                } else if (lastLog.type === 'CHECKOUT') {
-                    nextType = 'CHECKIN';
-                } else {
-                    if (lastLog.location_id === selectedLocation.id) {
-                        nextType = 'CHECKOUT';
-                    } else {
-                        nextType = 'MOVE';
-                    }
-                }
+            if (visitState.status === 'AUTO_CHECKED_OUT') {
+                nextType = 'CHECKOUT';
+            } else if (visitState.status === 'ACTIVE') {
+                nextType = visitState.locationId === selectedLocation.id ? 'CHECKOUT' : 'MOVE';
             }
 
             // B. Stats Calculation (only on CHECKIN)
@@ -465,14 +492,15 @@ export const useKioskManager = (navigate) => {
                 }
             }
 
-            // C. Insert Log
-            const { error: insertError } = await supabase.from('logs').insert([{
-                user_id: user.id,
-                location_id: selectedLocation.id,
-                type: nextType
-            }]);
-
-            if (insertError) throw insertError;
+            // C. Record one idempotent visit event.
+            const visitWrite = await recordVisitEvent({
+                userId: user.id,
+                locationId: selectedLocation.id,
+                type: nextType,
+            });
+            if (!['CREATED', 'RECONCILED'].includes(visitWrite.outcome)) {
+                throw new Error('이미 처리된 방문 상태입니다. 화면을 다시 확인해주세요.');
+            }
 
             // Send real-time notification (Delay for checkin-survey or checkout-purpose)
             const shouldDelayNotification = nextType === 'CHECKOUT' || (nextType === 'CHECKIN' && isHaifnBranch);
@@ -489,32 +517,13 @@ export const useKioskManager = (navigate) => {
                 }]);
             }
 
-            // E. Haifn Point Logic (1 per day for CHECKIN)
-            let earnedCheckinMsg = '';
-            if (nextType === 'CHECKIN') {
-                try {
-                    const { data: existingPoints } = await supabase
-                        .from('haifn_transactions')
-                        .select('id')
-                        .eq('user_id', user.id)
-                        .eq('source_description', '공간 방문 (1일 1회)')
-                        .gte('created_at', kstStartISO)
-                        .lte('created_at', kstEndISO)
-                        .limit(1);
-
-                    if (!existingPoints || existingPoints.length === 0) {
-                        await supabase.from('haifn_transactions').insert([{
-                            user_id: user.id,
-                            amount: 1,
-                            transaction_type: 'EARN',
-                            source_description: '공간 방문 (1일 1회)'
-                        }]);
-                        earnedCheckinMsg = ' (+1 하이픈)';
-                    }
-                } catch (err) {
-                    console.error('Failed to grant checkin haifn', err);
-                }
-            }
+            // Point settlement is centralized in recordVisitEvent so QR,
+            // admin, guest and kiosk visits all use the same rules.
+            const pointSettlement = visitWrite.pointSettlement;
+            const earnedCheckinMsg = nextType === 'CHECKIN'
+                && pointSettlement?.adjustments?.VISIT?.delta > 0
+                ? ' (+1 하이픈)'
+                : '';
 
             // D. Set Feedback Content
             let msg = `${user.name}님 반가워요 👋`;
@@ -527,55 +536,13 @@ export const useKioskManager = (navigate) => {
                 sub = '이동 완료';
                 color = 'bg-blue-600';
             } else if (nextType === 'CHECKOUT') {
-                // 1-Hour Stay Check (KST base)
-                let earnedMsg = '';
-                try {
-                    const { data: firstCheckin } = await supabase
-                        .from('logs')
-                        .select('created_at')
-                        .eq('user_id', user.id)
-                        .eq('type', 'CHECKIN')
-                        .gte('created_at', kstStartISO)
-                        .lte('created_at', kstEndISO)
-                        .order('created_at', { ascending: true })
-                        .limit(1);
-
-                    if (firstCheckin && firstCheckin.length > 0) {
-                        const checkinTime = new Date(firstCheckin[0].created_at).getTime();
-                        const checkoutTime = new Date().getTime();
-                        const durationHours = (checkoutTime - checkinTime) / (1000 * 60 * 60);
-
-                        // Calculate stay duration text: X시간 Y분
-                        const durationMinutes = Math.max(1, Math.floor((checkoutTime - checkinTime) / (1000 * 60)));
-                        const hours = Math.floor(durationMinutes / 60);
-                        const mins = durationMinutes % 60;
-                        const durationText = hours > 0 ? `${hours}시간 ${mins}분` : `${mins}분`;
-                        setCheckoutDuration(durationText);
-
-                        if (durationHours >= 1) {
-                            const { data: existingPoints } = await supabase
-                                .from('haifn_transactions')
-                                .select('id')
-                                .eq('user_id', user.id)
-                                .eq('source_description', '공간 체류 (1시간 이상)')
-                                .gte('created_at', kstStartISO)
-                                .lte('created_at', kstEndISO)
-                                .limit(1);
-
-                            if (!existingPoints || existingPoints.length === 0) {
-                                await supabase.from('haifn_transactions').insert([{
-                                    user_id: user.id,
-                                    amount: 1,
-                                    transaction_type: 'EARN',
-                                    source_description: '공간 체류 (1시간 이상)'
-                                }]);
-                                earnedMsg = '🎉 1시간 이상 체류하여 1 하이픈이 적립되었습니다!';
-                            }
-                        }
-                    }
-                } catch (err) {
-                    console.error('Failed to grant checkout haifn', err);
-                }
+                const durationMinutes = Math.max(1, pointSettlement?.entitlement?.longestCompletedStayMinutes || 1);
+                const hours = Math.floor(durationMinutes / 60);
+                const mins = durationMinutes % 60;
+                setCheckoutDuration(hours > 0 ? `${hours}시간 ${mins}분` : `${mins}분`);
+                const earnedMsg = pointSettlement?.adjustments?.STAY?.delta > 0
+                    ? '🎉 1시간 이상 체류하여 1 하이픈이 적립되었습니다!'
+                    : '';
 
                 // Intercept Checkout to ask for purpose
                 setPendingCheckoutUser(user);

@@ -219,7 +219,7 @@ export const noticesApi = {
             'id', 'created_at', 'send_push', 'joinCount', 'waitlistCount', 
             'responses', 'responseDetails', 'comments', 'author', 'is_joined', 
             'has_applied', 'attendedCount', 'attendanceRate', 'users', 
-            'notice_responses', 'challenge_missions', 'challenge_mission_statuses',
+            'notice_responses', 'challenge_mission_statuses',
             'program_feedback', 'poll_responses', 'my_vote', 'is_attended', 'is_staff', 'user_id'
         ];
 

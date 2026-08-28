@@ -114,9 +114,11 @@ export const useAdminStatus = ({ users, locations, locationGroups = [], zoneStat
             logsByUser[key].push(log);
         });
 
-        const activeUserIds = Object.keys(currentLocations).filter(uid =>
-            currentLocations[uid]?.locId === location.id && (!uid || !adminIdsSet.has(uid))
-        );
+        const activeUserIds = Object.keys(currentLocations).filter(uid => {
+            const locationInfo = currentLocations[uid];
+            const isGuest = locationInfo?.isGuest || uid.startsWith('guest_');
+            return locationInfo?.locId === location.id && (isGuest || !adminIdsSet.has(uid));
+        });
 
         const combinedUserKeys = Array.from(new Set([...activeUserIds, ...Object.keys(logsByUser)]));
 
@@ -124,54 +126,49 @@ export const useAdminStatus = ({ users, locations, locationGroups = [], zoneStat
             const uLogs = logsByUser[key] || [];
             const sortedAsc = [...uLogs].sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
             const firstLog = sortedAsc[0];
-
+            const locationInfo = currentLocations[key];
             const userObj = users.find(u => u.id === key);
-            const isGuest = userObj?.user_group === '게스트' || key.startsWith('guest_') || (firstLog && !firstLog.user_id);
-
+            const isGuest = locationInfo?.isGuest || userObj?.user_group === '게스트' || key.startsWith('guest_') || (firstLog && !firstLog.user_id);
             const userAllLogsToday = allLogs.filter(l => (l.user_id === key || `guest_${l.id}` === key) && new Date(l.created_at) >= todayStart);
             const checkOutLog = userAllLogsToday.slice().reverse().find(l => l.type === 'CHECKOUT') || uLogs.find(l => l.type === 'CHECKOUT');
+            // Current occupancy is the only source of truth for the active
+            // badge. Historical rows are shown for context only.
+            const isActive = locationInfo?.locId === location.id;
 
             if (isGuest) {
-                const rawGuestName = userObj?.name || (firstLog && firstLog.metadata?.guest_name) || '게스트';
+                const rawGuestName = userObj?.name || locationInfo?.guestName || '게스트';
                 const cleanGuestName = rawGuestName
                     .replace('(guest)', '')
                     .replace(/@/g, '')
                     .replace(/\(guest\)/gi, '')
                     .replace(/\(게스트\)/gi, '')
                     .trim();
-                const guestSchool = userObj?.school || (firstLog && firstLog.metadata?.guest_school) || '-';
-                const locId = currentLocations[key]?.locId;
-                const isActive = locId === location.id || (!checkOutLog && firstLog?.location_id === location.id);
-
                 return {
                     id: key,
                     name: cleanGuestName || '게스트',
-                    school: guestSchool,
+                    school: userObj?.school || locationInfo?.guestSchool || '-',
                     user_group: '게스트',
                     isActive,
-                    checkInTime: firstLog ? firstLog.created_at : (currentLocations[key]?.checkInTime || null),
-                    checkOutTime: checkOutLog ? checkOutLog.created_at : null
+                    checkInTime: firstLog?.created_at || locationInfo?.checkInTime || null,
+                    checkOutTime: checkOutLog?.created_at || null
                 };
             } else {
                 if (!userObj) return null;
 
-                const locId = currentLocations[key]?.locId;
-                const isActive = locId === location.id;
-                const firstLogAtLoc = uLogs.find(log => log.type === 'CHECKIN' || log.type === 'MOVE');
-
                 return {
                     ...userObj,
                     isActive,
-                    checkInTime: firstLogAtLoc ? firstLogAtLoc.created_at : (currentLocations[key]?.checkInTime || null),
-                    checkOutTime: checkOutLog ? checkOutLog.created_at : null
+                    checkInTime: sortedAsc.find(log => log.type === 'CHECKIN' || log.type === 'MOVE')?.created_at || locationInfo?.checkInTime || null,
+                    checkOutTime: checkOutLog?.created_at || null
                 };
             }
-        }).filter(Boolean)
-        .sort((a, b) => {
-            if (a.isActive && !b.isActive) return -1;
-            if (!a.isActive && b.isActive) return 1;
-            return new Date(b.checkInTime) - new Date(a.checkInTime);
-        });
+        })
+            .filter(Boolean)
+            .sort((a, b) => {
+                if (a.isActive && !b.isActive) return -1;
+                if (!a.isActive && b.isActive) return 1;
+                return new Date(b.checkInTime) - new Date(a.checkInTime);
+            });
 
         setZoneDetailModal({
             isOpen: true,

@@ -10,7 +10,7 @@ const UserAvatar = ({ user, size = "w-8 h-8", textSize = "text-xs" }) => {
                 src={user.profile_image_url} 
                 alt="Profile" 
                 onError={() => setImgError(true)}
-                className={`${size} rounded-full object-cover border border-gray-100 shadow-sm`} 
+                className={`${size} aspect-square shrink-0 block rounded-full object-cover border border-gray-100 shadow-sm`}
             />
         );
     }
@@ -18,7 +18,7 @@ const UserAvatar = ({ user, size = "w-8 h-8", textSize = "text-xs" }) => {
     const initial = user?.name?.[0] || '';
 
     return (
-        <div className={`${size} rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 shadow-sm overflow-hidden`}>
+        <div className={`${size} aspect-square shrink-0 rounded-full bg-gray-100 flex items-center justify-center border border-gray-200 shadow-sm overflow-hidden`}>
             {initial ? (
                 <span className={`${textSize} font-bold text-gray-400`}>{initial}</span>
             ) : (

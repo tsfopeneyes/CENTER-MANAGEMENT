@@ -11,6 +11,7 @@ const INITIAL_NOTICE_STATE = {
     category: CATEGORIES.NOTICE,
     is_private: false,
     is_challenge: false,
+    challenge_has_time: false,
     challenge_missions: [],
     challenge_success_message: '',
     challenge_show_hyphen_btn: false,
@@ -94,7 +95,26 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
         }
         
         if (mode === CATEGORIES.PROGRAM) {
-            if (formData.is_recruiting) {
+            if (formData.is_challenge) {
+                // 챌린지 프로그램은 모집 여부와 관계없이 시작일/종료일을 사용합니다.
+                const startDate = formData.program_start_date || formData.program_date;
+                const endDate = formData.program_end_date;
+
+                if (!startDate) {
+                    return { isValid: false, message: '챌린지 시작일을 선택해주세요.' };
+                }
+                if (!endDate) {
+                    return { isValid: false, message: '챌린지 종료일을 선택해주세요.' };
+                }
+                if (formData.challenge_has_time) {
+                    if (!formData.program_date) {
+                        return { isValid: false, message: '챌린지 시작 시간을 선택해주세요.' };
+                    }
+                    if (!formData.program_duration?.trim()) {
+                        return { isValid: false, message: '챌린지 소요 시간을 입력해주세요.' };
+                    }
+                }
+            } else if (formData.is_recruiting) {
                 // 신청 프로그램
                 if (!formData.program_date) {
                     return { isValid: false, message: '프로그램 날짜를 선택해주세요.' };
@@ -115,7 +135,7 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
                 }
             }
 
-            if (!formData.program_duration?.trim()) {
+            if (!formData.is_challenge && !formData.program_duration?.trim()) {
                 return { isValid: false, message: '소요 시간을 입력해주세요.' };
             }
             if (!formData.program_location?.trim()) {

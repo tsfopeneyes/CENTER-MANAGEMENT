@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { ZoomIn, X, Calendar as CalendarIcon, User, Trash2, MapPin, Users, Upload, Clock, CheckCircle, Check, Sparkles, XCircle, ExternalLink, Dices, RefreshCw, MessageSquare, Eye } from 'lucide-react';
+import { ZoomIn, X, Calendar as CalendarIcon, User, Trash2, MapPin, Users, Upload, Clock, CheckCircle, Check, Sparkles, XCircle, ExternalLink, Dices, RefreshCw, MessageSquare, Eye, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../supabaseClient';
 import { noticesApi } from '../../api/noticesApi';
@@ -43,7 +43,9 @@ const seededShuffle = (array, seed) => {
 import ProgramFeedbackModal from './modals/ProgramFeedbackModal';
 import AdminFeedbackListModal from '../admin/board/components/modals/AdminFeedbackListModal';
 
-const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpersonating = false, responses, responseDetails = {}, onResponse, onRefresh, comments, newComment, setNewComment, onPostComment, onDeleteComment, onUpdate, onDelete, onViewParticipants, onRegisterRegularUser }) => {
+const NoticeModal = ({
+    notice, context, onClose, user, fromAdmin = false, isImpersonating = false, responses, responseDetails = {}, onResponse, onRefresh, comments, newComment, setNewComment, onPostComment, onDeleteComment, onUpdate, onDelete, onViewParticipants, onRegisterRegularUser, tutorialMode = false, tutorialStep = '', tutorialOpenCardsTotal = 0, tutorialOpenCardIndex = 0, tutorialChallengeCardsTotal = 0, tutorialChallengeCardIndex = 0, onTutorialAction, onTutorialReaction, onTutorialComment
+}) => {
     const [isEditing, setIsEditing] = useState(false);
     const [editedNotice, setEditedNotice] = useState({ ...notice });
     const [zoomedImage, setZoomedImage] = useState(null);
@@ -52,6 +54,9 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
     const hostRef = React.useRef(null);
     const [activeTab, setActiveTab] = useState('intro');
     const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
+    const [tutorialReactionEmoji, setTutorialReactionEmoji] = useState(null);
+    const [tutorialComments, setTutorialComments] = useState([]);
+    const [tutorialCommentText, setTutorialCommentText] = useState('');
 
     useEffect(() => {
         const questions = notice?.guest_properties?.random_questions ?? notice?.random_questions;
@@ -69,8 +74,17 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
 
     // 이용자 열람 시 조회수 세션 단위 집계 및 실시간 업데이트
     useEffect(() => {
-        if (!notice?.id) return;
-        const sessionKey = `viewed_notice_${notice.id}`;
+        if (!notice?.id || !user?.id || fromAdmin || isImpersonating || tutorialMode) return;
+
+        const viewerRole = String(user.role || '').toLowerCase();
+        const viewerGroup = String(user.user_group || '').toLowerCase();
+        const isInternalViewer = ['admin', 'master', 'staff'].includes(viewerRole)
+            || viewerGroup === 'staff'
+            || viewerGroup === '관리자';
+
+        if (isInternalViewer) return;
+
+        const sessionKey = `viewed_notice_${notice.id}_${user.id}`;
         const alreadyViewed = sessionStorage.getItem(sessionKey);
         
         if (!alreadyViewed) {
@@ -83,11 +97,12 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                 }
             }).catch(console.error);
         }
-    }, [notice?.id]);
+    }, [notice?.id, user?.id, user?.role, user?.user_group, fromAdmin, isImpersonating, tutorialMode]);
 
     // Challenge & Modal States
     const [challengeParticipants, setChallengeParticipants] = useState([]);
     const [uploadingMissionId, setUploadingMissionId] = useState(null);
+    const [missionTextInputs, setMissionTextInputs] = useState({});
     const [selectedMissionForDetail, setSelectedMissionForDetail] = useState(null);
     const [showSuccessPopup, setShowSuccessPopup] = useState(false);
     const [selectedParticipantForMissions, setSelectedParticipantForMissions] = useState(null);
@@ -211,11 +226,12 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                 .getPublicUrl(fileName);
 
             const myResponse = responseDetails[notice.id] || {};
-            const currentStatuses = myResponse.challenge_mission_statuses || {};
+            const currentStatuses = { ...(myResponse.challenge_mission_statuses || {}) };
 
             currentStatuses[missionId] = {
                 completed: true,
                 auth_image: publicUrl,
+                auth_type: 'photo',
                 submitted_at: new Date().toISOString()
             };
 
@@ -246,6 +262,51 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
         } catch (err) {
             console.error('Failed to upload mission image:', err);
             alert('인증샷 업로드에 실패했습니다: ' + err.message);
+        } finally {
+            setUploadingMissionId(null);
+        }
+    };
+
+    const handleSubmitMissionText = async (missionId, existingText = '') => {
+        const authText = (missionTextInputs[missionId] ?? existingText).trim();
+        if (!authText) {
+            alert('인증 내용을 입력해주세요.');
+            return;
+        }
+
+        setUploadingMissionId(missionId);
+        try {
+            const myResponse = responseDetails[notice.id] || {};
+            const currentStatuses = { ...(myResponse.challenge_mission_statuses || {}) };
+            currentStatuses[missionId] = {
+                completed: true,
+                auth_text: authText,
+                auth_type: 'text',
+                submitted_at: new Date().toISOString()
+            };
+
+            const { error: updateErr } = await supabase
+                .from('notice_responses')
+                .update({ challenge_mission_statuses: currentStatuses })
+                .eq('notice_id', notice.id)
+                .eq('user_id', user.id);
+
+            if (updateErr) throw updateErr;
+
+            alert('텍스트 인증이 등록되었습니다!');
+            const totalMissions = notice.challenge_missions?.length || 0;
+            const isAllCompleted = totalMissions > 0 && notice.challenge_missions.every(m => currentStatuses[m.id]?.completed);
+            if (isAllCompleted) {
+                setTimeout(() => {
+                    confetti({ particleCount: 150, spread: 80, origin: { y: 0.6 } });
+                    setShowSuccessPopup(true);
+                }, 500);
+            }
+            if (onRefresh) onRefresh();
+            setSelectedMissionForDetail(null);
+        } catch (err) {
+            console.error('Failed to submit mission text:', err);
+            alert('텍스트 인증 등록에 실패했습니다: ' + err.message);
         } finally {
             setUploadingMissionId(null);
         }
@@ -286,12 +347,58 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
     const {
         joinCount, waitlistCount,
         timeLeft,
-        reactions, handleToggleReaction,
+        reactions: liveReactions, handleToggleReaction: handleLiveToggleReaction,
         userVotes, pendingVotes,
         isSubmittingPoll, pollResults,
         pollTotalVotes, pollTimeLeft, isPollExpired,
         handleOptionClick, handleSubmitVote,
     } = useNoticeModal({ notice, user, context, responses });
+
+    const isTutorialSocial = tutorialMode && ['noticeRead', 'noticeComment', 'noticeCommentResult'].includes(tutorialStep);
+    const isTutorialOpenDetail = tutorialMode && tutorialStep === 'openDetail';
+    const isTutorialChallengeDetail = tutorialMode && tutorialStep === 'challengeDetail';
+    const tutorialOpenIsLast = tutorialOpenCardsTotal > 0 && tutorialOpenCardIndex >= tutorialOpenCardsTotal - 1;
+    const tutorialChallengeIsLast = tutorialChallengeCardsTotal > 0 && tutorialChallengeCardIndex >= tutorialChallengeCardsTotal - 1;
+    const tutorialOpenAction = isTutorialOpenDetail && (tutorialOpenIsLast ? '챌린지로 이동' : '다음 오픈 프로그램 보기');
+    const tutorialOpenActionId = isTutorialOpenDetail ? (tutorialOpenIsLast ? 'show-challenge' : 'next-open-card') : null;
+    const tutorialChallengeAction = null;
+    const tutorialChallengeActionId = null;
+
+    const reactions = isTutorialSocial && tutorialReactionEmoji
+        ? [
+            ...(liveReactions || []),
+            { notice_id: notice.id, user_id: user?.id, emoji: tutorialReactionEmoji, users: { name: user?.name, school: user?.school } }
+        ]
+        : (liveReactions || []);
+    const handleDisplayedReaction = (emoji) => {
+        if (!isTutorialSocial) {
+            handleLiveToggleReaction(emoji);
+            return;
+        }
+        setTutorialReactionEmoji(emoji);
+        onTutorialReaction?.(emoji);
+    };
+    const displayedComments = isTutorialSocial ? [...(comments || []), ...tutorialComments] : (comments || []);
+    const submitDisplayedComment = (event) => {
+        event.preventDefault();
+        if (!isTutorialSocial) {
+            onPostComment(event);
+            return;
+        }
+        const content = tutorialCommentText.trim();
+        if (!content) return;
+        const tutorialComment = {
+            id: `tutorial-comment-${Date.now()}`,
+            user_id: user?.id,
+            content,
+            created_at: new Date().toISOString(),
+            users: { name: user?.name, profile_image_url: user?.profile_image_url, school: user?.school },
+            tutorial: true
+        };
+        setTutorialComments((current) => [...current, tutorialComment]);
+        setTutorialCommentText('');
+        onTutorialComment?.(tutorialComment);
+    };
 
     const [groupParticipants, setGroupParticipants] = useState([]);
     const [showAdminTeamsModal, setShowAdminTeamsModal] = useState(false);
@@ -477,7 +584,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                 noticeId={notice.id}
             />
 
-            <div className="flex-1 overflow-y-auto scrollbar-hide bg-white">
+            <div data-tour={tutorialMode ? 'tutorial-program-detail' : undefined} className="flex-1 overflow-y-auto scrollbar-hide bg-white">
                 <div className="px-6 pt-6 pb-1">
                     {!isEditing && <NoticeCarousel allImages={allImages} />}
 
@@ -498,7 +605,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                     ) : (
                         <>
                             <div className="flex items-center justify-between gap-3 mb-4">
-                                <h1 className="text-2xl font-bold text-tossGrey900 leading-tight">{notice.title}</h1>
+                                <h1 className="text-2xl font-bold text-tossGrey900 leading-tight">{tutorialMode && notice.is_challenge ? 'HAIFN CHALLENGE' : notice.title}</h1>
                                 {(fromAdmin || user?.role === 'admin' || user?.role === 'master' || user?.role === 'staff' || user?.user_group === 'STAFF' || user?.user_group === '관리자') && (
                                     <span className="shrink-0 inline-flex items-center gap-1.5 text-xs font-extrabold text-gray-600 bg-gray-100 px-3 py-1.5 rounded-full">
                                         <Eye size={14} className="text-gray-500" />
@@ -596,7 +703,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                             </div>
                                         )}
                                         {/* Missions List */}
-                                        <div className="mt-8 border-t border-tossGrey100 pt-8">
+                                        <div data-tour={tutorialMode && tutorialStep === 'challengeDetail' ? 'tutorial-challenge-missions' : undefined} className={`mt-8 border-t border-tossGrey100 pt-8 ${tutorialMode && tutorialStep === 'challengeDetail' ? '-mx-6 w-[calc(100%+3rem)] overflow-hidden rounded-3xl' : ''}`}>
                                             <div className="flex items-center gap-2 mb-4">
                                                 <div className="w-[3px] h-[14px] bg-tossBlue rounded-full"></div>
                                                 <h3 className="font-extrabold text-[15px] leading-none text-tossGrey900">
@@ -614,7 +721,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                                         return (
                                                             <div 
                                                                 key={mission.id}
-                                                                onClick={() => setSelectedMissionForDetail(mission)}
+                                                                onClick={() => { setSelectedMissionForDetail(mission); if (tutorialMode) onTutorialAction?.('mission-opened'); }}
                                                                 className="flex flex-col items-center cursor-pointer select-none group flex-1"
                                                             >
                                                                 {/* Icon Circle */}
@@ -656,11 +763,12 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                         const mStatus = statuses[mission.id] || {};
                                         const isDone = mStatus.completed;
                                         const hasImg = !!mStatus.auth_image;
+                                        const isTextVerification = mission.verification_type === 'text';
                                         const hasJoined = responses[notice.id] === 'JOIN';
 
                                         return (
                                             <div className="fixed inset-0 z-[120] bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200" onClick={() => setSelectedMissionForDetail(null)}>
-                                                <div className="bg-white rounded-3xl w-full max-w-sm overflow-hidden relative shadow-[0_20px_50px_rgba(0,0,0,0.15)] animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+                                                <div data-tour={tutorialMode ? 'tutorial-challenge-mission-detail' : undefined} className="bg-white rounded-3xl w-full max-w-sm overflow-hidden relative shadow-[0_20px_50px_rgba(0,0,0,0.15)] animate-in fade-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
                                                     {/* Card Header Banner */}
                                                     <div className="bg-gradient-to-r from-blue-50/70 to-indigo-50/50 px-6 py-4 border-b border-tossGrey100 flex items-center justify-between">
                                                         <div className="flex items-center gap-2">
@@ -704,8 +812,43 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                                             )}
                                                         </div>
                                                     {/* Verification Button */}
-                                                    {hasJoined && (
-                                                        isDone ? (
+                                                    {tutorialMode ? (
+                                                        <button type="button" onClick={() => { setSelectedMissionForDetail(null); onTutorialAction?.('show-content'); }} className="w-full py-4 rounded-2xl bg-tossBlue text-white text-sm font-black">다음 튜토리얼</button>
+                                                    ) : hasJoined && (
+                                                        isTextVerification ? (
+                                                            <div className="space-y-3">
+                                                                <div>
+                                                                    <label className="text-xs font-bold text-tossGrey500 block mb-2">
+                                                                        {isDone ? '등록한 인증 내용' : '인증 내용'}
+                                                                    </label>
+                                                                    <textarea
+                                                                        value={missionTextInputs[mission.id] ?? mStatus.auth_text ?? ''}
+                                                                        onChange={(e) => setMissionTextInputs(prev => ({
+                                                                            ...prev,
+                                                                            [mission.id]: e.target.value
+                                                                        }))}
+                                                                        rows={5}
+                                                                        maxLength={1000}
+                                                                        placeholder="미션을 수행한 내용을 입력해주세요."
+                                                                        className="w-full px-4 py-3 bg-tossGrey50 border border-tossGrey200 rounded-2xl outline-none resize-none text-sm font-semibold text-tossGrey800 placeholder:text-tossGrey400 focus:border-tossBlue focus:bg-white transition-all"
+                                                                    />
+                                                                    <p className="mt-1 text-right text-[10px] font-semibold text-tossGrey400">
+                                                                        {(missionTextInputs[mission.id] ?? mStatus.auth_text ?? '').length}/1000
+                                                                    </p>
+                                                                </div>
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => handleSubmitMissionText(mission.id, mStatus.auth_text || '')}
+                                                                    disabled={uploadingMissionId === mission.id}
+                                                                    className="w-full py-4 bg-tossBlue text-white font-black text-center rounded-2xl text-sm transition-all hover:bg-blue-600 active:scale-[0.98] disabled:bg-tossGrey300 flex items-center justify-center gap-1.5"
+                                                                >
+                                                                    <FileText size={16} />
+                                                                    {uploadingMissionId === mission.id
+                                                                        ? '등록 중...'
+                                                                        : (isDone ? '내용 수정하기' : '텍스트로 인증하기')}
+                                                                </button>
+                                                            </div>
+                                                        ) : isDone ? (
                                                             <div className="flex gap-2">
                                                                 <a
                                                                     href={mStatus.auth_image}
@@ -987,20 +1130,62 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                      )}
                  </div>
 
+                  {tutorialMode && tutorialStep === 'noticeRead' && (
+                      <div className="mx-4 my-4 rounded-2xl border border-tossBlue/15 bg-tossBlueLight px-4 py-3.5">
+                          <p className="text-sm font-black text-tossGrey900">게시글 내용을 모두 확인했나요?</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-tossGrey600">아래 이모지 버튼을 눌러 원하는 반응을 직접 골라 보세요. 선택한 반응은 튜토리얼 화면에만 표시돼요.</p>
+                      </div>
+                  )}
+
+                  {tutorialMode && tutorialStep === 'programDetail' && (
+                      <div className="mx-4 my-4 rounded-2xl border border-tossBlue/15 bg-tossBlueLight px-4 py-3.5">
+                          <p className="text-sm font-black text-tossGrey900">상세 내용을 충분히 확인해 보세요</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-tossGrey600">소개, 일정, 장소와 정원을 확인한 뒤 화면 아래의 실제 <span className="text-tossBlue">신청하기</span> 버튼을 눌러 보세요. 체험 신청은 저장되지 않아요.</p>
+                      </div>
+                  )}
+
+                  {tutorialMode && tutorialStep === 'programApplied' && (
+                      <div className="mx-4 my-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+                          <p className="text-sm font-black text-emerald-800">신청이 완료된 상태를 확인했어요</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-emerald-700">화면 아래 버튼이 신청 취소로 바뀌었고, 목록 카드와 캘린더에도 신청 상태가 반영돼요.</p>
+                          <button type="button" onClick={() => onTutorialAction?.('show-open')} className="mt-3 w-full rounded-xl bg-emerald-600 py-3 text-xs font-black text-white">오픈 프로그램 알아보기</button>
+                      </div>
+                  )}
+
+                  {tutorialMode && tutorialStep === 'openDetail' && (
+                      <div className="mx-4 my-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-4">
+                          <p className="text-sm font-black text-emerald-800">오픈 프로그램은 신청 없이 참여해요</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-emerald-700">상세 내용과 운영 시간, 장소를 확인한 뒤 해당 시간에 센터에서 바로 참여하면 돼요.</p>
+                          {tutorialOpenActionId ? (
+                              <button type="button" onClick={() => onTutorialAction?.(tutorialOpenActionId)} className="mt-3 w-full rounded-xl bg-emerald-600 py-3 text-xs font-black text-white">
+                                  {tutorialOpenAction}
+                              </button>
+                          ) : null}
+                      </div>
+                  )}
+
+                  {tutorialMode && tutorialStep === 'calendarDetail' && (
+                      <div className="mx-4 my-4 rounded-2xl border border-tossBlue/15 bg-tossBlueLight px-4 py-4">
+                          <p className="text-sm font-black text-tossGrey900">캘린더에서도 같은 상세 내용을 확인할 수 있어요</p>
+                          <p className="mt-1 text-xs font-semibold leading-5 text-tossGrey600">신청한 일정의 시간과 장소를 다시 확인했어요.</p>
+                          <button type="button" onClick={() => onTutorialAction?.('show-haifn')} className="mt-3 w-full rounded-xl bg-tossBlue py-3 text-xs font-black text-white">하이픈 스토어로 이동</button>
+                      </div>
+                  )}
+
                   {/* Slack-style Emoji Reactions (Rendered at the very bottom of post content) */}
-                  <div className="px-4 py-2 mt-2">
+                  <div data-tour={isTutorialSocial ? 'tutorial-notice-reactions' : undefined} className="px-4 py-2 mt-2">
                       <NoticeReactions
                           reactions={reactions}
                           currentUserId={user?.id}
-                          onToggleReaction={handleToggleReaction}
+                          onToggleReaction={handleDisplayedReaction}
                       />
                   </div>
 
                  {/* Comments Section */}
                  <div className="border-t border-tossGrey100 mt-1">
-                     <div className="px-4 py-4 text-sm font-bold text-tossGrey900 border-b border-tossGrey100">댓글 {comments?.length || 0}</div>
-                     {comments?.map(c => (
-                         <div key={c.id} className="px-4 py-4 flex gap-3 text-sm hover:bg-tossGrey50 transition group/notice-comment">
+                     <div className="px-4 py-4 text-sm font-bold text-tossGrey900 border-b border-tossGrey100">댓글 {displayedComments.length}</div>
+                     {displayedComments.map(c => (
+                         <div key={c.id} data-tour={c.tutorial ? 'tutorial-comment-result' : undefined} className="px-4 py-4 flex gap-3 text-sm hover:bg-tossGrey50 transition group/notice-comment">
                              <UserAvatar user={c.users} size="w-8 h-8" />
                              <div className="flex-1">
                                  <div className="flex items-baseline justify-between">
@@ -1008,7 +1193,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                          <span className="font-bold text-tossGrey900">{c.users?.name}</span>
                                          <span className="text-[10px] text-tossGrey400">{new Date(c.created_at).toLocaleDateString()}</span>
                                      </div>
-                                     {c.user_id === user.id && (
+                                     {c.user_id === user.id && !c.tutorial && (
                                          <button onClick={() => onDeleteComment(c.id)} className="p-1 text-tossGrey400 hover:text-tossError transition-colors">
                                              <Trash2 size={14} />
                                          </button>
@@ -1112,6 +1297,12 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                  )}
                              </div>
                          </div>
+                     ) : notice.is_recruiting === false ? (
+                            <div className="p-4">
+                                <div className="w-full rounded-toss-xl bg-tossSuccess/10 py-3.5 text-center text-sm font-black text-tossSuccess">
+                                    신청 없이 참여할 수 있어요!
+                                </div>
+                            </div>
                      ) : isEnded ? (
                             /* 1. 프로그램 종료 상태 (종료 시간 경과 OR 관리자가 수동 종료): 피드백 작성/완료 버튼 노출 */
                             <div className="p-4 flex gap-3">
@@ -1146,6 +1337,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                     </button>
                                 ) : (
                                     <button
+                                        data-tour={tutorialMode ? 'tutorial-program-response' : undefined}
                                         onClick={() => onResponse(notice.id, 'CANCEL')}
                                         className="flex-1 py-3.5 rounded-toss-xl font-bold text-base bg-red-50 text-tossError border border-red-200 hover:bg-red-100 flex items-center justify-center gap-1.5 transition transform active:scale-[0.98] cursor-pointer"
                                     >
@@ -1166,6 +1358,7 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                     </button>
                                 ) : (
                                     <button
+                                        data-tour={tutorialMode ? 'tutorial-program-response' : undefined}
                                         disabled={notice.is_leader_only && !user?.is_leader}
                                         onClick={() => {
                                             onResponse(notice.id, (notice.max_capacity > 0 && joinCount >= notice.max_capacity) ? 'WAITLIST' : 'JOIN');
@@ -1205,14 +1398,21 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
 
              {/* Comment Input for Non-Program Notices */}
              {notice.category !== 'PROGRAM' && (
-                 <div className="p-3 border-t border-tossGrey200 bg-white sticky bottom-0 z-50">
-                     <form onSubmit={(e) => { e.preventDefault(); onPostComment(e); }} className="flex items-center gap-3">
+                 <div data-tour={isTutorialSocial ? 'tutorial-notice-comment-input' : undefined} className="p-3 border-t border-tossGrey200 bg-white sticky bottom-0 z-50">
+                     <form onSubmit={submitDisplayedComment} className="flex items-center gap-3">
                          <UserAvatar user={user} size="w-8 h-8" />
                          <div className="flex-1 bg-tossGrey50 border border-tossGrey200 rounded-toss-xl px-4 py-2 flex items-center">
-                             <input type="text" value={newComment || ''} onChange={(e) => setNewComment(e.target.value)} placeholder="댓글 달기..." className="bg-transparent text-sm w-full outline-none py-1.5 text-tossGrey850" />
-                             {newComment?.trim() && <button type="submit" className="text-tossBlue text-sm font-bold ml-2">게시</button>}
+                             <input
+                                 type="text"
+                                 value={isTutorialSocial ? tutorialCommentText : (newComment || '')}
+                                 onChange={(e) => isTutorialSocial ? setTutorialCommentText(e.target.value) : setNewComment(e.target.value)}
+                                 placeholder="댓글 달기..."
+                                 className="bg-transparent text-sm w-full outline-none py-1.5 text-tossGrey850"
+                             />
+                             {(isTutorialSocial ? tutorialCommentText : newComment)?.trim() && <button type="submit" className="text-tossBlue text-sm font-bold ml-2">게시</button>}
                          </div>
                      </form>
+                     {isTutorialSocial && <p className="mt-2 text-center text-[10px] font-semibold text-tossGrey400">튜토리얼 댓글은 실제 게시글에 저장되지 않아요.</p>}
                  </div>
              )}
 
@@ -1296,9 +1496,10 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                  
                                  <div className="space-y-4">
                                      {notice.challenge_missions?.map((mission, index) => {
-                                         const mStatus = statuses[mission.id] || {};
-                                         const isDone = mStatus.completed;
-                                         const authImg = mStatus.auth_image;
+                                          const mStatus = statuses[mission.id] || {};
+                                          const isDone = mStatus.completed;
+                                          const authImg = mStatus.auth_image;
+                                          const authText = mStatus.auth_text;
                                          
                                          return (
                                              <div key={mission.id || index} className="bg-slate-50/60 border border-slate-200/50 rounded-2xl p-4 space-y-3">
@@ -1313,14 +1514,24 @@ const NoticeModal = ({ notice, context, onClose, user, fromAdmin = false, isImpe
                                                      </span>
                                                  </div>
                                                  
-                                                 {isDone && authImg && (
+                                                  {isDone && authImg && (
                                                      <div className="relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100 max-h-48 flex items-center justify-center cursor-pointer group" onClick={() => setZoomedImage(authImg)}>
                                                          <img src={authImg} alt="" className="max-h-48 w-full object-cover transition-transform duration-300 group-hover:scale-105" />
                                                          <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                                                              <ZoomIn className="text-white shrink-0" size={24} />
                                                          </div>
                                                      </div>
-                                                 )}
+                                                  )}
+                                                  {isDone && authText && (
+                                                      <div className="rounded-xl border border-slate-200 bg-white px-4 py-3">
+                                                          <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-400 mb-2">
+                                                              <FileText size={12} /> 텍스트 인증
+                                                          </div>
+                                                          <p className="text-xs font-semibold text-slate-700 leading-5 whitespace-pre-wrap break-words">
+                                                              {authText}
+                                                          </p>
+                                                      </div>
+                                                  )}
                                              </div>
                                          );
                                      })}

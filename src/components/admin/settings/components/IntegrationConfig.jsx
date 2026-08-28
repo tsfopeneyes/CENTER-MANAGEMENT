@@ -8,6 +8,20 @@ const IntegrationConfig = ({
     setLineChannelAccessToken,
     lineGroupId,
     setLineGroupId,
+    lineVisitNotificationsEnabled,
+    setLineVisitNotificationsEnabled,
+    lineCoffeeChatNotificationsEnabled,
+    setLineCoffeeChatNotificationsEnabled,
+    lineProgramNotificationsEnabled,
+    setLineProgramNotificationsEnabled,
+    slackVisitNotificationsEnabled,
+    setSlackVisitNotificationsEnabled,
+    slackCoffeeChatNotificationsEnabled,
+    setSlackCoffeeChatNotificationsEnabled,
+    slackProgramNotificationsEnabled,
+    setSlackProgramNotificationsEnabled,
+    slackRentalNotificationsEnabled,
+    setSlackRentalNotificationsEnabled,
     discordWebhookUrl,
     setDiscordWebhookUrl,
     kioskMasterPin,
@@ -17,13 +31,56 @@ const IntegrationConfig = ({
     handleSaveIntegrations,
     handleGoogleSheetsBackup
 }) => {
+    const Toggle = ({ enabled, onChange, label }) => (
+        <button
+            type="button"
+            role="switch"
+            aria-label={label}
+            aria-checked={enabled}
+            onClick={() => onChange(!enabled)}
+            className={`relative h-8 w-14 min-w-14 max-w-14 shrink-0 overflow-hidden rounded-full transition-colors ${enabled ? 'bg-[#3182F6]' : 'bg-[#D1D6DB]'}`}
+        >
+            <span
+                className="absolute top-1 h-6 w-6 rounded-full bg-white shadow-sm transition-[left] duration-200"
+                style={{ left: enabled ? '28px' : '4px' }}
+            />
+        </button>
+    );
+
+    const notificationRows = [
+        {
+            label: '입·출입',
+            description: '체크인과 체크아웃 알림',
+            line: [lineVisitNotificationsEnabled, setLineVisitNotificationsEnabled],
+            slack: [slackVisitNotificationsEnabled, setSlackVisitNotificationsEnabled]
+        },
+        {
+            label: '커피챗',
+            description: '학생의 커피챗 신청 알림',
+            line: [lineCoffeeChatNotificationsEnabled, setLineCoffeeChatNotificationsEnabled],
+            slack: [slackCoffeeChatNotificationsEnabled, setSlackCoffeeChatNotificationsEnabled]
+        },
+        {
+            label: '프로그램 신청',
+            description: '회원·비회원의 프로그램 신청 알림',
+            line: [lineProgramNotificationsEnabled, setLineProgramNotificationsEnabled],
+            slack: [slackProgramNotificationsEnabled, setSlackProgramNotificationsEnabled]
+        },
+        {
+            label: '대관 신청',
+            description: '학생의 공간 대관 신청 알림',
+            line: null,
+            slack: [slackRentalNotificationsEnabled, setSlackRentalNotificationsEnabled]
+        }
+    ];
+
     return (
         <div className="space-y-6">
             {/* Header with Save Button */}
             <div className="bg-white rounded-[24px] border border-[#f2f4f6] p-6 shadow-sm flex justify-between items-center">
                 <div className="flex items-center gap-2">
                     <Share2 size={22} className="text-[#3182f6]" />
-                    <div>
+                    <div className="min-w-0">
                         <h3 className="text-lg font-bold text-[#191f28] tracking-tight">외부 서비스 연동</h3>
                         <p className="text-xs text-gray-400 mt-0.5">외부 API 및 보안 마스터 핀을 연동하고 설정합니다.</p>
                     </div>
@@ -69,9 +126,31 @@ const IntegrationConfig = ({
             <div className="bg-white rounded-[24px] border border-[#f2f4f6] p-6 shadow-sm space-y-4">
                 <div className="flex items-center gap-2 text-[#3182f6] font-bold">
                     <Share2 size={20} />
-                    <span className="text-base">실시간 메신저 입실 알림</span>
+                    <span className="text-base">실시간 메신저 알림</span>
                 </div>
-                <p className="text-xs text-gray-400 leading-relaxed -mt-2">학생 입퇴실 기록을 디스코드 또는 라인(LINE) 챗봇을 통해 관리자 및 선생님 단체방에 전달합니다.</p>
+                <p className="text-xs text-gray-400 leading-relaxed -mt-2">입·출입과 주요 신청 내역을 설정한 메신저로 관리자 및 선생님에게 전달합니다.</p>
+
+                <div className="overflow-hidden rounded-2xl border border-[#E5E8EB] bg-[#F8F9FA]">
+                    <div className="grid grid-cols-[minmax(0,1fr)_72px_72px] items-center gap-2 border-b border-[#E5E8EB] bg-white px-4 py-2.5 text-xs font-extrabold text-[#6B7684]">
+                        <span>알림 항목</span>
+                        <span className="text-center">LINE</span>
+                        <span className="text-center">Slack</span>
+                    </div>
+                    {notificationRows.map((row, index) => (
+                        <div key={row.label} className={`grid grid-cols-[minmax(0,1fr)_72px_72px] items-center gap-2 px-4 py-3 ${index < notificationRows.length - 1 ? 'border-b border-[#E5E8EB]' : ''}`}>
+                            <div className="min-w-0">
+                                <p className="text-sm font-bold text-[#191F28]">{row.label}</p>
+                                <p className="mt-0.5 text-xs text-[#6B7684]">{row.description}</p>
+                            </div>
+                            <div className="flex justify-center">
+                                {row.line ? <Toggle enabled={row.line[0]} onChange={row.line[1]} label={`LINE ${row.label} 알림`} /> : <span className="text-xs font-bold text-[#B0B8C1]">—</span>}
+                            </div>
+                            <div className="flex justify-center">
+                                <Toggle enabled={row.slack[0]} onChange={row.slack[1]} label={`Slack ${row.label} 알림`} />
+                            </div>
+                        </div>
+                    ))}
+                </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
                     <div className="md:col-span-2">
@@ -175,7 +254,7 @@ const IntegrationConfig = ({
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-2 pt-1">
+                        <div className="pt-1">
                             <a
                                 href={`https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=HAIFN')}`}
                                 target="_blank"
@@ -185,12 +264,6 @@ const IntegrationConfig = ({
                             >
                                 <span>📥 QR 원본 다운로드</span>
                             </a>
-                            <button
-                                onClick={() => window.open('/checkin?loc=HAIFN', '_blank')}
-                                className="px-3.5 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 text-xs font-bold rounded-xl hover:bg-blue-100 transition inline-flex items-center justify-center gap-1.5 shrink-0"
-                            >
-                                <span>🔗 미리보기</span>
-                            </button>
                         </div>
                     </div>
 
@@ -219,7 +292,7 @@ const IntegrationConfig = ({
                             </div>
                         </div>
 
-                        <div className="flex flex-wrap gap-2 pt-1">
+                        <div className="pt-1">
                             <a
                                 href={`https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=ENOUGH_PLACE')}`}
                                 target="_blank"
@@ -229,12 +302,6 @@ const IntegrationConfig = ({
                             >
                                 <span>📥 QR 원본 다운로드</span>
                             </a>
-                            <button
-                                onClick={() => window.open('/checkin?loc=ENOUGH_PLACE', '_blank')}
-                                className="px-3.5 py-2.5 bg-blue-50 text-blue-600 border border-blue-200 text-xs font-bold rounded-xl hover:bg-blue-100 transition inline-flex items-center justify-center gap-1.5 shrink-0"
-                            >
-                                <span>🔗 미리보기</span>
-                            </button>
                         </div>
                     </div>
                 </div>

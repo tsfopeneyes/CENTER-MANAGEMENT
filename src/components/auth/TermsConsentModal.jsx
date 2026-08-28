@@ -129,18 +129,20 @@ const TermsConsentModal = ({ isOpen, onClose, onAgree, isKiosk = false }) => {
                             <ul className="list-inside list-decimal ml-2 space-y-1">
                                 <li>회원 가입 및 본인 확인</li>
                                 <li>서비스 제공 및 운영 관리</li>
-                                <li>이용 기록 분석 및 서비스 개선</li>
+                                <li>서비스 접속 상태 확인 및 계정 보안</li>
+                                <li>센터 방문·프로그램 참여 기록 분석 및 서비스 개선</li>
                             </ul>
 
                             <p className="font-bold mt-4">제2조 (수집하는 개인정보 항목)</p>
                             <p>① 센터는 다음 개인정보를 수집합니다.</p>
                             <ul className="list-inside list-decimal ml-2 space-y-1">
-                                <li>필수 항목: 이름, 학교, 생년월일, 연락처, 비밀번호.</li>
-                                <li>만 14세 미만 추가 항목: 보호자 이름, 보호자 연락처.</li>
+                                <li>필수 항목: 이름, 성별, 회원 구분(청소년 또는 졸업생), 학교, 생년월일, 연락처, 비밀번호, 학교 스쿨처치 참여 여부.</li>
+                                <li>선택 항목: 출석교회.</li>
+                                <li>만 14세 미만 추가 항목: 보호자 이름, 보호자 연락처, 보호자와의 관계.</li>
                             </ul>
                             <p>② 서비스 이용 과정에서 다음 정보가 자동 수집될 수 있습니다.</p>
                             <ul className="list-inside list-disc ml-2 space-y-1 text-gray-600 mt-1">
-                                <li>접속 로그, IP 주소, 쿠키, 방문 일시 등 서비스 이용 과정에서 생성되는 통신 기록입니다.</li>
+                                <li>최근 웹 접속 일시: 로그인된 이용자가 웹앱을 열 때 갱신되는 마지막 접속 시각입니다. 별도의 웹 접속 이력은 누적하지 않습니다.</li>
                                 <li>서비스 이용 과정에서 프로그램 운영 및 기록을 위하여 촬영된 사진, 영상, 음성 등 활동 기록 자료가 생성될 수 있습니다.</li>
                             </ul>
 
@@ -150,7 +152,7 @@ const TermsConsentModal = ({ isOpen, onClose, onAgree, isKiosk = false }) => {
                             <ul className="list-inside list-decimal ml-2 space-y-1">
                                 <li>계약 관련 기록: 5년</li>
                                 <li>분쟁 처리 기록: 3년</li>
-                                <li>접속 로그, IP 주소 등 서비스 이용 과정에서 생성되는 통신 기록: 3개월</li>
+                                <li>최근 웹 접속 일시: 마지막 접속일로부터 3개월 후 삭제</li>
                             </ul>
 
                             <p className="font-bold mt-4">제4조 (개인정보의 제3자 제공)</p>
@@ -191,13 +193,13 @@ const TermsConsentModal = ({ isOpen, onClose, onAgree, isKiosk = false }) => {
                             <p>센터는 회원 가입 및 서비스 제공을 위하여 다음과 같이 개인정보를 수집·이용합니다.</p>
 
                             <p className="font-bold mt-4 text-[#E63946]">수집 항목</p>
-                            <p>이름, 학교, 생년월일, 연락처, 비밀번호 (만 14세 미만: 보호자 정보 포함)</p>
+                            <p>필수: 이름, 성별, 회원 구분(청소년 또는 졸업생), 학교, 생년월일, 연락처, 비밀번호, 학교 스쿨처치 참여 여부, 최근 웹 접속 일시<br />선택: 출석교회<br />만 14세 미만: 보호자 이름, 보호자 연락처, 보호자와의 관계</p>
 
                             <p className="font-bold mt-4 text-[#E63946]">이용 목적</p>
-                            <p>회원 관리, 서비스 제공, 이용 기록 분석 및 프로그램 개선</p>
+                            <p>회원 관리, 서비스 제공, 서비스 접속 상태 확인 및 계정 보안, 센터 방문·프로그램 참여 기록 분석 및 프로그램 개선</p>
 
                             <p className="font-bold mt-4 text-[#E63946]">보유 기간</p>
-                            <p>회원 탈퇴 시까지 보관합니다. 다만 관련 법령에 따라 보관이 필요한 정보는 해당 기간 동안 보관합니다.</p>
+                            <p>회원 정보는 회원 탈퇴 시까지 보관합니다. 최근 웹 접속 일시는 마지막 접속일로부터 3개월 후 삭제합니다. 다만 관련 법령에 따라 보관이 필요한 정보는 해당 기간 동안 보관합니다.</p>
 
                             <p className="font-bold mt-4 text-[#E63946]">동의 거부 권리</p>
                             <p>이용자는 개인정보 수집 및 이용 동의를 거부할 권리가 있으나 필수 정보 미동의 시 서비스 이용이 제한됩니다.</p>

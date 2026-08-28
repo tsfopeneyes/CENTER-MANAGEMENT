@@ -1,13 +1,17 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, User, School, ArrowRight, CheckCircle2, ChevronRight, X, LogOut, Clock, LogIn, Lock, AlertCircle, Phone, ShieldCheck } from 'lucide-react';
+import { Sparkles, User, School, ArrowRight, Check, CheckCircle2, ChevronRight, X, LogOut, Clock, LogIn, Lock, AlertCircle, Phone, ShieldCheck } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { supabase } from '../supabaseClient';
 import { normalizeSchoolName } from '../utils/userUtils';
 import { hashPassword } from '../utils/hashUtils';
 import SignUpForm from '../components/auth/SignUpForm';
-import { sendCheckinNotification } from '../utils/integrationUtils';
+import StudentCheckoutSurveyModal from '../components/student/modals/StudentCheckoutSurveyModal';
+import { sendCheckinNotification, sendCheckoutNotification } from '../utils/integrationUtils';
+import { areExternalNotificationsMuted, dispatchVisitSlackAlert } from '../utils/serverIntegration';
+import { requestSupabaseRest } from '../utils/supabaseRest';
+import { getTodayVisitState, recordVisitEvent } from '../utils/visitLifecycle';
 
 const VISIT_REASON_OPTIONS = [
     { id: '1', emoji: '👥', label: '친구 / 지인 추천' },
@@ -16,11 +20,32 @@ const VISIT_REASON_OPTIONS = [
     { id: '4', emoji: '🚶', label: '지나가다가 궁금해서' }
 ];
 
+const getLocationDisplayName = (locationName = '') => {
+    const normalized = String(locationName);
+    if (normalized.includes('이높') || normalized.includes('ENOUGH_PLACE') || normalized.includes('강서')) {
+        return '이높플레이스';
+    }
+    if (normalized.includes('하이픈') || normalized.includes('HAIFN') || normalized.includes('강동')) {
+        return '하이픈';
+    }
+    return normalized || '센터';
+};
+
+const getObjectParticle = (word = '') => {
+    const lastChar = String(word).slice(-1);
+    const code = lastChar.charCodeAt(0);
+    const hasFinalConsonant = code >= 0xAC00 && code <= 0xD7A3 && (code - 0xAC00) % 28 !== 0;
+    return hasFinalConsonant ? '을' : '를';
+};
+
 const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     const navigate = useNavigate();
     const location = useLocation();
     const searchParams = new URLSearchParams(location.search);
     const locParam = searchParams.get('loc');
+    const isProgramLoginFlow = Boolean(
+        location.state?.fromProgram || searchParams.get('programLogin')
+    );
 
     const [step, setStep] = useState('HOME'); // 'HOME' | 'FORM' | 'SUCCESS' | 'ACTIVE_CHECKIN' | 'CHECKOUT_SUCCESS'
     const [name, setName] = useState('');
@@ -29,7 +54,11 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     const [customReason, setCustomReason] = useState('');
     const [loading, setLoading] = useState(false);
     const [showSignupModal, setShowSignupModal] = useState(false);
+    const [showCheckoutConfirm, setShowCheckoutConfirm] = useState(false);
+    const [showCheckoutSurvey, setShowCheckoutSurvey] = useState(false);
     const [activeSession, setActiveSession] = useState(null);
+    const [checkoutSurveySession, setCheckoutSurveySession] = useState(null);
+    const [completedCheckoutLocationName, setCompletedCheckoutLocationName] = useState('');
 
     // Frequent Guest Recommendation Modal State
     const [showFrequentGuestModal, setShowFrequentGuestModal] = useState(false);
@@ -42,6 +71,13 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     const [loginLoading, setLoginLoading] = useState(false);
     const [loginDuplicates, setLoginDuplicates] = useState([]);
     const [showDuplicatesModal, setShowDuplicatesModal] = useState(false);
+    const [resetCandidate, setResetCandidate] = useState(null);
+    const [showPasswordResetModal, setShowPasswordResetModal] = useState(false);
+    const [resetBirth, setResetBirth] = useState('');
+    const [resetPhoneBack4, setResetPhoneBack4] = useState('');
+    const [resetPassword, setResetPassword] = useState('');
+    const [resetPasswordConfirm, setResetPasswordConfirm] = useState('');
+    const [resetLoading, setResetLoading] = useState(false);
 
     const toggleReason = (label) => {
         setSelectedReasons(prev =>
@@ -71,93 +107,12 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
         }
     };
 
-    // Perform Auto Check-in & Navigate to Student Dashboard Home Tab (Only for QR Checkin)
-    const performAutoCheckin = async (currentUser, targetLocParam, selectedPurposes = null) => {
-        const defaultPurpose = dynamicSurveyOptions?.[0]?.label || '당 충전하며 쉬고 싶어요';
-        const activePurposes = selectedPurposes && selectedPurposes.length > 0 ? selectedPurposes : [defaultPurpose];
+    // All QR entry paths use the same visit lifecycle handler.  Keeping this
+    // wrapper prevents the check-in-survey and signup flows from bypassing
+    // duplicate prevention or turning an automatic checkout into a new visit.
+    const performAutoCheckin = async (currentUser, _targetLocParam, selectedPurposes = null) => {
         if (!currentUser?.id) return;
-        try {
-            // 1. Fetch location info
-            const { data: locations } = await supabase.from('locations').select('*');
-            let locObj = null;
-            if (targetLocParam) {
-                locObj = (locations || []).find(l =>
-                    l.id === targetLocParam ||
-                    l.name.includes(targetLocParam) ||
-                    (targetLocParam === 'HAIFN' && l.name.includes('하이픈')) ||
-                    (targetLocParam === 'ENOUGH_PLACE' && l.name.includes('이높플레이스'))
-                );
-            }
-            if (!locObj) {
-                locObj = (locations || []).find(l => l.name.includes('하이픈')) || locations?.[0] || { id: null, name: '하이픈' };
-            }
-
-            // 2. Check if user already checked in today (within today KST)
-            const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-            const { data: existingLogs } = await supabase
-                .from('logs')
-                .select('id, created_at')
-                .eq('user_id', currentUser.id)
-                .eq('type', 'CHECKIN')
-                .gte('created_at', `${todayKst}T00:00:00`)
-                .order('created_at', { ascending: false })
-                .limit(1);
-
-            if (!existingLogs || existingLogs.length === 0) {
-                await supabase.from('logs').insert([{
-                    user_id: currentUser.id,
-                    location_id: locObj.id,
-                    type: 'CHECKIN'
-                }]);
-
-                sessionStorage.setItem('pending_checkin_notif', JSON.stringify({
-                    userName: currentUser.name,
-                    schoolName: currentUser.school,
-                    locationName: locObj.name,
-                    isGuest: false
-                }));
-            }
-
-            // 3. Save visit notes for Admin Dashboard
-            try {
-                const { data: existingNote } = await supabase
-                    .from('visit_notes')
-                    .select('id')
-                    .eq('user_id', currentUser.id)
-                    .eq('visit_date', todayKst)
-                    .maybeSingle();
-
-                if (existingNote?.id) {
-                    await supabase.from('visit_notes').update({
-                        remarks: '모바일 QR 체크인'
-                    }).eq('id', existingNote.id);
-                } else {
-                    await supabase.from('visit_notes').insert([{
-                        user_id: currentUser.id,
-                        visit_date: todayKst,
-                        remarks: '모바일 QR 체크인'
-                    }]);
-                }
-            } catch (vErr) {
-                console.error('Failed to save visit notes in auto checkin:', vErr);
-            }
-
-            // 4. Track web session time in user preferences
-            const updatedUser = await updateWebSessionPreferences(currentUser);
-
-            // 5. Set toast & survey signals, then navigate to student dashboard
-            sessionStorage.removeItem('pending_checkin_survey');
-            sessionStorage.setItem('checkin_toast', JSON.stringify({
-                name: updatedUser.name,
-                locationName: locObj.name,
-                time: new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })
-            }));
-
-            navigate('/student', { replace: true, state: { checkinToastOnly: true, userName: updatedUser.name, locationName: locObj.name } });
-        } catch (err) {
-            console.error('Auto check-in failed:', err);
-            navigate('/student', { replace: true });
-        }
+        await ensureCheckinLogAndNavigate(currentUser, selectedPurposes);
     };
 
     const DEFAULT_CHECKIN_OPTIONS = [
@@ -209,11 +164,147 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
         return `${y}-${m}-${d}`;
     };
 
-    const ensureCheckinLogAndNavigate = useCallback(async (currentUser) => {
+    const findLoginCandidates = async (targetName) => {
+        let lastError = null;
+
+        for (let attempt = 0; attempt < 2; attempt += 1) {
+            try {
+                // Do not use the Supabase client for the first QR-page login
+                // request: Samsung Internet can abort its internal signal while
+                // handing a PWA view over to the browser.
+                const response = await fetch(
+                    `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/rpc/get_login_candidates`,
+                    {
+                        method: 'POST',
+                        headers: {
+                            apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+                            Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({ p_name: targetName }),
+                    }
+                );
+                if (!response.ok) {
+                    throw new Error(`로그인 정보를 불러오지 못했습니다. (${response.status})`);
+                }
+                return await response.json();
+            } catch (requestError) {
+                lastError = requestError;
+            }
+
+            // Samsung Internet can occasionally abort a freshly opened QR-page
+            // request while its web-app view is being handed over to the browser.
+            if (lastError?.name !== 'AbortError' || attempt === 1) break;
+            await new Promise(resolve => setTimeout(resolve, 350));
+        }
+
+        throw lastError;
+    };
+
+    const isAdminAccount = (user) =>
+        user?.user_group === '관리자' || user?.role === 'admin' || user?.is_master === true;
+
+    const openPasswordReset = () => {
+        setResetBirth('');
+        setResetPhoneBack4('');
+        setResetPassword('');
+        setResetPasswordConfirm('');
+        setShowPasswordResetModal(true);
+    };
+
+    const handlePasswordReset = async (event) => {
+        event.preventDefault();
+        if (!resetCandidate || isAdminAccount(resetCandidate)) return;
+        if (resetPassword.length < 4) {
+            alert('새 비밀번호는 4자리 이상으로 설정해주세요.');
+            return;
+        }
+        if (resetPassword !== resetPasswordConfirm) {
+            alert('새 비밀번호와 확인 값이 일치하지 않습니다.');
+            return;
+        }
+
+        setResetLoading(true);
         try {
+            const { data: userRecord, error: userError } = await supabase
+                .from('users')
+                .select('id, birth, phone_back4, phone, user_group, role, is_master')
+                .eq('id', resetCandidate.id)
+                .maybeSingle();
+            if (userError) throw userError;
+            if (!userRecord || isAdminAccount(userRecord)) {
+                throw new Error('이 계정은 온라인 비밀번호 초기화를 사용할 수 없습니다.');
+            }
+
+            const registeredBack4 = userRecord.phone_back4 || String(userRecord.phone || '').replace(/\D/g, '').slice(-4);
+            if (String(userRecord.birth || '') !== resetBirth.trim() || registeredBack4 !== resetPhoneBack4.trim()) {
+                throw new Error('생년월일 또는 휴대폰 번호 뒤 4자리가 일치하지 않습니다.');
+            }
+
+            const password = await hashPassword(resetPassword);
+            const { error: updateError } = await supabase
+                .from('users')
+                .update({ password })
+                .eq('id', userRecord.id);
+            if (updateError) throw updateError;
+
+            setLoginPassword('');
+            setShowPasswordResetModal(false);
+            setResetCandidate(null);
+            alert('비밀번호가 변경되었습니다. 새 비밀번호로 로그인해주세요.');
+        } catch (error) {
+            console.error('Password reset error:', error);
+            alert(error.message || '비밀번호 초기화 중 오류가 발생했습니다.');
+        } finally {
+            setResetLoading(false);
+        }
+    };
+
+    // The QR is both an entry and an exit point.  Determine the user's current
+    // visit from the source of truth before creating another CHECKIN record.
+    const getActiveVisitSession = useCallback(async (userId) => {
+        if (!userId) return null;
+
+        const state = await getTodayVisitState(userId);
+        if (!['ACTIVE', 'AUTO_CHECKED_OUT'].includes(state.status)) return null;
+
+        let locationName = '공간';
+        if (state.locationId) {
+            const locations = await requestSupabaseRest(
+                `locations?select=name&id=eq.${encodeURIComponent(state.locationId)}`
+            );
+            locationName = locations?.[0]?.name || locationName;
+        }
+
+        return {
+            checkInTime: state.checkInTime,
+            locationId: state.locationId,
+            locationName,
+            isAutoCheckedOut: state.isAutoCheckedOut,
+        };
+    }, []);
+
+    const ensureCheckinLogAndNavigate = useCallback(async (currentUser, completedSurveyPurposes = null) => {
+        try {
+            const activeVisit = await getActiveVisitSession(currentUser.id);
+            if (activeVisit) {
+                setActiveSession({
+                    userId: currentUser.id,
+                    name: currentUser.name,
+                    school: currentUser.school,
+                    date: getSafeKSTDate(),
+                    isMember: true,
+                    ...activeVisit
+                });
+                setStep('ACTIVE_CHECKIN');
+                setShowCheckoutConfirm(true);
+                setIsRedirecting(false);
+                return;
+            }
+
             const todayKst = getSafeKSTDate();
 
-            const { data: locations } = await supabase.from('locations').select('*');
+            const locations = await requestSupabaseRest('locations?select=*');
             let locObj = null;
             if (locParam) {
                 locObj = (locations || []).find(l =>
@@ -227,11 +318,30 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 locObj = (locations || []).find(l => l.name.includes('하이픈')) || locations?.[0] || { id: null, name: '하이픈' };
             }
 
-            const { data: insertedLogs } = await supabase.from('logs').insert([{
-                user_id: currentUser.id,
-                location_id: locObj.id,
-                type: 'CHECKIN'
-            }]).select('id, created_at');
+            const checkinResult = await recordVisitEvent({
+                userId: currentUser.id,
+                locationId: locObj.id,
+                type: 'CHECKIN',
+            });
+            if (!['CREATED', 'RECONCILED'].includes(checkinResult.outcome)) {
+                const visit = await getActiveVisitSession(currentUser.id);
+                if (visit) {
+                    setActiveSession({
+                        userId: currentUser.id,
+                        name: currentUser.name,
+                        school: currentUser.school,
+                        date: todayKst,
+                        isMember: true,
+                        ...visit,
+                    });
+                    setShowCheckoutConfirm(true);
+                    setStep('ACTIVE_CHECKIN');
+                    setIsRedirecting(false);
+                    return;
+                }
+
+                throw new Error('현재 방문 상태를 확인할 수 없습니다. 잠시 후 다시 시도해주세요.');
+            }
 
             sessionStorage.setItem('pending_checkin_notif', JSON.stringify({
                 userName: currentUser.name,
@@ -240,17 +350,39 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 isGuest: false
             }));
 
-            const insertedLog = insertedLogs?.[0];
+            const insertedLog = checkinResult.event || checkinResult.state?.lastEvent;
 
             try {
-                await supabase.from('visit_notes').insert([{
-                    user_id: currentUser.id,
-                    visit_date: todayKst,
-                    remarks: '모바일 QR 체크인'
-                }]);
+                const purpose = Array.isArray(completedSurveyPurposes) && completedSurveyPurposes.length > 0
+                    ? completedSurveyPurposes.join(', ')
+                    : undefined;
+                const { data: existingNote } = await supabase
+                    .from('visit_notes')
+                    .select('id')
+                    .eq('user_id', currentUser.id)
+                    .eq('visit_date', todayKst)
+                    .maybeSingle();
+                const noteData = {
+                    remarks: '모바일 QR 체크인',
+                    ...(purpose ? { purpose } : {}),
+                };
+                if (existingNote?.id) {
+                    await supabase.from('visit_notes').update(noteData).eq('id', existingNote.id);
+                } else {
+                    await supabase.from('visit_notes').insert([{
+                        user_id: currentUser.id,
+                        visit_date: todayKst,
+                        ...noteData,
+                    }]);
+                }
             } catch (vErr) {}
 
-            sessionStorage.setItem('require_checkin_survey', 'true');
+            const hasCompletedCheckinSurvey = Array.isArray(completedSurveyPurposes) && completedSurveyPurposes.length > 0;
+            if (hasCompletedCheckinSurvey) {
+                sessionStorage.removeItem('require_checkin_survey');
+            } else {
+                sessionStorage.setItem('require_checkin_survey', 'true');
+            }
             if (insertedLog?.created_at) {
                 sessionStorage.setItem('active_checkin_time', insertedLog.created_at);
             }
@@ -259,17 +391,18 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             navigate('/student', {
                 replace: true,
                 state: {
-                    requireCheckinSurvey: true,
+                    requireCheckinSurvey: !hasCompletedCheckinSurvey,
                     checkinTime: insertedLog?.created_at,
                     locationName: locObj.name
                 }
             });
         } catch (err) {
             console.error('ensureCheckinLogAndNavigate error:', err);
+            setIsRedirecting(false);
             sessionStorage.setItem('require_checkin_survey', 'true');
             navigate('/student', { replace: true, state: { requireCheckinSurvey: true } });
         }
-    }, [locParam, navigate]);
+    }, [getActiveVisitSession, locParam, navigate]);
 
     // On mount effect
     useEffect(() => {
@@ -319,8 +452,23 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 const parsed = JSON.parse(savedGuestSession);
                 const todayKst = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
                 if (parsed.date === todayKst && parsed.userId) {
-                    setActiveSession(parsed);
-                    setStep('ACTIVE_CHECKIN');
+                    getActiveVisitSession(parsed.userId)
+                        .then((activeVisit) => {
+                            if (activeVisit) {
+                                setActiveSession({ ...parsed, ...activeVisit });
+                                setStep('ACTIVE_CHECKIN');
+                                setShowCheckoutConfirm(true);
+                            } else {
+                                localStorage.removeItem('guest_active_session');
+                            }
+                        })
+                        .catch((error) => {
+                            console.error('Failed to verify guest active session', error);
+                            // Keep the existing local session available when the network is temporarily unavailable.
+                            setActiveSession(parsed);
+                            setStep('ACTIVE_CHECKIN');
+                            setShowCheckoutConfirm(true);
+                        });
                 } else {
                     localStorage.removeItem('guest_active_session');
                 }
@@ -328,7 +476,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 console.error('Failed to parse guest active session', e);
             }
         }
-    }, [isQRCheckin, locParam, navigate, ensureCheckinLogAndNavigate]);
+    }, [isQRCheckin, locParam, navigate, ensureCheckinLogAndNavigate, getActiveVisitSession]);
 
     // Trigger confetti on guest success
     useEffect(() => {
@@ -353,14 +501,10 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
         try {
             const hashedPassword = await hashPassword(loginPassword);
 
-            let { data: candidates, error: rpcError } = await supabase
-                .rpc('get_login_candidates', { p_name: loginName.trim() });
-
-            if (rpcError) throw rpcError;
+            let candidates = await findLoginCandidates(loginName.trim());
 
             if (!candidates || candidates.length === 0) {
-                const { data: guestCandidates } = await supabase
-                    .rpc('get_login_candidates', { p_name: `${loginName.trim()}(guest)` });
+                const guestCandidates = await findLoginCandidates(`${loginName.trim()}(guest)`);
 
                 if (guestCandidates && guestCandidates.length > 0) {
                     candidates = guestCandidates;
@@ -389,11 +533,19 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
         try {
             let matchedUser = null;
 
-            const { data: dbUser } = await supabase
-                .from('users')
-                .select('*')
-                .eq('id', userCandidate.id)
-                .maybeSingle();
+            const userResponse = await fetch(
+                `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/users?select=*&id=eq.${encodeURIComponent(userCandidate.id)}`,
+                {
+                    headers: {
+                        apikey: import.meta.env.VITE_SUPABASE_ANON_KEY,
+                        Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_ANON_KEY}`,
+                    },
+                }
+            );
+            if (!userResponse.ok) {
+                throw new Error(`회원 정보를 불러오지 못했습니다. (${userResponse.status})`);
+            }
+            const [dbUser] = await userResponse.json();
 
             const fullUser = dbUser ? { ...userCandidate, ...dbUser } : userCandidate;
 
@@ -415,10 +567,12 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             }
 
             if (!matchedUser) {
+                setResetCandidate(isAdminAccount(fullUser) ? null : fullUser);
                 alert('비밀번호가 일치하지 않습니다. 다시 확인해 주세요.');
                 return false;
             }
 
+            setResetCandidate(null);
             setShowLoginModal(false);
 
             // Handle Admin Login
@@ -474,37 +628,45 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 : reasonBase;
 
             // 1. Fetch Location Info
-            const { data: locations } = await supabase.from('locations').select('*');
-            const haifnLoc = (locations || []).find(l => l.name.includes('하이픈')) || locations?.[0] || { id: null, name: '하이픈' };
+            const locations = await requestSupabaseRest('locations?select=*');
+            let haifnLoc = null;
+            if (locParam) {
+                haifnLoc = (locations || []).find(l => {
+                    const locationName = String(l?.name || '');
+                    return l?.id === locParam ||
+                    locationName.includes(locParam) ||
+                    (locParam === 'HAIFN' && locationName.includes('하이픈')) ||
+                    (locParam === 'ENOUGH_PLACE' && locationName.includes('이높플레이스'));
+                }
+                );
+            }
+            haifnLoc = haifnLoc || (locations || []).find(l => String(l?.name || '').includes('하이픈')) || locations?.[0];
+            if (!haifnLoc?.id) throw new Error('체크인할 센터를 찾지 못했습니다.');
 
             // 2. Find or create guest user
             let guestUserId = null;
-            try {
-                const targetName = cleanName.includes('(guest)') ? cleanName : `${cleanName}(guest)`;
-                const { data: existingGuest } = await supabase
-                    .from('users')
-                    .select('id')
-                    .or(`name.eq.${cleanName},name.eq.${targetName}`)
-                    .eq('school', cleanSchool)
-                    .eq('user_group', '게스트')
-                    .maybeSingle();
+            const targetName = cleanName.includes('(guest)') ? cleanName : `${cleanName}(guest)`;
+            const guestCandidates = await requestSupabaseRest(
+                `users?select=id,name,school,user_group&name=eq.${encodeURIComponent(targetName)}`
+            );
+            const existingGuest = (guestCandidates || []).find(user =>
+                user.school === cleanSchool && user.user_group === '게스트'
+            );
 
-                if (existingGuest?.id) {
-                    guestUserId = existingGuest.id;
-                } else {
+            if (existingGuest?.id) {
+                guestUserId = existingGuest.id;
+            } else {
                     let uniquePhone = '';
                     let back4 = '';
                     let isUnique = false;
                     let retries = 0;
-                    while (!isUnique && retries < 20) {
+                    while (!isUnique && retries < 5) {
                         const candidate4 = Math.floor(1000 + Math.random() * 9000).toString();
                         const testPhone = `010-0000-${candidate4}`;
-                        const { data: existing } = await supabase
-                            .from('users')
-                            .select('id')
-                            .eq('phone', testPhone)
-                            .maybeSingle();
-                        if (!existing) {
+                        const existing = await requestSupabaseRest(
+                            `users?select=id&phone=eq.${encodeURIComponent(testPhone)}&limit=1`
+                        );
+                        if (!existing?.length) {
                             uniquePhone = testPhone;
                             back4 = candidate4;
                             isUnique = true;
@@ -516,7 +678,10 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         uniquePhone = `010-0000-${back4}`;
                     }
 
-                    const { data: newGuest, error: createErr } = await supabase.from('users').insert([{
+                    const newGuests = await requestSupabaseRest('users?select=id', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
+                        body: JSON.stringify([{
                         name: `${cleanName}(guest)`,
                         school: cleanSchool,
                         user_group: '게스트',
@@ -528,17 +693,12 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         phone: uniquePhone,
                         phone_back4: back4,
                         memo: `[모바일 게스트 체크인: ${new Date().toLocaleDateString()}]`
-                    }]).select('id').single();
-
-                    if (createErr) {
-                        console.error('Failed to insert new guest user:', createErr);
-                    } else if (newGuest?.id) {
-                        guestUserId = newGuest.id;
-                    }
-                }
-            } catch (gErr) {
-                console.error('Failed to create/lookup guest user:', gErr);
+                        }])
+                    });
+                    guestUserId = newGuests?.[0]?.id || null;
             }
+
+            if (!guestUserId) throw new Error('게스트 계정을 준비하지 못했습니다. 다시 시도해 주세요.');
 
             // Check total previous visit count for frequent guest recommendation
             let previousVisits = 0;
@@ -597,13 +757,15 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 : '당 충전하며 쉬고 싶어요';
 
             // 1. Insert CHECKIN log into logs table ONLY for QR checkin route
-            if (isQRCheckin && guestUserId) {
-                const { error: logErr } = await supabase.from('logs').insert([{
-                    user_id: guestUserId,
-                    location_id: haifnLoc.id,
-                    type: 'CHECKIN'
-                }]);
-                if (logErr) throw logErr;
+            if (isQRCheckin) {
+                const checkinResult = await recordVisitEvent({
+                    userId: guestUserId,
+                    locationId: haifnLoc.id,
+                    type: 'CHECKIN',
+                });
+                if (!['CREATED', 'RECONCILED'].includes(checkinResult.outcome)) {
+                    throw new Error('이미 오늘의 이용 기록이 있습니다. 같은 QR로 체크아웃을 진행해주세요.');
+                }
             }
 
             // 2. Save visit notes (remarks = referral path, purpose = checkin survey choice)
@@ -658,6 +820,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             // 3. Trigger Realtime LINE / Discord Notification with separate Referral Path & Check-in Purpose
             try {
                 sendCheckinNotification({
+                    userId: guestUserId,
                     userName: cleanName,
                     schoolName: cleanSchool,
                     locationName: haifnLoc.name,
@@ -679,21 +842,40 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     };
 
     // Guest Checkout Submission
-    const handleGuestCheckoutSubmit = async () => {
+    const handleGuestCheckoutSubmit = async ({ notificationAlreadySent = false } = {}) => {
         if (!activeSession) return;
         setLoading(true);
         try {
-            const { error } = await supabase.from('logs').insert([{
-                user_id: activeSession.userId,
-                location_id: activeSession.locationId,
-                type: 'CHECKOUT'
-            }]);
+            // Re-check immediately before writing so a repeated scan cannot create
+            // a second CHECKOUT record, and always check out of the actual active location.
+            const activeVisit = await getActiveVisitSession(activeSession.userId);
+            if (!activeVisit) {
+                setCompletedCheckoutLocationName(getLocationDisplayName(activeSession.locationName));
+                localStorage.removeItem('guest_active_session');
+                setShowCheckoutConfirm(false);
+                setActiveSession(null);
+                setStep('CHECKOUT_SUCCESS');
+                return;
+            }
 
-            if (error) throw error;
+            const checkoutSession = { ...activeSession, ...activeVisit };
+            const checkoutResult = await recordVisitEvent({
+                userId: checkoutSession.userId,
+                locationId: checkoutSession.locationId,
+                type: 'CHECKOUT',
+            });
+            if (!['CREATED', 'RECONCILED'].includes(checkoutResult.outcome)) {
+                setCompletedCheckoutLocationName(getLocationDisplayName(checkoutSession.locationName));
+                localStorage.removeItem('guest_active_session');
+                setShowCheckoutConfirm(false);
+                setActiveSession(null);
+                setStep('CHECKOUT_SUCCESS');
+                return;
+            }
 
             let durationText = '';
-            if (activeSession.checkInTime) {
-                const checkinTime = new Date(activeSession.checkInTime).getTime();
+            if (checkoutSession.checkInTime) {
+                const checkinTime = new Date(checkoutSession.checkInTime).getTime();
                 const checkoutTime = new Date().getTime();
                 const durationMinutes = Math.max(1, Math.floor((checkoutTime - checkinTime) / (1000 * 60)));
                 const hours = Math.floor(durationMinutes / 60);
@@ -702,13 +884,33 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 durationText = `\n🕑 ${durationStr} 이용`;
             }
 
-            const schoolStr = activeSession.school || '-';
-            const locNameStr = activeSession.locationName || '공간';
-            const alertMessage = `[GUEST CHECK-OUT]\n👋 ${activeSession.name}(${schoolStr})님이 ${locNameStr}에서 나갔어요${durationText}`;
+            if (!notificationAlreadySent && !areExternalNotificationsMuted()) {
+                const locNameStr = checkoutSession.locationName || '공간';
+                const isMemberCheckout = checkoutSession.isMember === true;
+                const checkoutTitle = isMemberCheckout ? '[CHECK-OUT]' : '[GUEST CHECK-OUT]';
+                const alertMessage = `${checkoutTitle}\n💙 ${checkoutSession.name}님이 ${locNameStr}에서 퇴실했어요${durationText}`;
 
-            try {
-                const { data: settings } = await supabase.from('global_settings').select('*');
+                const checkoutLocationName = checkoutSession.locationName || '';
+                const isHaifnCheckout = (checkoutLocationName.includes('하이픈') || checkoutLocationName.includes('HAIFN') || checkoutLocationName.includes('강동')) &&
+                    !(checkoutLocationName.includes('이높') || checkoutLocationName.includes('ENOUGH_PLACE') || checkoutLocationName.includes('강서'));
+                if (isHaifnCheckout) {
+                    dispatchVisitSlackAlert({
+                        message: alertMessage,
+                        userId: checkoutSession.userId,
+                        eventType: 'CHECKOUT',
+                        locationName: checkoutLocationName,
+                    }).catch(error => console.error('Slack QR checkout notification error:', error));
+                }
+
+                try {
+                const settings = await requestSupabaseRest(
+                    'global_settings?select=*',
+                    {},
+                    1,
+                    4000
+                );
                 let lineToken = '', lineGroupId = '', gsWebhookUrl = '', discordWebhookUrl = '';
+                let lineNotificationsEnabled = localStorage.getItem('line_notifications_enabled') !== 'false';
 
                 if (settings) {
                     settings.forEach(s => {
@@ -716,14 +918,18 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         if (s.key === 'line_group_id') lineGroupId = s.value;
                         if (s.key === 'gs_webhook_url') gsWebhookUrl = s.value;
                         if (s.key === 'discord_webhook_url') discordWebhookUrl = s.value;
+                        if (s.key === 'line_notifications_enabled') {
+                            lineNotificationsEnabled = s.value !== 'false';
+                            localStorage.setItem('line_notifications_enabled', String(lineNotificationsEnabled));
+                        }
                     });
                 }
 
-                const locName = activeSession.locationName || '';
+                const locName = checkoutSession.locationName || '';
                 const isHaifnLoc = (locName.includes('하이픈') || locName.includes('HAIFN') || locName.includes('강동')) &&
                     !(locName.includes('이높') || locName.includes('ENOUGH_PLACE') || locName.includes('강서'));
 
-                if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
+                if (lineNotificationsEnabled && isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
                     fetch(gsWebhookUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'text/plain' },
@@ -743,11 +949,14 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         body: JSON.stringify({ content: alertMessage })
                     }).catch(e => console.error('Discord Notify error:', e));
                 }
-            } catch (notifyErr) {
-                console.error('Notification dispatch error:', notifyErr);
+                } catch (notifyErr) {
+                    console.error('Notification dispatch error:', notifyErr);
+                }
             }
 
+            setCompletedCheckoutLocationName(getLocationDisplayName(checkoutSession.locationName));
             localStorage.removeItem('guest_active_session');
+            setShowCheckoutConfirm(false);
             setActiveSession(null);
             setStep('CHECKOUT_SUCCESS');
         } catch (err) {
@@ -756,6 +965,124 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
         } finally {
             setLoading(false);
         }
+    };
+
+    const handleCheckoutCancel = () => {
+        setShowCheckoutConfirm(false);
+        setActiveSession(null);
+
+        if (activeSession?.isMember) {
+            navigate('/student', { replace: true });
+        } else {
+            setStep('HOME');
+        }
+    };
+
+    const clearMemberCheckoutUi = () => {
+        setCompletedCheckoutLocationName(getLocationDisplayName(checkoutSurveySession?.locationName || activeSession?.locationName));
+        localStorage.removeItem('guest_active_session');
+        setShowCheckoutSurvey(false);
+        setShowCheckoutConfirm(false);
+        setCheckoutSurveySession(null);
+        setActiveSession(null);
+        setStep('CHECKOUT_SUCCESS');
+    };
+
+    const finishMemberCheckout = async ({ feedbackText = '', surveySubmitted = false } = {}) => {
+        // Only a checkout event created/reconciled by this flow may produce an
+        // alert. UI state alone is not evidence that a checkout happened.
+        const session = checkoutSurveySession;
+        const userId = session?.userId || session?.id;
+        const checkoutEventId = session?.checkoutEventId;
+
+        if (userId && checkoutEventId) {
+            try {
+                const [checkoutEvents, users] = await Promise.all([
+                    requestSupabaseRest(
+                        `logs?select=id,type,created_at,location_id&id=eq.${encodeURIComponent(checkoutEventId)}&user_id=eq.${encodeURIComponent(userId)}&type=eq.CHECKOUT&limit=1`
+                    ),
+                    requestSupabaseRest(
+                        `users?select=id,name,school&id=eq.${encodeURIComponent(userId)}&limit=1`
+                    ),
+                ]);
+
+                const checkoutEvent = checkoutEvents?.[0];
+                const canonicalUser = users?.[0];
+                if (!checkoutEvent || !canonicalUser?.name) {
+                    throw new Error('퇴실 이벤트 또는 이용자 정보를 확인하지 못했습니다.');
+                }
+
+                const notificationKey = `checkout_notification_sent:${checkoutEvent.id}`;
+                if (sessionStorage.getItem(notificationKey) !== 'true') {
+                    await sendCheckoutNotification({
+                        userId: canonicalUser.id,
+                        userName: canonicalUser.name.replace('(guest)', '').trim(),
+                        schoolName: canonicalUser.school || '',
+                        locationName: session.locationName || '하이픈',
+                        // A skipped/abandoned survey is an empty response, not
+                        // a fabricated "퇴실 완료" answer.
+                        feedbackText: surveySubmitted ? feedbackText : '',
+                        checkInTime: session.checkInTime || null,
+                    });
+                    sessionStorage.setItem(notificationKey, 'true');
+                }
+            } catch (notificationError) {
+                console.error('Verified member checkout notification failed:', notificationError);
+            }
+        }
+
+        clearMemberCheckoutUi();
+    };
+
+    const handleMemberCheckoutConfirm = async () => {
+        if (!activeSession) return;
+        setLoading(true);
+        try {
+            const activeVisit = await getActiveVisitSession(activeSession.userId);
+            if (!activeVisit) {
+                // No active visit means there was no checkout transition in
+                // this action. Finish the stale UI without sending an alert.
+                clearMemberCheckoutUi();
+                return;
+            }
+
+            const checkoutSession = { ...activeSession, ...activeVisit };
+            const checkoutResult = await recordVisitEvent({
+                userId: checkoutSession.userId,
+                locationId: checkoutSession.locationId,
+                type: 'CHECKOUT',
+            });
+            if (!['CREATED', 'RECONCILED'].includes(checkoutResult.outcome)) {
+                clearMemberCheckoutUi();
+                return;
+            }
+
+            // Checkout is now final even if the optional survey is abandoned.
+            const checkoutEvent = checkoutResult.event || checkoutResult.state?.lastEvent;
+            if (!checkoutEvent?.id || checkoutEvent.type !== 'CHECKOUT') {
+                throw new Error('저장된 퇴실 이벤트를 확인하지 못했습니다.');
+            }
+            setCheckoutSurveySession({
+                ...checkoutSession,
+                checkoutEventId: checkoutEvent.id,
+                checkoutTime: checkoutEvent.created_at,
+            });
+            setShowCheckoutConfirm(false);
+            setShowCheckoutSurvey(true);
+        } catch (error) {
+            console.error('Member checkout error:', error);
+            alert('퇴실 처리 중 오류가 발생했습니다. 다시 시도해주세요.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleCheckoutConfirm = () => {
+        if (activeSession?.isMember) {
+            handleMemberCheckoutConfirm();
+            return;
+        }
+        handleGuestCheckoutSubmit();
     };
 
     if (isRedirecting) {
@@ -857,7 +1184,9 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                                 {/* 2. 게스트 (Secondary Slate Button - QR 체크인 접속 전용) */}
                                 {isQRCheckin && (
                                     <button
-                                        onClick={() => setStep('FORM')}
+                                        onClick={() => {
+                                            setStep('FORM');
+                                        }}
                                         className="w-full h-14 px-6 bg-[#EAECEF] hover:bg-[#DFE2E6] text-[#191F28] font-bold rounded-2xl border-0 outline-none active:scale-[0.98] transition-all flex items-center justify-between group text-[16px] tracking-tight cursor-pointer"
                                     >
                                         <div className="flex items-center gap-2.5">
@@ -868,17 +1197,19 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                                     </button>
                                 )}
 
-                                {/* 3. 센터 등록 (Sub Light Button) */}
-                                <button
-                                    onClick={() => setShowSignupModal(true)}
-                                    className="w-full h-14 px-6 bg-white hover:bg-gray-50 text-[#4E5968] font-bold rounded-2xl border border-[#E5E8EB] outline-none active:scale-[0.98] transition-all flex items-center justify-between group text-[16px] tracking-tight shadow-xs cursor-pointer"
-                                >
-                                    <div className="flex items-center gap-2.5">
-                                        <School size={20} className="text-[#8B95A1]" />
-                                        <span>센터 등록</span>
-                                    </div>
-                                    <ChevronRight size={20} className="text-[#8B95A1] group-hover:translate-x-0.5 transition-transform" />
-                                </button>
+                                {/* 3. 센터 등록 (프로그램 신청 로그인 경로에서는 숨김) */}
+                                {!isProgramLoginFlow && (
+                                    <button
+                                        onClick={() => setShowSignupModal(true)}
+                                        className="w-full h-14 px-6 bg-white hover:bg-gray-50 text-[#4E5968] font-bold rounded-2xl border border-[#E5E8EB] outline-none active:scale-[0.98] transition-all flex items-center justify-between group text-[16px] tracking-tight shadow-xs cursor-pointer"
+                                    >
+                                        <div className="flex items-center gap-2.5">
+                                            <School size={20} className="text-[#8B95A1]" />
+                                            <span>센터 등록</span>
+                                        </div>
+                                        <ChevronRight size={20} className="text-[#8B95A1] group-hover:translate-x-0.5 transition-transform" />
+                                    </button>
+                                )}
                             </div>
                         </motion.div>
                     )}
@@ -977,7 +1308,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                     )}
 
                     {/* ACTIVE GUEST CHECKIN VIEW */}
-                    {step === 'ACTIVE_CHECKIN' && activeSession && (
+                    {step === 'ACTIVE_CHECKIN' && activeSession && !showCheckoutConfirm && (
                         <motion.div
                             key="active_checkin"
                             initial={{ opacity: 0, scale: 0.95 }}
@@ -1006,7 +1337,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
 
                             <div className="space-y-3 pt-2">
                                 <button
-                                    onClick={handleGuestCheckoutSubmit}
+                                    onClick={handleCheckoutConfirm}
                                     disabled={loading}
                                     className="w-full h-14 bg-[#E63946] hover:bg-[#D62839] text-white font-bold rounded-2xl transition shadow-md shadow-[#E63946]/25 active:scale-[0.98] disabled:opacity-50 text-[16px] tracking-tight flex items-center justify-between px-6"
                                 >
@@ -1014,13 +1345,15 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                                     <LogOut size={20} />
                                 </button>
 
-                                <button
-                                    onClick={() => setShowSignupModal(true)}
-                                    className="w-full h-14 bg-[#EAECEF] hover:bg-[#DFE2E6] text-[#191F28] font-bold rounded-2xl border-0 outline-none active:scale-[0.98] transition-all flex items-center justify-between px-6 group text-[16px] tracking-tight"
-                                >
-                                    <span>센터 등록</span>
-                                    <ChevronRight size={20} className="text-[#8B95A1]" />
-                                </button>
+                                {!isProgramLoginFlow && (
+                                    <button
+                                        onClick={() => setShowSignupModal(true)}
+                                        className="w-full h-14 bg-[#EAECEF] hover:bg-[#DFE2E6] text-[#191F28] font-bold rounded-2xl border-0 outline-none active:scale-[0.98] transition-all flex items-center justify-between px-6 group text-[16px] tracking-tight"
+                                    >
+                                        <span>센터 등록</span>
+                                        <ChevronRight size={20} className="text-[#8B95A1]" />
+                                    </button>
+                                )}
                             </div>
                         </motion.div>
                     )}
@@ -1048,7 +1381,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                             </div>
 
                             <div className="space-y-2.5">
-                                {dynamicSurveyOptions.map(opt => {
+                                {(Array.isArray(dynamicSurveyOptions) ? dynamicSurveyOptions : []).map(opt => {
                                     const isSelected = selectedPurposes.includes(opt.label);
                                     return (
                                         <button
@@ -1148,7 +1481,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                             <div className="space-y-2">
                                 <h2 className="text-2xl font-extrabold text-[#191F28]">퇴실 완료!</h2>
                                 <p className="text-[#4E5968] text-sm leading-relaxed font-medium">
-                                    하이픈에서의 경험은 어떠했나요?<br />
+                                    {getLocationDisplayName(completedCheckoutLocationName)}에서의 경험은 어떠했나요?<br />
                                     우리가 다시 연결될 날을 기대합니다
                                 </p>
                             </div>
@@ -1163,6 +1496,62 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                     )}
                 </AnimatePresence>
             </main>
+
+            {showCheckoutConfirm && activeSession && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 backdrop-blur-sm p-5">
+                    <motion.div
+                        initial={{ opacity: 0, scale: 0.94, y: 12 }}
+                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                        className="w-full max-w-sm rounded-3xl border border-[#E5E8EB] bg-white p-6 text-center shadow-2xl"
+                    >
+                        <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-[#E63946]/10 text-[#E63946]">
+                            <LogOut size={28} />
+                        </div>
+                        <h2 className="text-xl font-extrabold text-[#191F28]">체크아웃 하시겠습니까?</h2>
+                        <p className="mt-2 text-sm font-medium leading-relaxed text-[#4E5968]">
+                            현재 <strong className="font-bold text-[#191F28]">{getLocationDisplayName(activeSession.locationName)}</strong>{getObjectParticle(getLocationDisplayName(activeSession.locationName))} 이용 중이에요!
+                        </p>
+                        <div className="mt-4 flex items-center justify-center gap-2 text-xs font-bold text-[#6B7684]">
+                            <span>📍 {activeSession.locationName || '센터'}</span>
+                            {activeSession.checkInTime && (
+                                <>
+                                    <span className="text-[#D1D6DB]">|</span>
+                                    <span className="inline-flex items-center gap-1">
+                                        <Clock size={14} />
+                                        {new Date(activeSession.checkInTime).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })} 체크인
+                                    </span>
+                                </>
+                            )}
+                        </div>
+                        <div className="mt-6 space-y-2.5">
+                            <button
+                                onClick={handleCheckoutConfirm}
+                                disabled={loading}
+                                className="flex h-14 w-full items-center justify-center gap-2 rounded-2xl bg-[#E63946] text-[16px] font-bold text-white shadow-md shadow-[#E63946]/25 transition active:scale-[0.98] disabled:opacity-50"
+                            >
+                                <LogOut size={19} />
+                                {loading ? '체크아웃 처리 중...' : '네, 체크아웃할게요'}
+                            </button>
+                            <button
+                                onClick={handleCheckoutCancel}
+                                disabled={loading}
+                                className="h-12 w-full rounded-2xl bg-[#F2F4F6] text-sm font-bold text-[#4E5968] transition active:scale-[0.98] disabled:opacity-50"
+                            >
+                                아니요, 계속 이용할게요
+                            </button>
+                        </div>
+                    </motion.div>
+                </div>
+            )}
+
+            <StudentCheckoutSurveyModal
+                isOpen={showCheckoutSurvey}
+                user={checkoutSurveySession || activeSession}
+                locationName={(checkoutSurveySession || activeSession)?.locationName}
+                onClose={() => setShowCheckoutSurvey(false)}
+                onSurveySaved={(feedbackText) => finishMemberCheckout({ feedbackText, surveySubmitted: true })}
+                onSurveySkipped={() => finishMemberCheckout({ surveySubmitted: false })}
+            />
 
             {/* Mobile Login Modal Overlay */}
             {showLoginModal && (
@@ -1226,8 +1615,82 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                                 {loginLoading ? '로그인 중...' : (isQRCheckin ? '로그인 및 자동 체크인' : '로그인')}
                                 <ArrowRight size={18} />
                             </button>
+                            {resetCandidate && (
+                                <button
+                                    type="button"
+                                    onClick={openPasswordReset}
+                                    className="mx-auto block pt-1 text-xs font-bold text-[#3182F6] underline underline-offset-4"
+                                >
+                                    비밀번호를 잊었나요?
+                                </button>
+                            )}
                         </form>
                     </motion.div>
+                </div>
+            )}
+
+            {showPasswordResetModal && resetCandidate && !isAdminAccount(resetCandidate) && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+                    <motion.form
+                        initial={{ opacity: 0, scale: 0.95 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        onSubmit={handlePasswordReset}
+                        className="w-full max-w-md space-y-4 rounded-3xl border border-[#E5E8EB] bg-white p-6 shadow-2xl"
+                    >
+                        <div className="flex items-start justify-between gap-4 border-b border-[#F2F4F6] pb-3">
+                            <div>
+                                <h2 className="text-lg font-extrabold text-[#191F28]">비밀번호 초기화</h2>
+                                <p className="mt-1 text-xs font-medium text-[#6B7684]">가입 정보 확인 후 새 비밀번호를 설정합니다.</p>
+                            </div>
+                            <button type="button" onClick={() => setShowPasswordResetModal(false)} className="rounded-full bg-[#F2F4F6] p-2 text-[#8B95A1]">
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <p className="rounded-xl bg-[#F8F9FA] px-3 py-2 text-sm font-bold text-[#4E5968]">{resetCandidate.name}님의 계정</p>
+                        <input
+                            type="text"
+                            required
+                            value={resetBirth}
+                            onChange={(event) => setResetBirth(event.target.value)}
+                            placeholder="생년월일 8자리 (예: 20100101)"
+                            className="w-full rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-3 py-3 text-sm font-bold outline-none focus:border-[#3182F6]"
+                        />
+                        <input
+                            type="tel"
+                            required
+                            inputMode="numeric"
+                            maxLength="4"
+                            value={resetPhoneBack4}
+                            onChange={(event) => setResetPhoneBack4(event.target.value.replace(/\D/g, '').slice(0, 4))}
+                            placeholder="휴대폰 번호 뒤 4자리"
+                            className="w-full rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-3 py-3 text-sm font-bold outline-none focus:border-[#3182F6]"
+                        />
+                        <input
+                            type="password"
+                            required
+                            minLength="4"
+                            value={resetPassword}
+                            onChange={(event) => setResetPassword(event.target.value)}
+                            placeholder="새 비밀번호 (4자리 이상)"
+                            className="w-full rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-3 py-3 text-sm font-bold outline-none focus:border-[#3182F6]"
+                        />
+                        <input
+                            type="password"
+                            required
+                            minLength="4"
+                            value={resetPasswordConfirm}
+                            onChange={(event) => setResetPasswordConfirm(event.target.value)}
+                            placeholder="새 비밀번호 확인"
+                            className="w-full rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-3 py-3 text-sm font-bold outline-none focus:border-[#3182F6]"
+                        />
+                        <button
+                            type="submit"
+                            disabled={resetLoading}
+                            className="flex h-14 w-full items-center justify-center rounded-2xl bg-[#3182F6] text-base font-bold text-white transition active:scale-[0.98] disabled:opacity-50"
+                        >
+                            {resetLoading ? '확인 중...' : '새 비밀번호로 변경'}
+                        </button>
+                    </motion.form>
                 </div>
             )}
 
@@ -1306,7 +1769,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             )}
 
             {/* In-Page Direct Signup Modal Overlay */}
-            {showSignupModal && (
+            {showSignupModal && !isProgramLoginFlow && (
                 <div className="fixed inset-0 bg-black/50 backdrop-blur-xs z-50 flex items-center justify-center p-4">
                     <div className="bg-white w-full max-w-md rounded-3xl p-6 shadow-2xl border border-[#E5E8EB] space-y-4 max-h-[90vh] overflow-y-auto">
                         <div className="flex justify-between items-center border-b border-[#F2F4F6] pb-3">

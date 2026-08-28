@@ -4,7 +4,7 @@ import { parseISO, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { MapPin, Calendar, Clock, ChevronRight, Users, CheckCircle2 } from 'lucide-react';
 import { parseDurationToMinutes, formatKoreanTimeRange } from '../../utils/dateUtils';
 
-const ProgramCard = ({ program, onClick, compact = false }) => {
+const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel }) => {
     const thumb = program.image_url || (program.images?.length > 0 ? program.images[0] : null);
 
     // Check for "Closing Soon" (within 24 hours of recruitment_deadline)
@@ -50,6 +50,8 @@ const ProgramCard = ({ program, onClick, compact = false }) => {
 
     return (
         <div
+            data-tour={tourTarget}
+            data-tour-label={tourLabel}
             onClick={() => onClick(program)}
             className={`group bg-white overflow-hidden shadow-toss-standard hover:shadow-toss-elevated transition-all duration-300 active:scale-[0.98] cursor-pointer flex flex-col h-full border-none ${compact ? 'rounded-toss-lg' : 'rounded-toss-xl'}`}
         >
@@ -178,7 +180,10 @@ const ProgramCard = ({ program, onClick, compact = false }) => {
 };
 
 export default React.memo(ProgramCard, (prevProps, nextProps) => {
+    if (prevProps.program.tutorial_mode || nextProps.program.tutorial_mode) return false;
     return prevProps.program.id === nextProps.program.id &&
         prevProps.program.responseStatus === nextProps.program.responseStatus &&
-        prevProps.program.current_applicants === nextProps.program.current_applicants;
+        prevProps.program.current_applicants === nextProps.program.current_applicants &&
+        prevProps.tourTarget === nextProps.tourTarget &&
+        prevProps.tourLabel === nextProps.tourLabel;
 });

@@ -46,9 +46,9 @@ const LogTableRow = React.memo(({
                 if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.closest('button')) return;
                 handleRowSelect(summary.id);
             }}
-            className={`hover:bg-blue-50/10 border-b border-gray-100 transition ${isSelected ? 'bg-blue-50/30 border-l-4 border-l-blue-500' : 'border-l-4 border-l-transparent'} cursor-pointer`}
+            className={`border-b border-gray-100 transition ${isSelected ? 'bg-blue-100/80' : 'hover:bg-blue-50/10'} cursor-pointer`}
         >
-            <td className="p-3 pl-6 text-center" onClick={(e) => e.stopPropagation()}>
+            <td className={`p-3 pl-6 text-center ${isSelected ? 'border-l-4 border-l-blue-500' : ''}`} onClick={(e) => e.stopPropagation()}>
                 <input
                     type="checkbox"
                     className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
@@ -88,16 +88,6 @@ const LogTableRow = React.memo(({
                 </span>
             </td>
             <td className="p-3 font-mono text-xs text-blue-600 font-bold">{summary.durationStr}</td>
-            <td className="p-3">
-                <span className="text-xs text-gray-800 font-extrabold line-clamp-2 leading-tight" title={localPurpose}>
-                    {localPurpose || '-'}
-                </span>
-            </td>
-            <td className="p-3">
-                <span className="text-xs text-emerald-800 font-bold line-clamp-2 leading-tight" title={initialNote.checkoutFeedback || '-'}>
-                    {initialNote.checkoutFeedback || '-'}
-                </span>
-            </td>
             <td className="p-3 pr-6">
                 <span className="text-xs text-gray-500 font-medium line-clamp-1 leading-tight" title={localRemarks}>
                     {localRemarks || '-'}

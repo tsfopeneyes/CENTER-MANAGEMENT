@@ -1,11 +1,109 @@
 import { format } from 'date-fns';
 import { getWeekIdentifier, parseTimeRange } from './dateUtils';
 import { supabase } from '../supabaseClient';
+import { areExternalNotificationsMuted, dispatchServerNotification, dispatchSlackAlert, dispatchVisitSlackAlert, serverIntegrationsEnabled } from './serverIntegration';
+
+const preferenceEnabled = (channel, category) => {
+    const categoryKey = `${channel}_${category}_notifications_enabled`;
+    const legacyKey = `${channel}_notifications_enabled`;
+    return (localStorage.getItem(categoryKey) ?? (category === 'visit' ? localStorage.getItem(legacyKey) : null)) !== 'false';
+};
+
+const loadPreference = async (channel, category) => {
+    const key = `${channel}_${category}_notifications_enabled`;
+    let enabled = preferenceEnabled(channel, category);
+    try {
+        const { data } = await supabase
+            .from('global_settings')
+            .select('value')
+            .eq('key', key)
+            .maybeSingle();
+        if (data?.value !== undefined) {
+            enabled = data.value !== 'false';
+            localStorage.setItem(key, String(enabled));
+        }
+    } catch (error) {
+        console.error(`Failed to load ${key}:`, error);
+    }
+    return enabled;
+};
+
+const isSlackDeliveryConfirmed = (result) => {
+    const payload = result?.data || result;
+    return payload?.results?.slack === 'sent';
+};
+
+export const sendCategoryNotification = async ({ category, message, lineTarget = 'haifn', sendLine = true, sendSlack = true }) => {
+    if (areExternalNotificationsMuted()) return { muted: true };
+    const [linePreference, slackPreference] = await Promise.all([
+        sendLine ? loadPreference('line', category) : Promise.resolve(false),
+        sendSlack ? loadPreference('slack', category) : Promise.resolve(false),
+    ]);
+    const lineEnabled = sendLine && linePreference;
+    const slackEnabled = sendSlack && slackPreference;
+
+    if (serverIntegrationsEnabled()) {
+        const result = await dispatchServerNotification({
+            message,
+            sendLine: lineEnabled,
+            sendSlack: slackEnabled,
+            sendDiscord: false,
+            lineTarget,
+            notificationCategory: category,
+        });
+        if (slackEnabled && !isSlackDeliveryConfirmed(result)) {
+            throw new Error('Slack notification could not be confirmed.');
+        }
+        return result;
+    }
+
+    let slackResult = null;
+    if (slackEnabled) {
+        // Program applications must not silently lose their Slack alert. Retry
+        // short transient failures and let the caller know if delivery still
+        // cannot be confirmed.
+        let lastError;
+        for (let attempt = 0; attempt < 3; attempt += 1) {
+            try {
+                slackResult = await dispatchSlackAlert(message, { notificationCategory: category });
+                if (!isSlackDeliveryConfirmed(slackResult)) {
+                    throw new Error('Slack notification could not be confirmed.');
+                }
+                break;
+            } catch (error) {
+                lastError = error;
+                if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 400 * (attempt + 1)));
+            }
+        }
+        if (!slackResult) throw lastError || new Error('Slack notification could not be confirmed.');
+    }
+
+    if (!lineEnabled || lineTarget !== 'haifn') return { slack: slackResult };
+
+    try {
+        const { data: settings } = await supabase.from('global_settings').select('*');
+        const settingMap = Object.fromEntries((settings || []).map(setting => [setting.key, setting.value]));
+        const token = settingMap.line_channel_access_token;
+        const groupId = settingMap.line_group_id;
+        const webhookUrl = settingMap.gs_webhook_url;
+        if (token && groupId && webhookUrl) {
+            await fetch(webhookUrl, {
+                method: 'POST',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify({ action: 'LINE_NOTIFY', token, to: groupId, message })
+            });
+        }
+    } catch (error) {
+        console.error('LINE notification error:', error);
+    }
+    return { slack: slackResult };
+};
 
 /**
  * Trigger Realtime LINE / Discord Checkin Notification
  */
-export const sendCheckinNotification = async ({ userName, schoolName, locationName, studentRegion, isGuest = false, referralPath = '', purposes = [] }) => {
+export const sendCheckinNotification = async ({ userId, userName, schoolName, locationName, studentRegion, isGuest = false, referralPath = '', purposes = [] }) => {
+    if (areExternalNotificationsMuted()) return { muted: true };
     try {
         const targetLocName = locationName || (studentRegion === '강서' ? '이높플레이스' : '하이픈');
         const locNameStr = (targetLocName || '').toString();
@@ -20,16 +118,33 @@ export const sendCheckinNotification = async ({ userName, schoolName, locationNa
             locNameStr.includes('강서')
         );
 
-        const { data: settings } = await supabase.from('global_settings').select('*');
         let lineToken = '', lineGroupId = '', gsWebhookUrl = '', discordWebhookUrl = '';
+        let lineNotificationsEnabled = preferenceEnabled('line', 'visit');
 
-        if (settings) {
-            settings.forEach(s => {
-                if (s.key === 'line_channel_access_token') lineToken = s.value;
-                if (s.key === 'line_group_id') lineGroupId = s.value;
-                if (s.key === 'gs_webhook_url') gsWebhookUrl = s.value;
-                if (s.key === 'discord_webhook_url') discordWebhookUrl = s.value;
-            });
+        try {
+            const { data: lineSetting } = await supabase
+                .from('global_settings')
+                .select('value')
+                .eq('key', 'line_visit_notifications_enabled')
+                .maybeSingle();
+            if (lineSetting?.value !== undefined) {
+                lineNotificationsEnabled = lineSetting.value !== 'false';
+                localStorage.setItem('line_visit_notifications_enabled', String(lineNotificationsEnabled));
+            }
+        } catch (error) {
+            console.error('Failed to load LINE notification setting:', error);
+        }
+
+        if (!serverIntegrationsEnabled()) {
+            const { data: settings } = await supabase.from('global_settings').select('*');
+            if (settings) {
+                settings.forEach(s => {
+                    if (s.key === 'line_channel_access_token') lineToken = s.value;
+                    if (s.key === 'line_group_id') lineGroupId = s.value;
+                    if (s.key === 'gs_webhook_url') gsWebhookUrl = s.value;
+                    if (s.key === 'discord_webhook_url') discordWebhookUrl = s.value;
+                });
+            }
         }
 
         const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
@@ -62,6 +177,28 @@ export const sendCheckinNotification = async ({ userName, schoolName, locationNa
             alertMessage = `[CHECK-IN]\n💌 ${userName}님이 ${targetLocName}에 방문했어요 (${timeStr})${surveyText}`;
         }
 
+        if (serverIntegrationsEnabled()) {
+            await dispatchServerNotification({
+                message: alertMessage,
+                sendLine: lineNotificationsEnabled && isHaifnLoc,
+                sendSlack: false,
+                lineTarget: isHaifnLoc ? 'haifn' : 'enough',
+                sendGoogleSheets: true,
+                googleSheetsPayload: {
+                    type: isGuest ? 'GUEST_CHECKIN' : 'CHECKIN', userName, schoolName,
+                    locationName: targetLocName, purposes, timestamp: new Date().toISOString(),
+                },
+            });
+            if (isHaifnLoc) {
+                await dispatchVisitSlackAlert({ message: alertMessage, userId, eventType: 'CHECKIN', locationName: targetLocName });
+            }
+            return;
+        }
+
+        if (isHaifnLoc) {
+            await dispatchVisitSlackAlert({ message: alertMessage, userId, eventType: 'CHECKIN', locationName: targetLocName });
+        }
+
         // Trigger Google Sheets Webhook (via Proxy or Direct)
         if (gsWebhookUrl) {
             try {
@@ -92,16 +229,20 @@ export const sendCheckinNotification = async ({ userName, schoolName, locationNa
             } catch (e) { console.error(e); }
         }
 
-        // Trigger LINE Notification via Proxy
-        const proxyUrl = isHaifnLoc
-            ? 'https://youth-line-proxy.onrender.com/push-to-haifn'
-            : 'https://youth-line-proxy.onrender.com/push-to-enough';
-
-        fetch(proxyUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: alertMessage })
-        }).catch(e => console.error("LINE push error", e));
+        if (lineNotificationsEnabled) {
+            if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
+                fetch(gsWebhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'LINE_NOTIFY',
+                        token: lineToken,
+                        to: lineGroupId,
+                        message: alertMessage,
+                    }),
+                }).catch(e => console.error("LINE Apps Script push error", e));
+            }
+        }
 
     } catch (err) {
         console.error('Checkin Notification Error:', err);
@@ -111,7 +252,8 @@ export const sendCheckinNotification = async ({ userName, schoolName, locationNa
 /**
  * Trigger Realtime LINE / Discord Checkout Notification
  */
-export const sendCheckoutNotification = async ({ userName, schoolName, locationName, studentRegion, feedbackText = '' }) => {
+export const sendCheckoutNotification = async ({ userId, userName, schoolName, locationName, studentRegion, feedbackText = '', checkInTime = null }) => {
+    if (areExternalNotificationsMuted()) return { muted: true };
     try {
         const targetLocName = locationName || (studentRegion === '강서' ? '이높플레이스' : '하이픈');
         const locNameStr = (targetLocName || '').toString();
@@ -126,20 +268,66 @@ export const sendCheckoutNotification = async ({ userName, schoolName, locationN
             locNameStr.includes('강서')
         );
 
-        const { data: settings } = await supabase.from('global_settings').select('*');
-        let discordWebhookUrl = '';
+        let lineToken = '', lineGroupId = '', gsWebhookUrl = '', discordWebhookUrl = '';
+        let lineNotificationsEnabled = preferenceEnabled('line', 'visit');
 
-        if (settings) {
-            settings.forEach(s => {
-                if (s.key === 'discord_webhook_url') discordWebhookUrl = s.value;
-            });
+        try {
+            const { data: lineSetting } = await supabase
+                .from('global_settings')
+                .select('value')
+                .eq('key', 'line_visit_notifications_enabled')
+                .maybeSingle();
+            if (lineSetting?.value !== undefined) {
+                lineNotificationsEnabled = lineSetting.value !== 'false';
+                localStorage.setItem('line_visit_notifications_enabled', String(lineNotificationsEnabled));
+            }
+        } catch (error) {
+            console.error('Failed to load LINE notification setting:', error);
+        }
+
+        if (!serverIntegrationsEnabled()) {
+            const { data: settings } = await supabase.from('global_settings').select('*');
+            if (settings) {
+                settings.forEach(s => {
+                    if (s.key === 'line_channel_access_token') lineToken = s.value;
+                    if (s.key === 'line_group_id') lineGroupId = s.value;
+                    if (s.key === 'gs_webhook_url') gsWebhookUrl = s.value;
+                    if (s.key === 'discord_webhook_url') discordWebhookUrl = s.value;
+                });
+            }
         }
 
         const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
-        const schoolStr = schoolName ? `(${schoolName})` : '';
         const feedbackStr = feedbackText ? `\n▪ 이용 소감: ${feedbackText}` : '';
+        let durationStr = '';
+        if (checkInTime) {
+            const checkInTimestamp = new Date(checkInTime).getTime();
+            if (Number.isFinite(checkInTimestamp)) {
+                const durationMinutes = Math.max(1, Math.floor((Date.now() - checkInTimestamp) / (1000 * 60)));
+                const hours = Math.floor(durationMinutes / 60);
+                const minutes = durationMinutes % 60;
+                durationStr = `\n🕑 ${hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`} 이용`;
+            }
+        }
 
-        const alertMessage = `[CHECK-OUT]\n👋 ${userName}${schoolStr}님이 ${targetLocName}에서 퇴실했습니다. (${timeStr})${feedbackStr}`;
+        const alertMessage = `[CHECK-OUT]\n💙 ${userName}님이 ${targetLocName}에서 퇴실했어요 (${timeStr})${durationStr}${feedbackStr}`;
+
+        if (serverIntegrationsEnabled()) {
+            await dispatchServerNotification({
+                message: alertMessage,
+                sendLine: lineNotificationsEnabled && isHaifnLoc,
+                sendSlack: false,
+                lineTarget: isHaifnLoc ? 'haifn' : 'enough',
+            });
+            if (isHaifnLoc) {
+                await dispatchVisitSlackAlert({ message: alertMessage, userId, eventType: 'CHECKOUT', locationName: targetLocName });
+            }
+            return;
+        }
+
+        if (isHaifnLoc) {
+            await dispatchVisitSlackAlert({ message: alertMessage, userId, eventType: 'CHECKOUT', locationName: targetLocName });
+        }
 
         // Trigger Discord Webhook
         if (discordWebhookUrl) {
@@ -152,16 +340,20 @@ export const sendCheckoutNotification = async ({ userName, schoolName, locationN
             } catch (e) { console.error(e); }
         }
 
-        // Trigger LINE Notification via Proxy
-        const proxyUrl = isHaifnLoc
-            ? 'https://youth-line-proxy.onrender.com/push-to-haifn'
-            : 'https://youth-line-proxy.onrender.com/push-to-enough';
-
-        fetch(proxyUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ message: alertMessage })
-        }).catch(e => console.error("LINE checkout push error", e));
+        if (lineNotificationsEnabled) {
+            if (isHaifnLoc && lineToken && lineGroupId && gsWebhookUrl) {
+                fetch(gsWebhookUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'text/plain' },
+                    body: JSON.stringify({
+                        action: 'LINE_NOTIFY',
+                        token: lineToken,
+                        to: lineGroupId,
+                        message: alertMessage,
+                    }),
+                }).catch(e => console.error("LINE Apps Script checkout push error", e));
+            }
+        }
 
     } catch (err) {
         console.error('Checkout Notification Error:', err);

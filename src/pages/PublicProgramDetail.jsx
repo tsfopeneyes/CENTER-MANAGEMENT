@@ -1,13 +1,83 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { supabase } from '../supabaseClient';
-import { Calendar, User, ArrowLeft, Share, AlertCircle, MapPin, Users, Smartphone, School, CheckCircle2, X } from 'lucide-react';
+import { Calendar, User, ArrowLeft, Share, AlertCircle, MapPin, Users, Smartphone, School, CheckCircle2, X, Download, Copy, Sparkles } from 'lucide-react';
+import { QRCodeCanvas } from 'qrcode.react';
 import NoticeCarousel from '../components/student/components/NoticeCarousel';
+import ParticipantModal from '../components/admin/board/components/modals/ParticipantModal';
+import ProgramFeedbackModal from '../components/student/modals/ProgramFeedbackModal';
 import LinkPreview from '../components/common/LinkPreview';
 import { extractUrls, extractProgramInfo } from '../utils/textUtils';
 import { formatToLocalISO, formatProgramSchedule } from '../utils/dateUtils';
 import { TAB_NAMES } from '../constants/appConstants';
 import { trackUserWebActivity } from '../utils/userActivityUtils';
+import { sendCategoryNotification } from '../utils/integrationUtils';
+
+const isInternalAccount = (user) => {
+    if (!user) return false;
+    const role = String(user.role || '').toLowerCase();
+    const group = String(user.user_group || '').toLowerCase();
+    return Boolean(
+        user.is_master ||
+        user.name === 'admin' ||
+        ['admin', 'master', 'staff', 'rok'].includes(role) ||
+        group === 'staff' ||
+        user.user_group === '관리자'
+    );
+};
+
+const isProgramEnded = (program) => {
+    if (!program) return false;
+    if (program.program_status === 'COMPLETED') return true;
+    if ((program.guest_properties?.is_ended ?? program.is_ended) === true) return true;
+
+    const programDate = program.program_date;
+    if (!programDate) return false;
+
+    let startDateTime = new Date(programDate);
+    if (Number.isNaN(startDateTime.getTime())) {
+        startDateTime = new Date(`${programDate}T${program.program_time || '00:00'}`);
+    }
+    if (Number.isNaN(startDateTime.getTime())) return false;
+
+    let durationMinutes = 60;
+    const duration = String(program.program_duration || '').trim();
+    if (duration) {
+        const hourMatch = duration.match(/([\d.]+)\s*(시간|h)/i);
+        const minuteMatch = duration.match(/([\d.]+)\s*(분|m)/i);
+        if (hourMatch || minuteMatch) {
+            durationMinutes = (hourMatch ? parseFloat(hourMatch[1]) * 60 : 0)
+                + (minuteMatch ? parseFloat(minuteMatch[1]) : 0);
+        } else {
+            const plainNumber = parseFloat(duration);
+            if (!Number.isNaN(plainNumber) && plainNumber > 0) {
+                durationMinutes = plainNumber <= 12 ? plainNumber * 60 : plainNumber;
+            }
+        }
+    }
+
+    return new Date() >= new Date(startDateTime.getTime() + durationMinutes * 60 * 1000);
+};
+
+// The public link is long-lived, so it must not rely on the list page having
+// hidden an old program. Keep the same rule for the visible button and the
+// write immediately before a response is created.
+const getProgramRegistrationBlockReason = (program) => {
+    if (!program) return '프로그램 정보를 찾을 수 없습니다.';
+    if (program.category && program.category !== 'PROGRAM') return '프로그램 정보를 찾을 수 없습니다.';
+    if (['COMPLETED', 'CANCELLED'].includes(String(program.program_status || '').toUpperCase())) {
+        return '이미 마감된 프로그램입니다.';
+    }
+    if (program.is_recruiting !== true) return '현재 모집 중이 아닌 프로그램입니다.';
+    if ((program.guest_properties?.is_ended ?? program.is_ended) === true || isProgramEnded(program)) {
+        return '이미 마감된 프로그램입니다.';
+    }
+    if (program.recruitment_deadline) {
+        const deadline = new Date(program.recruitment_deadline);
+        if (!Number.isNaN(deadline.getTime()) && deadline <= new Date()) return '신청 기간이 마감되었습니다.';
+    }
+    return null;
+};
 
 const PublicProgramDetail = () => {
     const { id } = useParams();
@@ -32,6 +102,27 @@ const PublicProgramDetail = () => {
     const [selectedMissionForDetail, setSelectedMissionForDetail] = useState(null);
     const [loggedInUser, setLoggedInUser] = useState(null);
     const [isRegistered, setIsRegistered] = useState(false);
+    const [showParticipantModal, setShowParticipantModal] = useState(false);
+    const [isShareModalOpen, setIsShareModalOpen] = useState(false);
+    const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+    const [hasReviewed, setHasReviewed] = useState(false);
+    const qrCanvasRef = useRef(null);
+    const isInternalViewer = isInternalAccount(loggedInUser);
+    const programRegistrationBlockReason = getProgramRegistrationBlockReason(notice);
+    const isProgramRegistrationOpen = !programRegistrationBlockReason;
+
+    const loadOpenProgramForRegistration = async () => {
+        const { data, error } = await supabase
+            .from('notices')
+            .select('id, title, category, is_recruiting, program_status, guest_properties, is_ended, recruitment_deadline, program_date, program_time, program_duration')
+            .eq('id', id)
+            .maybeSingle();
+        if (error) throw error;
+
+        const reason = getProgramRegistrationBlockReason(data);
+        if (reason) throw new Error(reason);
+        return data;
+    };
 
     const handleGuestFormChange = (e) => {
         const { name, value } = e.target;
@@ -63,6 +154,9 @@ const PublicProgramDetail = () => {
 
         setSubmitting(true);
         try {
+            // Re-read just before writing: shared links can stay open while an
+            // administrator finishes or closes the program in another tab.
+            const registrationNotice = await loadOpenProgramForRegistration();
             let userId = null;
             let loggedInUser = null;
             
@@ -77,6 +171,11 @@ const PublicProgramDetail = () => {
                 if (userCheckErr) throw userCheckErr;
  
                 if (existingUser) {
+                    if (isInternalAccount(existingUser)) {
+                        alert('관리자 및 스태프 계정은 프로그램을 신청할 수 없습니다.');
+                        setSubmitting(false);
+                        return;
+                    }
                     userId = existingUser.id;
                     loggedInUser = existingUser;
                     // 2. Check if already signed up for this program
@@ -148,6 +247,17 @@ const PublicProgramDetail = () => {
                 });
  
             if (regErr) throw regErr;
+
+            try {
+                await sendCategoryNotification({
+                    category: 'program',
+                    message: `[PROGRAM]\n📝 ${loggedInUser?.name?.replace('(guest)', '') || guestForm.name}님이 <${registrationNotice.title || '프로그램'}> 프로그램을 신청했어요!`
+                });
+            } catch (notificationError) {
+                // Registration has already succeeded. Do not misreport it as a
+                // failed application or invite a duplicate retry.
+                console.error('Program application Slack notification failed after retries:', notificationError);
+            }
  
             // Save guest user login session to localStorage
             if (loggedInUser) {
@@ -169,20 +279,54 @@ const PublicProgramDetail = () => {
 
     const handleRegisterLoggedIn = async () => {
         if (!loggedInUser) return;
+        if (isInternalViewer) {
+            alert('관리자 및 스태프 계정은 프로그램을 신청할 수 없습니다.');
+            return;
+        }
         setSubmitting(true);
         try {
+            const registrationNotice = await loadOpenProgramForRegistration();
+            // Re-read the canonical public.users row immediately before inserting.
+            // This prevents a deleted/expired local session from violating the FK.
+            const { data: dbUser, error: userErr } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', loggedInUser.id)
+                .maybeSingle();
+
+            if (userErr) throw userErr;
+            if (!dbUser) {
+                localStorage.removeItem('user');
+                localStorage.removeItem('admin_user');
+                setLoggedInUser(null);
+                setIsRegistered(false);
+                alert('회원 세션이 만료되었습니다. 다시 로그인한 후 신청해 주세요.');
+                return;
+            }
+
             const { error: regErr } = await supabase
                 .from('notice_responses')
                 .insert({
                     notice_id: parseInt(id),
-                    user_id: loggedInUser.id,
+                    user_id: dbUser.id,
                     status: 'JOIN',
                     is_attended: false
                 });
 
             if (regErr) throw regErr;
 
-            await trackUserWebActivity(loggedInUser);
+            try {
+                await sendCategoryNotification({
+                    category: 'program',
+                    message: `[PROGRAM]\n📝 ${dbUser.name?.replace('(guest)', '') || '학생'}님이 <${registrationNotice.title || '프로그램'}> 프로그램을 신청했어요!`
+                });
+            } catch (notificationError) {
+                // Registration has already succeeded. Do not misreport it as a
+                // failed application or invite a duplicate retry.
+                console.error('Program application Slack notification failed after retries:', notificationError);
+            }
+
+            await trackUserWebActivity(loggedInUser, { force: true });
 
             localStorage.setItem('pendingProgramJoin', id);
             setIsRegistered(true);
@@ -238,29 +382,85 @@ const PublicProgramDetail = () => {
             }
         }
     }, [notice]);
+
+    useEffect(() => {
+        const checkFeedbackStatus = async () => {
+            if (!notice?.id || !loggedInUser?.id || !isRegistered) {
+                setHasReviewed(false);
+                return;
+            }
+
+            try {
+                const { data, error } = await supabase
+                    .from('program_feedback')
+                    .select('id')
+                    .eq('notice_id', notice.id)
+                    .eq('user_id', loggedInUser.id)
+                    .maybeSingle();
+                if (error) throw error;
+                setHasReviewed(Boolean(data));
+            } catch (err) {
+                console.error('Failed to check program feedback status:', err);
+            }
+        };
+
+        checkFeedbackStatus();
+    }, [notice?.id, loggedInUser?.id, isRegistered, showFeedbackModal]);
     
     // Check existing login session on mount (do not redirect)
     useEffect(() => {
         const checkExistingLogin = async () => {
-            const storedUser = localStorage.getItem('user') || localStorage.getItem('admin_user');
-            if (storedUser) {
+            // Prefer an active admin session, but verify every stored session against
+            // public.users before using its id as notice_responses.user_id. A stale
+            // localStorage record otherwise causes a foreign-key error on submit.
+            const storedKeys = ['admin_user', 'user'];
+            let user = null;
+
+            for (const key of storedKeys) {
+                const storedUser = localStorage.getItem(key);
+                if (!storedUser) continue;
+
                 try {
-                    const user = JSON.parse(storedUser);
-                    setLoggedInUser(user);
-                    
-                    // Check if already registered for this notice
-                    const { data } = await supabase
-                        .from('notice_responses')
-                        .select('id')
-                        .eq('notice_id', parseInt(id))
-                        .eq('user_id', user.id)
-                        .maybeSingle();
-                        
-                    if (data) {
-                        setIsRegistered(true);
+                    const parsedUser = JSON.parse(storedUser);
+                    if (!parsedUser?.id) {
+                        localStorage.removeItem(key);
+                        continue;
                     }
+
+                    const { data: dbUser, error: userErr } = await supabase
+                        .from('users')
+                        .select('*')
+                        .eq('id', parsedUser.id)
+                        .maybeSingle();
+
+                    if (userErr) throw userErr;
+                    if (!dbUser) {
+                        localStorage.removeItem(key);
+                        continue;
+                    }
+
+                    user = { ...parsedUser, ...dbUser };
+                    break;
                 } catch (e) {
-                    console.error('Error parsing stored user:', e);
+                    console.error(`Error validating stored ${key} session:`, e);
+                }
+            }
+
+            if (user) {
+                setLoggedInUser(user);
+
+                // Check if already registered for this notice
+                const { data, error: responseErr } = await supabase
+                    .from('notice_responses')
+                    .select('id')
+                    .eq('notice_id', parseInt(id))
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+
+                if (responseErr) {
+                    console.error('Error checking program registration:', responseErr);
+                } else if (data) {
+                    setIsRegistered(true);
                 }
             }
             fetchNotice();
@@ -338,7 +538,65 @@ const PublicProgramDetail = () => {
         // Save intent for after login
         localStorage.setItem('pendingProgramJoin', id);
         alert('신청(참여) 하려면 로그인이 필요합니다.');
-        navigate('/'); // Redirect to Landing for login
+        navigate(`/?programLogin=${encodeURIComponent(id)}`, {
+            state: { fromProgram: true, programId: id }
+        }); // Redirect to the login landing without exposing center registration
+    };
+
+    const getProgramUrl = () => window.location.href;
+
+    const copyProgramUrl = async () => {
+        const programUrl = getProgramUrl();
+        try {
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(programUrl);
+            } else {
+                const textArea = document.createElement('textarea');
+                textArea.value = programUrl;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+            }
+            alert('공유 링크가 클립보드에 복사되었습니다!');
+        } catch (err) {
+            console.error('Failed to copy program link:', err);
+            alert('링크 복사에 실패했습니다. 주소창의 링크를 복사해 주세요.');
+        }
+    };
+
+    const shareProgramUrl = async () => {
+        const programUrl = getProgramUrl();
+        if (!navigator.share) {
+            await copyProgramUrl();
+            return;
+        }
+
+        try {
+            await navigator.share({
+                title: notice?.title || 'SCI CENTER 프로그램',
+                text: notice?.title || 'SCI CENTER 프로그램에 참여해 보세요.',
+                url: programUrl
+            });
+        } catch (err) {
+            if (err?.name !== 'AbortError') {
+                console.error('Failed to share program link:', err);
+            }
+        }
+    };
+
+    const downloadProgramQr = () => {
+        const canvas = qrCanvasRef.current;
+        if (!canvas) return;
+
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = `SCI-CENTER-program-${id}-QR.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     };
 
     if (loading) {
@@ -376,6 +634,8 @@ const PublicProgramDetail = () => {
         notice.program_start_date,
         notice.program_end_date
     );
+    const isFeedbackEnabled = notice.enable_feedback === true || notice.guest_properties?.enable_feedback === true;
+    const canLeaveFeedback = Boolean(loggedInUser && isRegistered && isProgramEnded(notice) && isFeedbackEnabled);
 
     return (
         <div className="w-full md:max-w-lg mx-auto min-h-screen bg-white relative pb-64 shadow-2xl">
@@ -388,11 +648,9 @@ const PublicProgramDetail = () => {
                     <div className="font-bold text-sm text-gray-900">프로그램 정보</div>
                 </div>
                 <button 
-                    onClick={() => {
-                        navigator.clipboard.writeText(window.location.href)
-                            .then(() => alert('공유 링크가 클립보드에 복사되었습니다!'));
-                    }} 
+                    onClick={() => setIsShareModalOpen(true)}
                     className="p-2 hover:bg-gray-50 rounded-full transition text-gray-500"
+                    aria-label="프로그램 공유"
                 >
                     <Share size={20} />
                 </button>
@@ -554,14 +812,23 @@ const PublicProgramDetail = () => {
                                         )}
                                     </div>
 
-                                    <button
-                                        onClick={() => {
-                                            setSelectedMissionForDetail(null);
-                                            handleActionClick();
-                                        }}
+                                     <button
+                                         onClick={() => {
+                                             setSelectedMissionForDetail(null);
+                                             if (isInternalViewer) {
+                                                 setShowParticipantModal(true);
+                                             } else if (loggedInUser) {
+                                                 if (isRegistered) navigate('/student');
+                                                 else handleRegisterLoggedIn();
+                                             } else {
+                                                 handleActionClick();
+                                             }
+                                         }}
                                         className="w-full py-4 bg-blue-600 text-white font-black text-center rounded-2xl text-sm transition-all hover:bg-blue-700 active:scale-[0.98]"
                                     >
-                                        로그인하고 신청하기
+                                         {isInternalViewer
+                                             ? '신청자 명단'
+                                             : (loggedInUser ? (isRegistered ? '신청 현황 보기' : '신청하기') : '로그인하고 신청하기')}
                                     </button>
                                 </div>
                             </div>
@@ -665,27 +932,49 @@ const PublicProgramDetail = () => {
 
             {/* Bottom Floating Action Bar */}
             <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full md:max-w-lg bg-white/95 backdrop-blur-xl border-t border-gray-100 z-50 safe-area-bottom">
-                {notice.is_recruiting ? (
+                {(isProgramRegistrationOpen || canLeaveFeedback || isInternalViewer) ? (
                     <div className="flex flex-col">
                         {/* Full-width Dark Deadline Bar */}
-                        {notice.recruitment_deadline && (
+                        {isProgramRegistrationOpen && notice.recruitment_deadline && !isProgramEnded(notice) && (
                             <div className="w-full bg-[#1e293b] text-center py-2.5 px-4 text-xs font-bold text-amber-400 tracking-tight">
                                 {timeLeft}
                             </div>
                         )}
                         
                         <div className="p-4 flex flex-col gap-2">
-                            {loggedInUser ? (
+                            {isInternalViewer ? (
+                                <button
+                                    type="button"
+                                    onClick={() => setShowParticipantModal(true)}
+                                    className="w-full h-11 rounded-toss-xl font-bold text-tossBlue text-xs bg-tossBlueLight hover:bg-blue-100 transition transform active:scale-[0.98] flex items-center justify-center cursor-pointer px-2"
+                                >
+                                    신청자 명단
+                                </button>
+                            ) : loggedInUser ? (
                                 isRegistered ? (
-                                    <button 
-                                        onClick={() => {
-                                            localStorage.setItem('pendingProgramJoin', id);
-                                            navigate('/student');
-                                        }}
-                                        className="w-full bg-slate-900 text-white rounded-2xl py-4 font-black text-base transition active:scale-[0.98]"
-                                    >
-                                        신청 완료됨 (대시보드 이동)
-                                    </button>
+                                    canLeaveFeedback ? (
+                                        <button
+                                            onClick={() => setShowFeedbackModal(true)}
+                                            className={`w-full rounded-2xl py-4 font-black text-base transition active:scale-[0.98] flex items-center justify-center gap-2 ${
+                                                hasReviewed
+                                                    ? 'bg-slate-100 text-slate-700 border border-slate-200'
+                                                    : 'bg-blue-600 text-white shadow-lg shadow-blue-200'
+                                            }`}
+                                        >
+                                            <Sparkles size={19} />
+                                            {hasReviewed ? '피드백 작성 완료' : '피드백 작성'}
+                                        </button>
+                                    ) : (
+                                        <button 
+                                            onClick={() => {
+                                                localStorage.setItem('pendingProgramJoin', id);
+                                                navigate('/student');
+                                            }}
+                                            className="w-full bg-slate-900 text-white rounded-2xl py-4 font-black text-base transition active:scale-[0.98]"
+                                        >
+                                            신청 완료됨 (대시보드 이동)
+                                        </button>
+                                    )
                                 ) : (
                                     <button 
                                         onClick={handleRegisterLoggedIn}
@@ -729,6 +1018,96 @@ const PublicProgramDetail = () => {
                     </div>
                 )}
             </div>
+
+            {showParticipantModal && isInternalViewer && (
+                <ParticipantModal
+                    notice={notice}
+                    initialView="attendance"
+                    onClose={() => setShowParticipantModal(false)}
+                    onRefresh={fetchNotice}
+                />
+            )}
+
+            {isShareModalOpen && (
+                <div
+                    className="fixed inset-0 z-[100] bg-black/60 backdrop-blur-sm flex items-center justify-center p-5"
+                    onClick={() => setIsShareModalOpen(false)}
+                >
+                    <div
+                        className="w-full max-w-sm rounded-[2rem] bg-white p-6 shadow-2xl"
+                        onClick={(event) => event.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between gap-4 mb-5">
+                            <div>
+                                <h2 className="text-lg font-black text-gray-900">프로그램 공유</h2>
+                                <p className="mt-1 text-xs font-semibold text-gray-400">QR을 스캔하면 이 프로그램 페이지로 바로 연결됩니다.</p>
+                            </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsShareModalOpen(false)}
+                                className="-mr-2 -mt-2 rounded-full p-2 text-gray-400 hover:bg-gray-100"
+                                aria-label="공유 창 닫기"
+                            >
+                                <X size={20} />
+                            </button>
+                        </div>
+
+                        <div className="flex justify-center rounded-3xl bg-slate-50 p-5 border border-slate-100">
+                            <div className="rounded-2xl bg-white p-3 shadow-sm">
+                                <QRCodeCanvas
+                                    ref={qrCanvasRef}
+                                    value={getProgramUrl()}
+                                    size={220}
+                                    level="H"
+                                    includeMargin
+                                />
+                            </div>
+                        </div>
+
+                        <p className="mt-4 truncate rounded-xl bg-gray-50 px-3 py-2 text-center text-[11px] font-medium text-gray-500">
+                            {getProgramUrl()}
+                        </p>
+
+                        <div className="mt-4 grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={copyProgramUrl}
+                                className="flex items-center justify-center gap-2 rounded-xl bg-gray-100 px-3 py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-200"
+                            >
+                                <Copy size={16} /> 링크 복사
+                            </button>
+                            <button
+                                type="button"
+                                onClick={downloadProgramQr}
+                                className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white transition hover:bg-blue-700"
+                            >
+                                <Download size={16} /> QR 다운로드
+                            </button>
+                        </div>
+
+                        {typeof navigator !== 'undefined' && navigator.share && (
+                            <button
+                                type="button"
+                                onClick={shareProgramUrl}
+                                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-100 px-3 py-3 text-sm font-bold text-blue-600 transition hover:bg-blue-50"
+                            >
+                                <Share size={16} /> 다른 앱으로 공유
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {showFeedbackModal && (
+                <ProgramFeedbackModal
+                    program={notice}
+                    onClose={() => setShowFeedbackModal(false)}
+                    onSuccess={() => {
+                        setHasReviewed(true);
+                        setShowFeedbackModal(false);
+                    }}
+                />
+            )}
 
             {/* Guest Form Modal */}
             {isGuestModalOpen && (() => {

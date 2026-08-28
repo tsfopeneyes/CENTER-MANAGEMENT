@@ -1,0 +1,35 @@
+display_information:
+  name: TSF
+  description: Notion과 TSF 웹앱 현황을 찾아 답하는 더작은재단 AI 비서
+  background_color: "#1F2937"
+features:
+  bot_user:
+    display_name: TSF
+    always_online: false
+  slash_commands:
+    - command: /tsf
+      url: https://erecqalsxoxrufggvmcc.supabase.co/functions/v1/slack-tsf
+      description: Notion 문서와 TSF 웹앱 현황을 검색·요약합니다
+      usage_hint: 오늘 이용 현황 알려줘
+      should_escape: true
+oauth_config:
+  scopes:
+    bot:
+      - app_mentions:read
+      - chat:write
+      - channels:history
+      - groups:history
+      - im:history
+      - mpim:history
+      - commands
+settings:
+  interactivity:
+    is_enabled: true
+    request_url: https://erecqalsxoxrufggvmcc.supabase.co/functions/v1/slack-tsf
+  event_subscriptions:
+    request_url: https://erecqalsxoxrufggvmcc.supabase.co/functions/v1/slack-tsf
+    bot_events:
+      - app_mention
+  org_deploy_enabled: false
+  socket_mode_enabled: false
+  token_rotation_enabled: false

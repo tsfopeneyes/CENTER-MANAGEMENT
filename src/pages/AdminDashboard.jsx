@@ -8,6 +8,10 @@ import { performFullSyncToGoogleSheets } from '../utils/integrationUtils';
 import { processAnalyticsData, processUserAnalytics, processProgramAnalytics } from '../utils/analyticsUtils';
 import { aggregateVisitSessions } from '../utils/visitUtils';
 import { feedbackApi } from '../api/feedbackApi';
+import { requestSupabaseRest } from '../utils/supabaseRest';
+import { calculateCurrentLocations, sortVisitLogsChronologically } from '../utils/liveOccupancyUtils';
+import { getTodayVisitState, recordVisitEvent } from '../utils/visitLifecycle';
+import { hasExpiredWebAccessTimestamp, removeWebAccessTimestamp } from '../utils/webAccessUtils';
 
 // Components
 import AdminSidebar from '../components/admin/AdminSidebar';
@@ -40,6 +44,7 @@ const AdminDashboard = () => {
     const [isSidebarPinned, setIsSidebarPinned] = useState(true);
     const [loading, setLoading] = useState(true);
     const [isStatsLoading, setIsStatsLoading] = useState(false);
+    const [loadError, setLoadError] = useState('');
 
     // Data
     const [users, setUsers] = useState([]);
@@ -111,8 +116,65 @@ const AdminDashboard = () => {
         // Automatically perform full fetch if currently in statistics or report mode
         const needsFullFetch = isFullFetch || activeMenu === 'STATISTICS' || activeMenu === 'REPORTS';
         if (needsFullFetch) setIsStatsLoading(true);
+        const failedReads = [];
+        const readAdminData = async (label, path) => {
+            try {
+                // Samsung Internet can abort Supabase client's internal request
+                // while restoring a PWA. Use the same resilient REST path as QR flows.
+                return await requestSupabaseRest(path, {}, 2, 15000);
+            } catch (error) {
+                console.error(`Failed to load admin ${label}:`, error);
+                failedReads.push(label);
+                return [];
+            }
+        };
         try {
-            const { data: userData } = await supabase.from('users').select('*').order('name');
+            const logLimit = activeMenu === 'STATISTICS' || isFullFetch ? 10000 : 2000;
+            let [userData, locData, lgData, noticeData, responseData, vNotesData, surveyDataList, rawLogs, sLogs] = await Promise.all([
+                readAdminData('회원', 'users?select=*&order=name.asc'),
+                readAdminData('장소', 'locations?select=*&order=id.asc'),
+                readAdminData('장소 그룹', 'location_groups?select=*&order=created_at.asc'),
+                readAdminData('프로그램', 'notices?select=*&order=is_sticky.desc,created_at.desc'),
+                readAdminData('신청 내역', 'notice_responses?select=*'),
+                readAdminData('방문 메모', 'visit_notes?select=*'),
+                readAdminData('체크인 설문', 'checkin_surveys?select=*&order=created_at.desc&limit=1000'),
+                readAdminData('입출입 기록', `logs?select=*&order=created_at.desc&limit=${logLimit}`),
+                readAdminData('학교 기록', 'school_logs?select=*,users(name),schools(name)&order=date.desc'),
+            ]);
+
+            // The web access page only needs a member's latest access time.
+            // Remove timestamps after the disclosed three-month retention period
+            // without touching visit, program, point, or other user records.
+            const expiredWebAccessUsers = (userData || []).filter(user => hasExpiredWebAccessTimestamp(user.preferences));
+            if (expiredWebAccessUsers.length > 0) {
+                const cleanupResults = await Promise.allSettled(
+                    expiredWebAccessUsers.map(async (user) => {
+                        const preferences = removeWebAccessTimestamp(user.preferences);
+                        const { error } = await supabase
+                            .from('users')
+                            .update({ preferences })
+                            .eq('id', user.id);
+                        if (error) throw error;
+                        return user.id;
+                    })
+                );
+                const cleanedUserIds = new Set(
+                    cleanupResults
+                        .filter(result => result.status === 'fulfilled')
+                        .map(result => result.value)
+                );
+                if (cleanupResults.some(result => result.status === 'rejected')) {
+                    failedReads.push('만료된 웹 접속 기록 정리');
+                }
+                userData = (userData || []).map(user => (
+                    cleanedUserIds.has(user.id)
+                        ? { ...user, preferences: removeWebAccessTimestamp(user.preferences) }
+                        : user
+                ));
+            }
+            setLoadError(failedReads.length > 0
+                ? `${failedReads.join(', ')} 데이터를 불러오지 못했습니다. 네트워크를 확인한 뒤 새로고침해 주세요.`
+                : '');
             setUsers(userData || []);
 
             // Automatically sync currentAdmin with latest DB data
@@ -131,18 +193,12 @@ const AdminDashboard = () => {
                 }
             }
 
-            const { data: locData } = await supabase.from('locations').select('*').order('id');
             setLocations(locData || []);
 
-            const { data: lgData } = await supabase.from('location_groups').select('*').order('created_at');
             setLocationGroups(lgData || []);
 
-            const { data: noticeData } = await supabase.from('notices').select('*')
-                .order('is_sticky', { ascending: false })
-                .order('created_at', { ascending: false });
             setNotices(noticeData || []);
 
-            const { data: responseData } = await supabase.from('notice_responses').select('*');
             setResponses(responseData || []);
 
             let feedbackData = [];
@@ -153,57 +209,14 @@ const AdminDashboard = () => {
             }
             setFeedbacks(feedbackData || []);
 
-            const { data: vNotesData } = await supabase.from('visit_notes').select('*');
             setVisitNotes(vNotesData || []);
 
-            let surveyDataList = [];
-            try {
-                const { data: sData } = await supabase
-                    .from('checkin_surveys')
-                    .select('*')
-                    .order('created_at', { ascending: false })
-                    .limit(1000);
-                surveyDataList = sData || [];
-            } catch (e) {
-                console.error("Failed to fetch checkin surveys:", e);
-            }
             setCheckinSurveys(surveyDataList);
 
             // Stats Calculation - Limit initial log fetch dynamically for speed
-            const logLimit = activeMenu === 'STATISTICS' || isFullFetch ? 10000 : 2000;
-            const { data: rawLogs } = await supabase.from('logs').select('*').order('created_at', { ascending: false }).limit(logLimit);
-            const logs = rawLogs ? [...rawLogs].reverse() : [];
+            const logs = sortVisitLogsChronologically(rawLogs || []);
 
-            const todayStr = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-            const nowKSTHour = parseInt(new Date().toLocaleTimeString('en-US', { timeZone: 'Asia/Seoul', hour12: false, hour: '2-digit' }));
-            const isPast22 = nowKSTHour >= 22;
-
-            const userCurrentLocation = {};
-            logs?.forEach(log => {
-                const key = log.user_id || `guest_${log.id}`;
-                const logDateStr = new Date(log.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Seoul' });
-                const isToday = logDateStr === todayStr;
-
-                if (log.type === 'CHECKIN') {
-                    if (isToday && !isPast22) {
-                        userCurrentLocation[key] = { locId: log.location_id, checkInTime: log.created_at, isGuest: !log.user_id };
-                    } else {
-                        userCurrentLocation[key] = null;
-                    }
-                } else if (log.type === 'MOVE') {
-                    if (isToday && !isPast22) {
-                        userCurrentLocation[key] = { 
-                            locId: log.location_id, 
-                            checkInTime: userCurrentLocation[key]?.checkInTime || log.created_at,
-                            isGuest: !log.user_id
-                        };
-                    } else {
-                        userCurrentLocation[key] = null;
-                    }
-                } else if (log.type === 'CHECKOUT') {
-                    userCurrentLocation[key] = null;
-                }
-            });
+            const userCurrentLocation = calculateCurrentLocations(logs);
 
             const adminIdsSet = new Set(userData?.filter(u =>
                 u.name === 'admin' || u.user_group === '관리자' || u.role === 'admin'
@@ -256,13 +269,14 @@ const AdminDashboard = () => {
             setCurrentLocations(userCurrentLocation);
             setAllLogs(logs || []);
 
-            // Fetch School Logs for AdminLogs
-            const { data: sLogs } = await supabase.from('school_logs').select('*, users(name), schools(name)').order('date', { ascending: false });
             setSchoolLogs(sLogs || []);
 
             return { users: userData || [], locations: locData || [], locationGroups: lgData || [], notices: noticeData || [], responses: responseData || [], allLogs: logs || [], schoolLogs: sLogs || [], feedbacks: feedbackData || [] };
 
-        } catch (error) { console.error(error); }
+        } catch (error) {
+            console.error(error);
+            setLoadError('관리자 데이터를 불러오는 중 문제가 생겼습니다. 잠시 후 다시 시도해 주세요.');
+        }
         finally {
             setLoading(false);
             setIsStatsLoading(false);
@@ -406,9 +420,26 @@ const AdminDashboard = () => {
 
         const pollInterval = setInterval(pollCheckins, 4000); // Poll every 4 seconds for fast response
 
+        // Realtime is normally immediate, but some mobile browsers suspend a
+        // WebSocket after the admin screen has been open for a while. Refresh
+        // the live status separately from the alert preference so checkout is
+        // still reflected even when desktop check-in sounds are turned off.
+        let isRefreshingOccupancy = false;
+        const occupancyRefreshInterval = setInterval(async () => {
+            if (activeMenu !== 'STATUS' || document.visibilityState === 'hidden' || isRefreshingOccupancy) return;
+
+            isRefreshingOccupancy = true;
+            try {
+                await fetchData();
+            } finally {
+                isRefreshingOccupancy = false;
+            }
+        }, 15000);
+
         return () => {
             clearTimeout(debounceTimer);
             clearInterval(pollInterval);
+            clearInterval(occupancyRefreshInterval);
             supabase.removeChannel(subscription);
         };
     }, [navigate, fetchData, playChime]);
@@ -417,14 +448,20 @@ const AdminDashboard = () => {
         if (!confirm('해당 이용자를 강제 퇴실 처리하시겠습니까?')) return;
         try {
             const isGuestId = typeof userId === 'string' && userId.startsWith('guest_');
-            const targetUserId = isGuestId ? null : userId;
-            const { error } = await supabase.from('logs').insert([{
-                user_id: targetUserId,
+            if (isGuestId) throw new Error('게스트 이용자는 현황 화면에서 퇴실 처리해주세요.');
+            const visit = await getTodayVisitState(userId);
+            if (!['ACTIVE', 'AUTO_CHECKED_OUT'].includes(visit.status)) {
+                throw new Error('이미 퇴실 처리된 이용자입니다.');
+            }
+            const result = await recordVisitEvent({
+                userId,
+                locationId: visit.locationId,
                 type: 'CHECKOUT',
-                location_id: null
-            }]);
-
-            if (error) throw error;
+                adminId: currentAdminRef.current?.id || null,
+            });
+            if (!['CREATED', 'RECONCILED'].includes(result.outcome)) {
+                throw new Error('퇴실 상태를 다시 확인해주세요.');
+            }
             fetchData();
             alert('퇴실 처리되었습니다.');
         } catch (err) {
@@ -438,14 +475,19 @@ const AdminDashboard = () => {
         if (!confirm(`현재 입실 중인 ${userIds.length}명 전원을 퇴실 처리하시겠습니까?`)) return;
 
         try {
-            const checkoutLogs = userIds.map(uid => ({
-                user_id: uid,
-                type: 'CHECKOUT',
-                location_id: null
+            const results = await Promise.all(userIds.map(async (userId) => {
+                const visit = await getTodayVisitState(userId);
+                if (!['ACTIVE', 'AUTO_CHECKED_OUT'].includes(visit.status)) return null;
+                return recordVisitEvent({
+                    userId,
+                    locationId: visit.locationId,
+                    type: 'CHECKOUT',
+                    adminId: currentAdminRef.current?.id || null,
+                });
             }));
-
-            const { error } = await supabase.from('logs').insert(checkoutLogs);
-            if (error) throw error;
+            if (results.some(result => result && !['CREATED', 'RECONCILED'].includes(result.outcome))) {
+                throw new Error('일부 이용자의 퇴실 상태를 다시 확인해주세요.');
+            }
 
             fetchData();
             alert('전원 퇴실 처리되었습니다.');
@@ -616,6 +658,12 @@ const AdminDashboard = () => {
                 </header>
 
                 <main className="p-4 md:p-10 max-w-[1600px] mx-auto">
+                    {loadError && (
+                        <div className="mb-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800 flex items-center justify-between gap-3">
+                            <span>{loadError}</span>
+                            <button onClick={() => fetchData()} className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-amber-800 shadow-sm">다시 시도</button>
+                        </div>
+                    )}
                     {activeMenu === 'STATUS' && (
                         <AdminStatus
                             users={users}
@@ -702,7 +750,7 @@ const AdminDashboard = () => {
                         />
                     )}
                     {activeMenu === 'LOGS' && (
-                        <AdminLogs allLogs={allLogs} schoolLogs={schoolLogs} users={users} locations={locations} notices={notices} fetchData={fetchData} />
+                        <AdminLogs allLogs={allLogs} schoolLogs={schoolLogs} users={users} locations={locations} notices={notices} fetchData={fetchData} currentAdmin={currentAdmin} />
                     )}
                     {activeMenu === 'REPORTS' && (
                         <AdminReport allLogs={allLogs} users={users} locations={locations} notices={notices} responses={responses} />

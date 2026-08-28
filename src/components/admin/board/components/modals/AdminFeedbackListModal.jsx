@@ -12,6 +12,42 @@ const AdminFeedbackListModal = ({ notice, onClose }) => {
     const customQuestions = Array.isArray(customConfig?.questions) ? customConfig.questions : [];
     const hasCustomQuestions = customQuestions.length > 0;
 
+    const getAnswerForQuestion = (feedback, question, questionIndex) => {
+        let parsed = null;
+        if (feedback.q8_additional_comments) {
+            try { parsed = JSON.parse(feedback.q8_additional_comments); } catch (e) {}
+        }
+
+        if (parsed && typeof parsed === 'object') {
+            const answer = parsed[question.id] ?? parsed[`q${questionIndex + 1}`];
+            if (answer !== undefined && answer !== null && answer !== '') return answer;
+        }
+
+        if (questionIndex === 0) return feedback.q1_reason;
+        if (questionIndex === 1) return feedback.q2_experience;
+        if (questionIndex === 2) return feedback.q3_satisfaction;
+        if (questionIndex === 3) return feedback.q4_best_moment;
+        if (questionIndex === 4) return feedback.q5_disappointments;
+        return null;
+    };
+
+    // Only show a rating badge when this feedback form actually has a star question.
+    // For custom forms, use the configured star question instead of the legacy q3 field.
+    const getFeedbackRating = (feedback) => {
+        const ratingQuestionIndex = hasCustomQuestions
+            ? customQuestions.findIndex(question => question.type === 'star')
+            : 2;
+
+        if (ratingQuestionIndex < 0) return null;
+
+        const rawRating = hasCustomQuestions
+            ? getAnswerForQuestion(feedback, customQuestions[ratingQuestionIndex], ratingQuestionIndex)
+            : feedback.q3_satisfaction;
+        const rating = Number(rawRating);
+
+        return Number.isFinite(rating) && rating > 0 ? rating : null;
+    };
+
     useEffect(() => {
         const loadFeedbacks = async () => {
             if (!notice?.id) return;
@@ -290,6 +326,7 @@ const AdminFeedbackListModal = ({ notice, onClose }) => {
                                     const studentName = fb.users?.name || '참여자';
                                     const studentSchool = fb.users?.school ? `(${fb.users.school})` : '';
                                     const submittedAt = fb.created_at ? new Date(fb.created_at).toLocaleDateString('ko-KR', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+                                    const rating = getFeedbackRating(fb);
 
                                     return (
                                         <div key={fbId} className="bg-white rounded-toss-xl border border-tossGrey100 shadow-2xs overflow-hidden transition-all">
@@ -312,10 +349,10 @@ const AdminFeedbackListModal = ({ notice, onClose }) => {
                                                 </div>
 
                                                 <div className="flex items-center gap-3">
-                                                    {fb.q3_satisfaction && (
+                                                    {rating !== null && (
                                                         <div className="flex items-center gap-1 bg-amber-50 px-2.5 py-1 rounded-toss-lg border border-amber-100">
                                                             <Star size={13} className="fill-amber-400 text-amber-400" />
-                                                            <span className="text-xs font-black text-amber-700">{fb.q3_satisfaction}점</span>
+                                                            <span className="text-xs font-black text-amber-700">{rating}점</span>
                                                         </div>
                                                     )}
                                                     <div className="text-tossGrey400 p-1 rounded-full hover:bg-tossGrey200/50">

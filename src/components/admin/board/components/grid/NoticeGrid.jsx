@@ -10,6 +10,7 @@ const NoticeGrid = ({
     noticeStats, 
     onViewDetails, 
     onOpenParticipants, 
+    onOpenFeedback,
     onStatusChange, 
     onEdit, 
     onDelete 
@@ -38,6 +39,7 @@ const NoticeGrid = ({
                     noticeStats={noticeStats}
                     onViewDetails={onViewDetails}
                     onOpenParticipants={onOpenParticipants}
+                    onOpenFeedback={onOpenFeedback}
                     onStatusChange={onStatusChange}
                     onEdit={onEdit}
                     onDelete={onDelete}
@@ -54,6 +56,7 @@ NoticeGrid.propTypes = {
     noticeStats: PropTypes.object.isRequired,
     onViewDetails: PropTypes.func.isRequired,
     onOpenParticipants: PropTypes.func.isRequired,
+    onOpenFeedback: PropTypes.func.isRequired,
     onStatusChange: PropTypes.func.isRequired,
     onEdit: PropTypes.func.isRequired,
     onDelete: PropTypes.func.isRequired

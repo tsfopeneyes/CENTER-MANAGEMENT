@@ -81,6 +81,7 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
             if (pendingNotif) {
                 const parsed = JSON.parse(pendingNotif);
                 sendCheckinNotification({
+                    userId: parsed.userId || user?.id,
                     userName: parsed.userName || user?.name,
                     schoolName: parsed.schoolName || user?.school,
                     locationName: parsed.locationName || locationName || '하이픈',
@@ -103,31 +104,9 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
 
         setIsSubmitting(true);
         try {
-            const now = new Date();
-            const kstDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + (9 * 60 * 60 * 1000));
-            const y = kstDate.getFullYear();
-            const m = String(kstDate.getMonth() + 1).padStart(2, '0');
-            const d = String(kstDate.getDate()).padStart(2, '0');
-            const todayKst = `${y}-${m}-${d}`;
-
-            // 0. Insert CHECKIN log into logs table if not present today
-            const { data: existingLogs } = await supabase
-                .from('logs')
-                .select('id')
-                .eq('user_id', user.id)
-                .eq('type', 'CHECKIN')
-                .gte('created_at', `${todayKst}T00:00:00+09:00`)
-                .limit(1);
-
-            if (!existingLogs || existingLogs.length === 0) {
-                const { data: locations } = await supabase.from('locations').select('id, name');
-                const haifnLoc = (locations || []).find(l => l.name.includes('하이픈')) || locations?.[0];
-                await supabase.from('logs').insert([{
-                    user_id: user.id,
-                    location_id: haifnLoc?.id || null,
-                    type: 'CHECKIN'
-                }]);
-            }
+            // The QR flow records the visit before this optional survey opens.
+            // Never create a second CHECKIN here: the survey can be reopened
+            // and must not change a user's current visit state.
 
             // 1. Prepare Survey Answer Payload (survey_type: 'CHECKIN')
             const textAnswer = mode === 'QUESTION_QA'
@@ -181,6 +160,7 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
             }
 
             sendCheckinNotification({
+                userId: user.id,
                 userName: user.name,
                 schoolName: user.school,
                 locationName: locationName || '하이픈',

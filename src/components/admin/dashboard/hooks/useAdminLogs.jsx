@@ -4,8 +4,19 @@ import { exportLogsToExcel, exportVisitLogToExcel } from '../../../../utils/expo
 import { aggregateVisitSessions } from '../../../../utils/visitUtils';
 import { getWeekIdentifier, parseTimeRange } from '../../../../utils/dateUtils';
 import { isAdminOrStaff } from '../../../../utils/userUtils';
+import { getKstDate } from '../../../../utils/visitPointRules';
+import { reconcileVisitPointsForDates } from '../../../../utils/visitPointSettlement';
 
-export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, fetchData }) => {
+export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, fetchData, currentAdmin = null }) => {
+    const reconcilePointsAfterLogChange = async (userId, dates) => {
+        try {
+            await reconcileVisitPointsForDates({ userId, dates, adminId: currentAdmin?.id || null });
+            return true;
+        } catch (error) {
+            console.error('Admin visit point reconciliation failed', { userId, dates, error });
+            return false;
+        }
+    };
     const [logCategory, setLogCategory] = useState(() => {
         const saved = localStorage.getItem('adminLogs_defaultTab');
         if (saved) {
@@ -253,6 +264,16 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
             
             const { error } = await supabase.from('logs').delete().in('id', ids);
             if (error) throw error;
+
+            const affected = new Map();
+            logsToDelete.forEach(log => {
+                if (!log.user_id || !log.created_at || !['CHECKIN', 'MOVE', 'CHECKOUT'].includes(log.type)) return;
+                if (!affected.has(log.user_id)) affected.set(log.user_id, new Set());
+                affected.get(log.user_id).add(getKstDate(log.created_at));
+            });
+            const settlementResults = await Promise.all([...affected.entries()].map(([userId, dates]) =>
+                reconcilePointsAfterLogChange(userId, [...dates])
+            ));
             
             for (const log of logsToDelete) {
                 if (log.user_id && log.created_at) {
@@ -270,6 +291,9 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
             
             setSelectedRows(new Set());
             fetchData();
+            if (settlementResults.some(result => !result)) {
+                alert('로그는 삭제됐지만 일부 포인트 정산이 지연되고 있습니다. 다시 저장하면 재정산됩니다.');
+            }
         } catch (err) { alert('삭제 실패: ' + err.message); }
     };
 
@@ -394,22 +418,25 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
             const startTimestamp = `${date}T${startTime}:00+09:00`;
             const endTimestamp = `${date}T${endTime}:00+09:00`;
 
-            // Insert CHECKIN and CHECKOUT logs
-            const { error: error1 } = await supabase.from('logs').insert({
-                user_id: finalUserId,
-                type: 'CHECKIN',
-                location_id: locationId,
-                created_at: startTimestamp
-            });
-            if (error1) throw error1;
+            // Insert the complete historical session atomically so a failed
+            // checkout cannot leave an unmatched check-in behind.
+            const { error: logInsertError } = await supabase.from('logs').insert([
+                {
+                    user_id: finalUserId,
+                    type: 'CHECKIN',
+                    location_id: locationId,
+                    created_at: startTimestamp
+                },
+                {
+                    user_id: finalUserId,
+                    type: 'CHECKOUT',
+                    location_id: locationId,
+                    created_at: endTimestamp
+                }
+            ]);
+            if (logInsertError) throw logInsertError;
 
-            const { error: error2 } = await supabase.from('logs').insert({
-                user_id: finalUserId,
-                type: 'CHECKOUT',
-                location_id: locationId,
-                created_at: endTimestamp
-            });
-            if (error2) throw error2;
+            const pointsSettled = await reconcilePointsAfterLogChange(finalUserId, [date]);
 
             // Save purpose and remarks if provided
             if (manualEntry.purpose || manualEntry.remarks) {
@@ -431,7 +458,9 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                 }));
             }
 
-            alert('방문 기록이 성공적으로 저장되었습니다.');
+            alert(pointsSettled
+                ? '방문 기록이 성공적으로 저장되었습니다.'
+                : '방문 기록은 저장됐지만 포인트 정산이 지연되고 있습니다.');
             setIsManualModalOpen(false);
             setManualEntry({
                 entryType: 'MEMBER',
@@ -524,8 +553,11 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                 }
             }
 
+            const pointsSettled = await reconcilePointsAfterLogChange(summary.userId, [summary.date, getKstDate(targetTimestamp)]);
+
             // 표 데이터 갱신
             fetchData();
+            if (!pointsSettled) alert('시간은 수정됐지만 포인트 정산이 지연되고 있습니다.');
         } catch (err) {
             console.error(err);
             alert('시간 수정 실패: ' + err.message);
@@ -800,6 +832,10 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
     const handleSaveSessionEdit = async (updatedData) => {
         try {
             const kstOffset = "+09:00";
+            const affectedPointDates = new Set([
+                ...(updatedData.rawLogs || []).map(log => log.created_at ? getKstDate(log.created_at) : null),
+                updatedData.date,
+            ].filter(Boolean));
             
             // 1. Update checkout log
             if (updatedData.endTime && updatedData.endTime !== '-') {
@@ -952,12 +988,26 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                 }
             }));
 
+            const pointsSettled = await reconcilePointsAfterLogChange(
+                updatedData.userId,
+                [...affectedPointDates]
+            );
+
             await fetchData();
             setIsLogEditModalOpen(false);
             setEditingSessionLog(null);
-            alert('수정되었습니다.');
+            alert(pointsSettled
+                ? '수정되었습니다.'
+                : '방문 기록은 수정됐지만 포인트 정산이 지연되고 있습니다.');
         } catch (err) {
             console.error(err);
+            const fallbackDates = [
+                updatedData?.date,
+                ...(updatedData?.rawLogs || []).map(log => log.created_at ? getKstDate(log.created_at) : null),
+            ].filter(Boolean);
+            if (updatedData?.userId && fallbackDates.length > 0) {
+                await reconcilePointsAfterLogChange(updatedData.userId, fallbackDates);
+            }
             alert('수정 실패: ' + err.message);
         }
     };

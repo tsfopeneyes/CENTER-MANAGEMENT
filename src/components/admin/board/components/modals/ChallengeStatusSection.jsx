@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import PropTypes from 'prop-types';
-import { Award, CheckCircle, Clock, Image, ExternalLink, RefreshCw, Check, X as XIcon } from 'lucide-react';
+import { Award, CheckCircle, Clock, FileText, Check, X as XIcon } from 'lucide-react';
 import { supabase } from '../../../../../supabaseClient';
 import { haifnApi } from '../../../../../api/haifnApi';
 
@@ -96,7 +96,7 @@ const ChallengeStatusSection = ({ notice, participantList, onRefresh, onUserClic
                             <tr className="border-b border-gray-100 text-[10px] font-black text-gray-400 uppercase tracking-wider">
                                 <th className="pb-3 pl-3">학생 정보</th>
                                 <th className="pb-3 text-center">미션 달성도</th>
-                                <th className="pb-3 pl-6">미션별 인증 세부 (클릭 시 이미지 검토)</th>
+                                <th className="pb-3 pl-6">미션별 인증 세부 (클릭하여 검토)</th>
                             </tr>
                         </thead>
                         <tbody className="divide-y divide-gray-50">
@@ -145,15 +145,19 @@ const ChallengeStatusSection = ({ notice, participantList, onRefresh, onUserClic
                                                     const mStatus = statuses[mission.id] || {};
                                                     const isDone = mStatus.completed;
                                                     const hasImage = !!mStatus.auth_image;
+                                                    const hasText = !!mStatus.auth_text;
+                                                    const hasEvidence = hasImage || hasText;
 
                                                     return (
                                                         <button
                                                             key={mission.id}
                                                             type="button"
                                                             onClick={() => {
-                                                                if (hasImage) {
+                                                                if (hasEvidence) {
                                                                     setPreviewImage({
                                                                         url: mStatus.auth_image,
+                                                                        text: mStatus.auth_text,
+                                                                        type: hasText ? 'text' : 'photo',
                                                                         title: `${student.name} - ${mission.title}`,
                                                                         date: mStatus.submitted_at || mStatus.completed_at,
                                                                         studentId: student.id,
@@ -162,24 +166,24 @@ const ChallengeStatusSection = ({ notice, participantList, onRefresh, onUserClic
                                                                     });
                                                                 }
                                                             }}
-                                                            disabled={!hasImage}
+                                                            disabled={!hasEvidence}
                                                             className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border text-[11px] font-bold transition-all ${
                                                                 isDone 
                                                                     ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100/50' 
-                                                                    : hasImage 
+                                                                    : hasEvidence
                                                                         ? 'bg-amber-50 border-amber-200 text-amber-700 hover:bg-amber-100/50 animate-pulse'
                                                                         : 'bg-gray-50/30 border-dashed border-gray-200 text-gray-400 cursor-not-allowed'
                                                             }`}
                                                         >
                                                             {isDone ? (
                                                                 <CheckCircle size={12} className="text-emerald-500" />
-                                                            ) : hasImage ? (
+                                                            ) : hasEvidence ? (
                                                                 <Clock size={12} className="text-amber-500 animate-spin" />
                                                             ) : (
                                                                 <Clock size={12} className="text-gray-300" />
                                                             )}
                                                             <span>{mission.title}</span>
-                                                            {hasImage && !isDone && (
+                                                            {hasEvidence && !isDone && (
                                                                 <span className="text-[9px] bg-amber-200 text-amber-800 px-1 rounded ml-1 font-black">검토필요</span>
                                                             )}
                                                         </button>
@@ -195,7 +199,7 @@ const ChallengeStatusSection = ({ notice, participantList, onRefresh, onUserClic
                 </div>
             )}
 
-            {/* 인증사진 팝업 모달 */}
+            {/* 미션 인증 검토 팝업 */}
             {previewImage && (
                 <div 
                     className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center p-4 backdrop-blur-md animate-fade-in"
@@ -222,13 +226,25 @@ const ChallengeStatusSection = ({ notice, participantList, onRefresh, onUserClic
                             </button>
                         </div>
                         
-                        <div className="p-3 bg-black flex items-center justify-center min-h-[300px] max-h-[500px]">
-                            <img 
-                                src={previewImage.url} 
-                                alt="미션 인증샷" 
-                                className="max-w-full max-h-[400px] object-contain rounded-xl"
-                            />
-                        </div>
+                        {previewImage.type === 'text' ? (
+                            <div className="p-6 bg-slate-50 min-h-[220px] max-h-[500px] overflow-y-auto">
+                                <div className="flex items-center gap-2 mb-3 text-blue-600">
+                                    <FileText size={17} />
+                                    <span className="text-xs font-black">텍스트 인증 내용</span>
+                                </div>
+                                <p className="whitespace-pre-wrap break-words text-sm font-semibold leading-7 text-slate-700 bg-white border border-slate-200 rounded-2xl p-4">
+                                    {previewImage.text}
+                                </p>
+                            </div>
+                        ) : (
+                            <div className="p-3 bg-black flex items-center justify-center min-h-[300px] max-h-[500px]">
+                                <img
+                                    src={previewImage.url}
+                                    alt="미션 인증샷"
+                                    className="max-w-full max-h-[400px] object-contain rounded-xl"
+                                />
+                            </div>
+                        )}
 
                         {/* Approve/Reject actions */}
                         <div className="p-4 border-t border-gray-100 flex gap-3 bg-gray-50/50">
@@ -246,13 +262,13 @@ const ChallengeStatusSection = ({ notice, participantList, onRefresh, onUserClic
                                         type="button"
                                         disabled={actionLoading}
                                         onClick={() => {
-                                            if (window.confirm('정말 이 미션 인증을 반려하시겠습니까? (사진 파일이 초기화됩니다)')) {
+                                            if (window.confirm('정말 이 미션 인증을 반려하시겠습니까? (등록 내용이 초기화됩니다)')) {
                                                 handleMissionAction(previewImage.studentId, previewImage.missionId, false);
                                             }
                                         }}
                                         className="flex-1 py-3 bg-red-50 hover:bg-red-100 border border-red-200 text-red-600 disabled:bg-gray-50 disabled:text-gray-400 rounded-xl font-bold flex items-center justify-center gap-1.5 transition-all text-sm"
                                     >
-                                        <XIcon size={16} /> 반려 (사진 삭제)
+                                        <XIcon size={16} /> 반려 (인증 삭제)
                                     </button>
                                 </>
                             ) : (

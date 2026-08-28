@@ -127,7 +127,7 @@ const VisitLogTable = ({ hookData }) => {
                 <div>검색 결과: <span className="text-blue-600 font-extrabold text-sm">{filteredVisitSummaries.length}</span>건</div>
             </div>
 
-            <table className="w-full text-left border-collapse min-w-[1450px]">
+            <table className="w-full text-left border-collapse min-w-[1120px]">
                 <LogTableHeader
                     filteredVisitSummaries={filteredVisitSummaries}
                     selectedRows={selectedRows}
@@ -136,7 +136,7 @@ const VisitLogTable = ({ hookData }) => {
                 
                 <tbody className="divide-y divide-gray-100 text-sm bg-white">
                     {currentData.length === 0 ? (
-                        <tr><td colSpan="13" className="p-10 text-center text-gray-400 font-bold italic">기록이 없습니다.</td></tr>
+                        <tr><td colSpan="12" className="p-10 text-center text-gray-400 font-bold italic">기록이 없습니다.</td></tr>
                     ) : (
                         currentData.map((summary, idx) => (
                             <LogTableRow

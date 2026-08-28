@@ -17,6 +17,9 @@ const useNoticeStats = (filteredNotices, mode) => {
             try {
                 const recruitingIds = filteredNotices.filter(n => n.is_recruiting).map(n => n.id);
                 const pollIds = filteredNotices.filter(n => n.is_poll).map(n => n.id);
+                const feedbackNoticeIds = filteredNotices
+                    .filter(n => n.category === 'PROGRAM')
+                    .map(n => n.id);
                 
                 const nStats = {};
                 
@@ -76,6 +79,30 @@ const useNoticeStats = (filteredNotices, mode) => {
                     // Convert Set size to count
                     pollIds.forEach(id => {
                         nStats[id].pollTotal = nStats[id].voters?.size || 0;
+                    });
+                }
+
+                // 3. Fetch feedback totals so completed program cards can expose
+                // the feedback list only when at least one response exists.
+                if (feedbackNoticeIds.length > 0) {
+                    const { data: feedbacks, error: feedbackError } = await supabase
+                        .from('program_feedback')
+                        .select('notice_id')
+                        .in('notice_id', feedbackNoticeIds);
+
+                    if (feedbackError) throw feedbackError;
+
+                    feedbackNoticeIds.forEach(id => {
+                        nStats[id] = {
+                            ...nStats[id],
+                            feedbackCount: 0
+                        };
+                    });
+
+                    feedbacks?.forEach(feedback => {
+                        if (nStats[feedback.notice_id]) {
+                            nStats[feedback.notice_id].feedbackCount += 1;
+                        }
                     });
                 }
                 

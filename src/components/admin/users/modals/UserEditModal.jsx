@@ -40,6 +40,10 @@ const getRevealedPassword = (user) => {
     return '사용자 지정 비밀번호';
 };
 
+const isAdministrator = (user) => (
+    user?.is_master || user?.role === 'admin' || user?.user_group === '관리자'
+);
+
 const UserEditModal = ({
     editingUser, setEditingUser,
     handleDeleteUser, handleResetPassword, handleToggleAdminRole, handleApproveUser,
@@ -300,6 +304,7 @@ const UserEditModal = ({
 
     if (!editingUser) return null;
     const adminUser = JSON.parse(localStorage.getItem('admin_user')) || {};
+    const canResetPassword = isAdministrator(adminUser) && !isAdministrator(editingUser);
 
     return (
         <div onClick={handleBackdropClick} className="fixed inset-0 z-[100] bg-black/50 flex items-center justify-center p-4 animate-fade-in">
@@ -307,7 +312,7 @@ const UserEditModal = ({
                 <div className="p-5 border-b border-gray-100 flex justify-between items-center bg-gray-50 shrink-0">
                     <h3 className="font-bold text-gray-800">회원 카드</h3>
                     <div className="flex gap-2">
-                        {adminUser.is_master && (
+                        {canResetPassword && (
                             <button onClick={() => handleResetPassword(editingUser)} className="p-2 text-indigo-400 hover:bg-indigo-50 hover:text-indigo-600 rounded-lg transition" title="비밀번호 초기화">
                                 <KeyRound size={20} />
                             </button>

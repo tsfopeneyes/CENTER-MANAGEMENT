@@ -10,6 +10,8 @@ import SplashScreen from './components/common/SplashScreen'
 import PublicProgramDetail from './pages/PublicProgramDetail'
 import GuestMobileWelcome from './pages/GuestMobileWelcome'
 import { supabase } from './supabaseClient'
+import { serverIntegrationsEnabled } from './utils/serverIntegration'
+import { trackUserWebActivity } from './utils/userActivityUtils'
 
 import StandaloneLiveChat from './pages/StandaloneLiveChat'
 import TvSignageViewer from './pages/TvSignageViewer'
@@ -29,6 +31,9 @@ function App() {
 
     useEffect(() => {
         const loadGlobalSettings = async () => {
+            // Once server integrations are enabled, external-service credentials
+            // must remain on the server and must not be copied into this browser.
+            if (serverIntegrationsEnabled()) return;
             try {
                 const { data, error } = await supabase
                     .from('global_settings')
@@ -54,20 +59,9 @@ function App() {
                 if (!stored) return;
                 const currentUser = JSON.parse(stored);
                 if (!currentUser?.id) return;
-
-                const nowIso = new Date().toISOString();
-                const lastTracked = currentUser.preferences?.last_web_login_at;
-
-                if (!lastTracked || (new Date() - new Date(lastTracked)) > 3 * 60 * 1000) {
-                    const updatedPreferences = { ...(currentUser.preferences || {}), last_web_login_at: nowIso };
-                    await supabase.from('users').update({ preferences: updatedPreferences }).eq('id', currentUser.id);
-
-                    const updatedUser = { ...currentUser, preferences: updatedPreferences };
-                    try {
-                        if (localStorage.getItem('user')) localStorage.setItem('user', JSON.stringify(updatedUser));
-                        if (localStorage.getItem('admin_user')) localStorage.setItem('admin_user', JSON.stringify(updatedUser));
-                    } catch (err) {}
-                }
+                // Record every new web-app session. The helper verifies the
+                // database write and has a REST fallback for mobile browsers.
+                await trackUserWebActivity(currentUser, { force: true });
             } catch (e) {
                 console.error('Failed to track web session:', e);
             }

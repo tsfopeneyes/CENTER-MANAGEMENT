@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, User, Image as ImageIcon, ZoomIn, RotateCw, Bell } from 'lucide-react';
+import { X, User, Image as ImageIcon, ZoomIn, RotateCw, Bell, BookOpen } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 import getCroppedImg from '../../../utils/imageUtils';
 import { hashPassword } from '../../../utils/hashUtils';
@@ -12,7 +12,8 @@ const ProfileSettingsModal = ({
     setShowProfileSettings, 
     updateProfile, 
     withdrawMembership,
-    profileLoadingState 
+    profileLoadingState,
+    onStartTutorial
 }) => {
     useModalClose(true, () => setShowProfileSettings(false));
     const [profileImage, setProfileImage] = useState(null);
@@ -24,6 +25,12 @@ const ProfileSettingsModal = ({
     const [isSchoolChurch, setIsSchoolChurch] = useState(user?.preferences?.is_school_church ?? false);
     const [bio, setBio] = useState(user?.bio || '');
     const isStaff = user?.role?.toLowerCase() === 'admin' || user?.role?.toLowerCase() === 'staff' || user?.user_group?.toLowerCase() === 'staff' || user?.user_group === '관리자';
+    const isAdminUser = user?.role?.toLowerCase() === 'admin' ||
+        user?.role?.toLowerCase() === 'staff' ||
+        user?.user_group?.toLowerCase() === 'admin' ||
+        user?.user_group?.toLowerCase() === 'staff' ||
+        user?.user_group === '관리자';
+    const canAccessTutorial = isAdminUser || user?.name?.replace('(guest)', '').trim() === '김학생';
 
     // Push notification toggle state
     const [isPushEnabled, setIsPushEnabled] = useState(Boolean(user?.fcm_token));
@@ -215,6 +222,26 @@ const ProfileSettingsModal = ({
                             </button>
                         </div>
                     </div>
+
+                    {onStartTutorial && canAccessTutorial && (
+                    <div className="space-y-3">
+                        <h4 className="font-bold text-gray-800 border-b pb-2 flex items-center gap-2">
+                            <BookOpen size={18} className="text-blue-600" />
+                            센터 이용 안내
+                        </h4>
+                        <button
+                            type="button"
+                            onClick={() => onStartTutorial?.()}
+                            className="w-full flex items-center justify-between bg-blue-50 hover:bg-blue-100/70 p-4 rounded-2xl border border-blue-100 text-left transition-colors"
+                        >
+                            <div>
+                                <p className="font-bold text-sm text-blue-900">센터 이용 튜토리얼 다시 보기</p>
+                                <p className="text-xs text-blue-700 mt-0.5">체크인부터 하이픈 스토어까지 직접 체험해요</p>
+                            </div>
+                            <BookOpen size={18} className="text-blue-600" />
+                        </button>
+                    </div>
+                    )}
 
                     {isStaff && (
                         <div className="space-y-4">

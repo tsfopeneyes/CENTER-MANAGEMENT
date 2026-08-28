@@ -15,7 +15,12 @@ const StudentCenterTab = ({
     refreshTrigger,
     setRefreshTrigger,
     selectedRegion,
-    studentRegion
+    studentRegion,
+    tutorialMode = false,
+    tutorialStep = '',
+    tutorialResponses = {},
+    onTutorialProgramOpen,
+    onTutorialClose
 }) => {
     const [contents, setContents] = useState([]);
     const [rentals, setRentals] = useState([]);
@@ -142,6 +147,9 @@ const StudentCenterTab = ({
     const handleOpenBooking = (rental) => {
         setSelectedRental(rental);
         setShowBookingModal(true);
+        if (tutorialMode) {
+            window.dispatchEvent(new CustomEvent('student-onboarding:rental-opened', { detail: { rental } }));
+        }
     };
 
     return (
@@ -159,8 +167,8 @@ const StudentCenterTab = ({
             <div className="px-5 space-y-6">
 
             {/* 1. Programs Section */}
-            <div className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
-                <div className="flex justify-between items-start mb-4">
+            <div data-tour={tutorialMode ? 'tutorial-program-section' : undefined} className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
+                <div className="flex justify-between items-start mb-4 rounded-xl">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-tossBlueLight text-tossBlue flex items-center justify-center shrink-0">
                             <BookOpen size={18} />
@@ -178,13 +186,17 @@ const StudentCenterTab = ({
                         responses={responses}
                         responseDetails={responseDetails}
                         openNoticeDetail={openNoticeDetail}
+                        tutorialMode={tutorialMode}
+                        tutorialStep={tutorialStep}
+                        tutorialResponses={tutorialResponses}
+                        onTutorialProgramOpen={onTutorialProgramOpen}
                     />
                 </div>
             </div>
 
             {/* 2. Contents Section */}
-            <div className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
-                <div className="flex justify-between items-start mb-4">
+            <div data-tour={tutorialMode ? 'tutorial-content-section' : undefined} className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
+                <div className="flex justify-between items-start mb-4 rounded-xl">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-tossWarning/10 text-tossWarning flex items-center justify-center shrink-0">
                             <Store size={18} />
@@ -207,10 +219,14 @@ const StudentCenterTab = ({
 
                             const isEnoughPlace = selectedRegion === 'GANGSEO' || (selectedRegion !== 'GANGDONG' && centerName === '이높플레이스');
 
-                            const renderList = (items, categoryLabel, CategoryIcon, locationLabel) => {
+                            const renderList = (items, categoryLabel, CategoryIcon, locationLabel, tutorialIndex) => {
                                 if (items.length === 0) return null;
                                 return (
-                                    <div>
+                                    <div
+                                        data-tour={tutorialMode ? `tutorial-content-card-${tutorialIndex}` : undefined}
+                                        data-tour-label={categoryLabel}
+                                        className="rounded-xl"
+                                    >
                                         <div className="flex items-center gap-1.5 mb-2.5">
                                             <CategoryIcon size={13} className="text-tossGrey500" strokeWidth={2.5} />
                                             <span className="text-[13px] font-bold text-tossGrey800">{categoryLabel}</span>
@@ -251,10 +267,18 @@ const StudentCenterTab = ({
                                 );
                             };
 
+                            const contentGroups = [
+                                { items: snacks, label: '간식', icon: Coffee, location: '2F SQUARE' },
+                                { items: boardGames, label: '보드게임', icon: Gamepad2, location: '3F ROUND' }
+                            ].filter((group) => group.items.length > 0);
+
                             return (
                                 <div className="space-y-4">
-                                    {renderList(snacks, '간식', Coffee, '2F SQUARE')}
-                                    {renderList(boardGames, '보드게임', Gamepad2, '3F ROUND')}
+                                    {contentGroups.map((group, index) => (
+                                        <React.Fragment key={group.label}>
+                                            {renderList(group.items, group.label, group.icon, group.location, index)}
+                                        </React.Fragment>
+                                    ))}
                                 </div>
                             );
                         })()
@@ -263,8 +287,8 @@ const StudentCenterTab = ({
             </div>
 
             {/* 3. Rentals Section */}
-            <div className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
-                <div className="flex justify-between items-start mb-4">
+            <div data-tour={tutorialMode ? 'tutorial-rental-section' : undefined} className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
+                <div className="flex justify-between items-start mb-4 rounded-xl">
                     <div className="flex items-center gap-3">
                         <div className="w-10 h-10 rounded-full bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
                             <Landmark size={18} />
@@ -283,6 +307,11 @@ const StudentCenterTab = ({
                         내 신청 내역
                     </button>
                 </div>
+                {tutorialMode && tutorialStep === 'rentalSelect' && (
+                    <div className="mb-4 rounded-2xl border border-tossBlue/15 bg-tossBlueLight px-4 py-3 text-xs font-bold leading-5 text-tossGrey700">
+                        원하는 공간의 <span className="text-tossBlue">예약 신청</span>을 눌러 실제 예약 화면을 살펴보세요. 체험 신청은 서버에 저장되지 않아요.
+                    </div>
+                )}
                 <div className="pt-2 space-y-2">
                     {loadingRentals ? (
                         <div className="text-center py-6 font-bold text-tossGrey400 animate-pulse">불러오는 중...</div>
@@ -290,7 +319,7 @@ const StudentCenterTab = ({
                         <div className="text-center py-6 text-tossGrey400 text-xs font-bold">등록된 공간이 없습니다.</div>
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            {rentals.map(rental => {
+                            {rentals.map((rental, rentalIndex) => {
                                 let displayName = rental.name;
                                 let capacityText = '';
                                 let featuresText = '';
@@ -309,7 +338,12 @@ const StudentCenterTab = ({
                                 }
 
                                 return (
-                                    <div key={rental.id} className="bg-tossGrey50 rounded-xl border border-tossGrey100 p-4 hover:bg-tossGrey100/50 transition-all flex flex-col justify-between gap-3.5">
+                                    <div
+                                        key={rental.id}
+                                        data-tour={tutorialMode ? `tutorial-rental-card-${rentalIndex}` : undefined}
+                                        data-tour-label={displayName}
+                                        className="bg-tossGrey50 rounded-xl border border-tossGrey100 p-4 hover:bg-tossGrey100/50 transition-all flex flex-col justify-between gap-3.5"
+                                    >
                                         <div className="space-y-2">
                                             <div className="flex justify-between items-start gap-2">
                                                 <h4 className="font-extrabold text-tossGrey900 text-[13.5px] tracking-tight leading-tight">{displayName}</h4>
@@ -356,13 +390,19 @@ const StudentCenterTab = ({
                     onClose={() => {
                         setShowBookingModal(false);
                         setSelectedRental(null);
+                        if (tutorialMode) window.dispatchEvent(new Event('student-onboarding:rental-cancelled'));
                     }}
                     onSuccess={() => {
                         setShowBookingModal(false);
                         setSelectedRental(null);
-                        fetchBookings();
-                        if (setRefreshTrigger) setRefreshTrigger(prev => prev + 1);
+                        if (tutorialMode) {
+                            window.dispatchEvent(new Event('student-onboarding:rental-completed'));
+                        } else {
+                            fetchBookings();
+                            if (setRefreshTrigger) setRefreshTrigger(prev => prev + 1);
+                        }
                     }}
+                    tutorialMode={tutorialMode}
                 />
             )}
 

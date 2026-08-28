@@ -1,19 +1,37 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../supabaseClient';
-import { X, Calendar, MapPin, Clock, AlertCircle } from 'lucide-react';
+import { X, Calendar, MapPin, Clock, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import useModalClose from '../../../hooks/useModalClose';
+import { sendCategoryNotification } from '../../../utils/integrationUtils';
 
-const RentalBookingModal = ({ user, rental, bookings, onClose, onSuccess }) => {
+const KOREAN_WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+
+const formatRentalDate = (dateString) => {
+    const [year, month, day] = String(dateString).split('-').map(Number);
+    const date = new Date(year, month - 1, day);
+    return `${month}월 ${day}일(${KOREAN_WEEKDAYS[date.getDay()]})`;
+};
+
+const formatRentalTime = (timeString) => {
+    const [hourValue, minute] = String(timeString).split(':').map(Number);
+    const period = hourValue < 12 ? '오전' : '오후';
+    const hour = hourValue % 12 || 12;
+    return `${period} ${hour}시${minute ? ` ${minute}분` : ''}`;
+};
+
+const RentalBookingModal = ({ user, rental, bookings, onClose, onSuccess, tutorialMode = false }) => {
     useModalClose(!!rental, onClose);
     const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
     const [selectedSlot, setSelectedSlot] = useState({ start: '10:00', end: '12:00' });
-    const [meetingName, setMeetingName] = useState('');
-    const [purpose, setPurpose] = useState('');
-    const [headcount, setHeadcount] = useState('');
+    const [meetingName, setMeetingName] = useState(tutorialMode ? '튜토리얼 스쿨처치 모임' : '');
+    const [purpose, setPurpose] = useState(tutorialMode ? '센터 공간 이용 체험' : '');
+    const [headcount, setHeadcount] = useState(tutorialMode ? '4' : '');
     const [notes, setNotes] = useState('');
     const [submitting, setSubmitting] = useState(false);
     const [dayBookings, setDayBookings] = useState([]);
+    const [tutorialSubmitted, setTutorialSubmitted] = useState(false);
+    const [bookingComplete, setBookingComplete] = useState(false);
 
     const timeSlots = [
         { start: '10:00', end: '12:00' },
@@ -46,6 +64,11 @@ const RentalBookingModal = ({ user, rental, bookings, onClose, onSuccess }) => {
     const handleBooking = async () => {
         if (!selectedSlot) return;
 
+        if (tutorialMode) {
+            setTutorialSubmitted(true);
+            return;
+        }
+
         setSubmitting(true);
         try {
             const { error } = await supabase
@@ -61,8 +84,33 @@ const RentalBookingModal = ({ user, rental, bookings, onClose, onSuccess }) => {
 
             if (error) throw error;
 
-            alert('대관 예약 신청이 완료되었습니다! 관리자 승인 후 대관이 최종 확정됩니다.');
-            onSuccess();
+            let rentalName = rental.name || '공간';
+            try {
+                if (rental.name?.trim().startsWith('{')) rentalName = JSON.parse(rental.name).name || rentalName;
+            } catch (parseError) {
+                console.error('Failed to parse rental name:', parseError);
+            }
+            const centerName = rental.schools?.region === '강서' ? '이높플레이스' : '하이픈';
+            const notificationMessage = [
+                '[대관 신청]',
+                `🏠 ${user?.name || '이용자'}님이 ${centerName} ${rentalName} 대관을 신청했어요.`,
+                `📅 ${formatRentalDate(selectedDate)} ${formatRentalTime(selectedSlot.start)} ~ ${formatRentalTime(selectedSlot.end)}`,
+                `👥 ${meetingName} / ${headcount}명`,
+                `📝 ${purpose}`,
+                `🙏 ${notes.trim() || '없음'}`,
+            ].join('\n');
+            // 대관 신청 완료는 Slack 전송과 독립적으로 바로 보여줍니다.
+            // 알림은 백그라운드에서 전달되며 실패해도 저장된 신청에는 영향을 주지 않습니다.
+            void sendCategoryNotification({
+                    category: 'rental',
+                    message: notificationMessage,
+                    lineTarget: rental.schools?.region === '강서' ? 'enough' : 'haifn',
+                    sendLine: false,
+                    sendSlack: true,
+                }).catch((notificationError) => {
+                console.error('Slack rental notification error:', notificationError);
+            });
+            setBookingComplete(true);
         } catch (error) {
             console.error('Error creating booking:', error);
             alert('예약 신청 중 오류가 발생했습니다.');
@@ -92,8 +140,19 @@ const RentalBookingModal = ({ user, rental, bookings, onClose, onSuccess }) => {
                     animate={{ y: 0 }}
                     exit={{ y: '100%' }}
                     transition={{ type: 'spring', damping: 25, stiffness: 220 }}
-                    className="w-full md:max-w-md bg-white rounded-t-toss-2xl md:rounded-toss-2xl shadow-toss-elevated z-10 flex flex-col max-h-[85vh] md:max-h-[90vh] overflow-hidden"
+                    className={`relative w-full md:max-w-md bg-white rounded-t-toss-2xl md:rounded-toss-2xl shadow-toss-elevated z-10 flex flex-col overflow-hidden ${(tutorialSubmitted || bookingComplete) ? 'h-auto min-h-[420px] max-h-[520px]' : 'max-h-[85vh] md:max-h-[90vh]'}`}
                 >
+                    {(tutorialSubmitted || bookingComplete) && (
+                        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center rounded-[24px] border border-black/5 bg-white p-7 text-center shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
+                            <div className="flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600">
+                                <CheckCircle2 size={34} />
+                            </div>
+                            <h3 className="mt-5 text-xl font-black text-tossGrey900">공간 이용 신청이 접수됐어요</h3>
+                            <p className="mt-2 text-sm font-semibold leading-6 text-tossGrey600">관리자가 센터 일정을 확인한 뒤 승인하면 대여가 최종 확정됩니다.</p>
+                            <div className="mt-5 w-full rounded-2xl bg-amber-50 px-4 py-3 text-sm font-black text-amber-700">상태 · 승인 대기</div>
+                            <button type="button" onClick={onSuccess} className="mt-6 w-full rounded-2xl bg-tossBlue py-4 text-sm font-black text-white">캘린더 알아보기</button>
+                        </div>
+                    )}
                     {/* Header */}
                     <div className="p-5 border-b border-tossGrey100 flex items-center justify-between">
                         <div className="flex flex-col">
@@ -133,6 +192,11 @@ const RentalBookingModal = ({ user, rental, bookings, onClose, onSuccess }) => {
 
                     {/* Scrollable Body */}
                     <div className="flex-1 p-5 overflow-y-auto space-y-5 custom-scrollbar">
+                        {tutorialMode && (
+                            <div className="rounded-2xl border border-tossBlue/15 bg-tossBlueLight px-4 py-3 text-xs font-bold leading-5 text-tossGrey700">
+                                날짜와 시간, 모임 정보를 확인하고 아래에서 <span className="text-tossBlue">체험으로 신청하기</span>를 눌러 보세요. 실제 예약은 저장되지 않아요.
+                            </div>
+                        )}
                         {/* Space Photo (if available) */}
                         {(() => {
                             let imgUrl = '';
@@ -373,7 +437,7 @@ const RentalBookingModal = ({ user, rental, bookings, onClose, onSuccess }) => {
                             onClick={handleBooking}
                             className="w-full py-4 bg-tossBlue text-white font-extrabold text-sm rounded-toss-xl shadow-toss-subtle disabled:bg-tossGrey300 disabled:shadow-none hover:bg-tossBlueDark transition-colors flex items-center justify-center"
                         >
-                            {submitting ? '신청 처리 중...' : '공간 이용 신청'}
+                            {submitting ? '신청 처리 중...' : (tutorialMode ? '체험으로 신청하기' : '공간 이용 신청')}
                         </button>
                     </div>
                 </motion.div>

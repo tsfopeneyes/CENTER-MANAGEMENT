@@ -12,6 +12,7 @@ const NoticeCard = ({
     noticeStats, 
     onViewDetails, 
     onOpenParticipants, 
+    onOpenFeedback,
     onStatusChange, 
     onEdit, 
     onDelete 
@@ -60,6 +61,7 @@ const NoticeCard = ({
     const isCompleted = notice.program_status === 'COMPLETED' || isEnded;
     const isCancelled = notice.program_status === 'CANCELLED';
     const isActive = (notice.program_status === 'ACTIVE' || !notice.program_status) && !isCompleted && !isCancelled;
+    const hasFeedback = (noticeStats[notice.id]?.feedbackCount || 0) > 0;
 
     const getDeadlineWarning = () => {
         if (!notice.recruitment_deadline) return null;
@@ -245,18 +247,36 @@ const NoticeCard = ({
                                 >
                                     투표결과
                                 </button>
+                                {hasFeedback && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onOpenFeedback(notice); }}
+                                        className="text-[9px] md:text-[10px] px-2.5 py-1 rounded-xl font-semibold transition-all bg-amber-100 text-amber-700 hover:bg-amber-200 active:scale-95"
+                                    >
+                                        피드백
+                                    </button>
+                                )}
                             </div>
                         ) : (
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, notice.is_poll ? 'poll' : 'attendance'); }} 
-                                className={`text-[9px] md:text-[10px] px-3 py-1.5 rounded-xl font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] ${
-                                    isActive 
-                                        ? 'bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff]' 
-                                        : 'bg-[#f2f4f6] text-[#4e5968] hover:bg-[#e4e8eb]'
-                                }`}
-                            >
-                                {notice.is_poll ? '투표결과' : '명단'}
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, notice.is_poll ? 'poll' : 'attendance'); }} 
+                                    className={`text-[9px] md:text-[10px] px-3 py-1.5 rounded-xl font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] ${
+                                        isActive 
+                                            ? 'bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff]' 
+                                            : 'bg-[#f2f4f6] text-[#4e5968] hover:bg-[#e4e8eb]'
+                                    }`}
+                                >
+                                    {notice.is_poll ? '투표결과' : '명단'}
+                                </button>
+                                {hasFeedback && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onOpenFeedback(notice); }}
+                                        className="text-[9px] md:text-[10px] px-2.5 py-1.5 rounded-xl font-semibold transition-all bg-amber-100 text-amber-700 hover:bg-amber-200 active:scale-[0.98]"
+                                    >
+                                        피드백
+                                    </button>
+                                )}
+                            </div>
                         )}
                     </div>
                 )}
@@ -303,6 +323,7 @@ NoticeCard.propTypes = {
     noticeStats: PropTypes.object.isRequired,
     onViewDetails: PropTypes.func.isRequired,
     onOpenParticipants: PropTypes.func.isRequired,
+    onOpenFeedback: PropTypes.func.isRequired,
     onStatusChange: PropTypes.func.isRequired,
     onEdit: PropTypes.func.isRequired,
     onDelete: PropTypes.func.isRequired

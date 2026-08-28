@@ -42,16 +42,28 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
                 age = (currentYear - fullYear + 1).toString();
             }
 
-            const cleanSearch = searchTerm.replace(/세|살/g, '');
+            const normalizedSearch = searchTerm.trim().toLocaleLowerCase('ko-KR');
+            const cleanSearch = normalizedSearch.replace(/세|살/g, '');
             const matchesAge = age && age.includes(cleanSearch);
+            const matchesText = (value) => String(value || '').toLocaleLowerCase('ko-KR').includes(normalizedSearch);
 
             const matchesSearch =
-                user.name.includes(searchTerm) ||
-                (user.phone_back4 && user.phone_back4.includes(searchTerm)) ||
-                (user.school && user.school.includes(searchTerm)) ||
-                (age && age === searchTerm) || matchesAge;
+                matchesText(user.name) ||
+                matchesText(user.phone_back4) ||
+                matchesText(user.school) ||
+                matchesText(user.church) ||
+                matchesText(user.user_group) ||
+                matchesText(user.role) ||
+                (age && age === cleanSearch) || matchesAge;
 
-            const isGuestOrTemp = user.user_group === '게스트' || user.user_group === '미가입' || user.preferences?.is_temporary === true;
+            const isStaffAccount = user.user_group === 'STAFF'
+                || user.user_group === '관리자'
+                || ['admin', 'staff'].includes(String(user.role || '').toLowerCase());
+            const isGuestOrTemp = !isStaffAccount && (
+                user.user_group === '게스트'
+                || user.user_group === '미가입'
+                || user.preferences?.is_temporary === true
+            );
             const isNew3M = checkIsNew3M(user);
 
             const matchesGroup = filterGroup === 'ALL'

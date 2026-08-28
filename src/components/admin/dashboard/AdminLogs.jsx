@@ -24,8 +24,8 @@ import { isAdminOrStaff } from '../../../utils/userUtils';
 
 import AdminPageHeader from '../common/AdminPageHeader';
 
-const AdminLogs = ({ allLogs, schoolLogs = [], users, locations, notices, fetchData }) => {
-    const hookData = useAdminLogs({ allLogs, schoolLogs, users, locations, notices, fetchData });
+const AdminLogs = ({ allLogs, schoolLogs = [], users, locations, notices, fetchData, currentAdmin = null }) => {
+    const hookData = useAdminLogs({ allLogs, schoolLogs, users, locations, notices, fetchData, currentAdmin });
     const {
         logCategory, setLogCategory,
         visitUserGroupFilter, setVisitUserGroupFilter,

@@ -1,5 +1,7 @@
 node_modules
 .env
+.env.*
+!.env.example
 .DS_Store
 dist
 dist-ssr
@@ -25,3 +27,13 @@ login_*.js
 query_*.js
 reset_*.js
 verify_*.js
+
+# Local diagnostic exports can contain credentials or personal data.
+dump_*.cjs
+dump_*.js
+emulate_*.cjs
+emulate_*.js
+list_*.cjs
+list_*.js
+trace_*.cjs
+trace_*.js

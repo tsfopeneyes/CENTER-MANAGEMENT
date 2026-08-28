@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
-import { Share2, Bell, ShieldCheck, Settings, LogOut, AlertCircle, ChevronRight, User, Image as ImageIcon, Pin, QrCode, Home, Trophy, Calendar as LucideCalendar, Users, Sparkles, Coffee, X } from 'lucide-react';
+import { Share2, Bell, ShieldCheck, Settings, LogOut, AlertCircle, ChevronRight, User, Image as ImageIcon, Pin, QrCode, Home, Trophy, Calendar as LucideCalendar, Users, Sparkles, Coffee, X, CheckCircle2, Clock3, MapPin } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import UserAvatar from '../common/UserAvatar';
 import ProgramCard from './ProgramCard';
@@ -50,7 +50,10 @@ const StudentHomeTab = ({
     onExtendChat,
     dismissedRejectedChatId,
     onDismissRejection,
-    onRegisterRegularUser
+    onRegisterRegularUser,
+    visitStatus,
+    tutorialMode = false,
+    tutorialStep = null
 }) => {
     // 뱃지 관련 로직 제거됨
     const isGuest = user?.user_group === '게스트';
@@ -102,7 +105,7 @@ const StudentHomeTab = ({
     return (
         <>
             {/* Premium Integrated Profile Card */}
-            <header className="bg-tossBlue px-4 py-5 text-white rounded-b-toss-xl shadow-toss-standard mb-0 gpu-accelerated">
+            <header data-tour="home-overview" className="bg-tossBlue px-4 py-5 text-white rounded-b-toss-xl shadow-toss-standard mb-0 gpu-accelerated">
                 <div className="max-w-sm sm:max-w-md mx-auto">
                     {/* Top Section: Avatar + Profile Info + 2x2 Stats Grid (가로 1열 고정 구조) */}
                     <div className="flex flex-col gap-3">
@@ -239,6 +242,42 @@ const StudentHomeTab = ({
 
             {/* Main Content Area: Aligned Stack */}
             <div className="px-4 py-4 pb-28 space-y-4 relative z-0">
+                {visitStatus && (
+                    <motion.div
+                        data-tour="visit-status"
+                        initial={{ opacity: 0, y: -12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className={`rounded-toss-xl border p-5 shadow-toss-standard ${visitStatus.status === 'ACTIVE' ? 'border-emerald-100 bg-emerald-50' : 'border-blue-100 bg-blue-50'}`}
+                    >
+                        <div className="flex items-start gap-3">
+                            <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${visitStatus.status === 'ACTIVE' ? 'bg-emerald-100 text-emerald-700' : 'bg-blue-100 text-blue-700'}`}>
+                                <CheckCircle2 size={21} strokeWidth={2.5} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <h3 className={`text-[16px] font-black ${visitStatus.status === 'ACTIVE' ? 'text-emerald-900' : 'text-blue-900'}`}>
+                                        {visitStatus.status === 'ACTIVE' ? '현재 센터에서 함께하고 있어요!' : '오늘 센터 이용 완료'}
+                                    </h3>
+                                    {visitStatus.isExample && <span className="rounded-full bg-white/80 px-2 py-0.5 text-[9px] font-black text-tossGrey500">튜토리얼 예시</span>}
+                                </div>
+                                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[12px] font-bold text-tossGrey600">
+                                    <span className="flex items-center gap-1"><MapPin size={13} />{visitStatus.locationName || '센터'}</span>
+                                    {visitStatus.createdAt && (
+                                        <span className="flex items-center gap-1">
+                                            <Clock3 size={13} />
+                                            {new Date(visitStatus.createdAt).toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                            {visitStatus.status === 'ACTIVE' ? ' 체크인' : ' 체크아웃'}
+                                        </span>
+                                    )}
+                                </div>
+                                <p className="mt-2 text-[11px] font-semibold leading-5 text-tossGrey500">
+                                    {visitStatus.status === 'ACTIVE' ? '체크아웃 시 인포에서 동일한 QR을 스캔해주세요.' : '다음 방문 때 QR을 스캔하면 새로운 이용이 시작돼요.'}
+                                </p>
+                            </div>
+                        </div>
+                    </motion.div>
+                )}
+
                 {/* Today's Closure Notification */}
                 {isTodayClosed && closureMessage && (
                     <motion.div
@@ -369,30 +408,22 @@ const StudentHomeTab = ({
                     if (item.id === 'operating_status') {
                         if (isGuest) return null;
                         return (
-                            <TodayOperatingWidget 
-                                key="operating_status"
-                                studentRegion={studentRegion} 
-                                adminSchedules={adminSchedules} 
-                                calendarCategories={calendarCategories} 
-                                onStaffClick={onStaffClick}
-                            />
+                            <div key="operating_status" data-tour={tutorialMode ? 'home-open-status' : undefined} className="rounded-toss-xl">
+                                <TodayOperatingWidget studentRegion={studentRegion} adminSchedules={adminSchedules} calendarCategories={calendarCategories} onStaffClick={onStaffClick} tutorialMode={tutorialMode} tutorialStep={tutorialStep} />
+                            </div>
                         );
                     }
 
                     if (item.id === 'live_chat') {
                         if (isGuest) return null;
                         return (
-                            <LiveCenterChat 
-                                key="live_chat"
-                                currentUser={user} 
-                                studentRegion={studentRegion} 
-                            />
+                            <LiveCenterChat key="live_chat" currentUser={user} studentRegion={studentRegion} />
                         );
                     }
 
                     if (item.id === 'notices') {
                         return (
-                            <div key="notices" className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
+                            <div key="notices" data-tour="home-content" className="bg-white p-5 rounded-toss-xl shadow-toss-standard">
                                 <div className="flex justify-between items-start mb-4">
                                     <div className="flex items-center gap-3">
                                         <div className="w-10 h-10 rounded-full bg-tossWarning/10 text-tossWarning flex items-center justify-center shrink-0">
@@ -406,9 +437,10 @@ const StudentHomeTab = ({
                                     <button onClick={() => handleTabChange(TAB_NAMES.NOTICES)} className="text-[11px] text-tossGrey600 font-bold px-2.5 py-1.5 bg-tossGrey100 rounded-toss-md hover:bg-tossGrey200 transition-colors">더보기</button>
                                 </div>
                                 <div className="divide-y divide-tossGrey100">
-                                    {homeNotices.slice(0, item.count || 3).map(n => (
+                                    {homeNotices.slice(0, item.count || 3).map((n, noticeIndex) => (
                                         <motion.div
                                             key={n.id}
+                                            data-tour={tutorialMode && noticeIndex === 0 ? 'home-notice-card' : undefined}
                                             initial={{ opacity: 0, y: 10 }}
                                             animate={{ opacity: 1, y: 0 }}
                                             onClick={() => openNoticeDetail(n)}
@@ -494,7 +526,7 @@ const StudentHomeTab = ({
                                         const openPrograms = homePrograms.filter(p => !p.is_recruiting && responses[p.id] !== 'JOIN');
                                         if (openPrograms.length === 0) return null;
                                         return (
-                                            <div>
+                                            <div data-tour={tutorialMode ? 'home-open-programs' : undefined}>
                                                 <div className="mb-3 flex flex-col gap-1">
                                                     <div className="flex items-center gap-1.5">
                                                         <span className="w-1 h-3 rounded-full bg-tossBlue shrink-0"></span>

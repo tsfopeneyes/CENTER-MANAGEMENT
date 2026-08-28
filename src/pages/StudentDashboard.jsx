@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import confetti from 'canvas-confetti';
@@ -21,6 +21,7 @@ import { userApi } from '../api/userApi';
 import { noticesApi } from '../api/noticesApi';
 import UserAvatar from '../components/common/UserAvatar';
 import StudentImpersonateBar from '../components/student/modals/StudentImpersonateBar';
+import StudentGuidedTour from '../components/student/StudentGuidedTour';
 
 // Extracted Modals
 import NoticeModal from '../components/student/NoticeModal';
@@ -39,6 +40,37 @@ import CoffeeChatModal from '../components/student/modals/CoffeeChatModal';
 import StudentCheckinSurveyModal from '../components/student/modals/StudentCheckinSurveyModal';
 import { useCoffeeChatRealtime } from '../hooks/useCoffeeChatRealtime';
 import { supabase } from '../supabaseClient';
+import { buildTutorialNotice, buildTutorialPrograms, isTutorialNotice, isTutorialProgram } from '../components/student/studentTutorialData';
+import { getTodayVisitState } from '../utils/visitLifecycle';
+
+const createInitialTutorialSession = () => ({
+    step: 'start',
+    checkinMode: null,
+    checkoutMode: null,
+    waitingSince: null,
+    statusAt: null,
+    selectedProgramId: null,
+    selectedProgramTitle: '',
+    tutorialNoticeId: null,
+    programCardIndex: 0,
+    openCardIndex: 0,
+    challengeCardIndex: 0,
+    contentCardIndex: 0,
+    rentalCardIndex: 0,
+    responses: {},
+    purchasedItem: null
+});
+
+const TUTORIAL_NOTICE_STEPS = ['noticeRead', 'noticeComment', 'noticeCommentResult'];
+const TUTORIAL_CENTER_STEPS = [
+    'programTypes', 'programCard', 'programSelect', 'programDetail', 'programApplied',
+    'openSelect', 'openDetail', 'challengeSelect', 'challengeDetail',
+    'contentIntro', 'contentCard', 'rentalIntro', 'rentalCard', 'rentalSelect', 'rentalDetail'
+];
+
+// 튜토리얼은 기능은 유지하되, 자동 실행은 사용자 버튼으로만 시작합니다.
+const STUDENT_ONBOARDING_TUTORIAL_ENABLED = true;
+const STUDENT_ONBOARDING_TUTORIAL_AUTOSTART = false;
 
 const StudentDashboard = () => {
     const hookData = useStudentDashboard();
@@ -76,12 +108,182 @@ const StudentDashboard = () => {
     const [hideMainHeader, setHideMainHeader] = useState(false);
     const [activeParticipantNotice, setActiveParticipantNotice] = useState(null);
     const [selectedStaffForChat, setSelectedStaffForChat] = useState(null);
+    const [showOnboardingTutorial, setShowOnboardingTutorial] = useState(false);
+    const [tutorialSession, setTutorialSession] = useState(createInitialTutorialSession);
 
     const navigate = useNavigate();
     const location = useLocation();
     const [checkinToastMsg, setCheckinToastMsg] = useState(null);
     const [showCheckinSurveyModal, setShowCheckinSurveyModal] = useState(false);
     const [checkinLocationName, setCheckinLocationName] = useState('');
+    const [visitStatus, setVisitStatus] = useState(null);
+    const isAdminUser = user?.role?.toLowerCase() === 'admin' ||
+        user?.role?.toLowerCase() === 'staff' ||
+        user?.user_group?.toLowerCase() === 'admin' ||
+        user?.user_group?.toLowerCase() === 'staff' ||
+        user?.user_group === '관리자';
+
+    useEffect(() => {
+        if (!STUDENT_ONBOARDING_TUTORIAL_ENABLED) {
+            setShowOnboardingTutorial(false);
+            return;
+        }
+        if (!user?.id) return;
+        const completed = localStorage.getItem(`student_onboarding_completed_${user.id}`) === 'true';
+        const stored = localStorage.getItem(`student_onboarding_session_${user.id}`);
+        if (STUDENT_ONBOARDING_TUTORIAL_AUTOSTART && stored && !completed) {
+            try {
+                const parsed = JSON.parse(stored);
+                const restoreFallbacks = {
+                    noticeRead: 'home', noticeComment: 'home', noticeCommentResult: 'home',
+                    programDetail: 'programSelect', programApplied: 'programSelect',
+                    openDetail: 'openSelect', challengeDetail: 'challengeSelect',
+                    rentalDetail: 'rentalSelect', calendarDetail: 'calendar',
+                    storeConfirm: 'store', storeResult: 'store', storeResultCard: 'store'
+                };
+                const restored = {
+                    ...createInitialTutorialSession(),
+                    ...parsed,
+                    step: restoreFallbacks[parsed.step] || parsed.step
+                };
+                setTutorialSession(restored);
+                if (['programTypes', 'programCard', 'programSelect', 'programDetail', 'programApplied', 'openSelect', 'openDetail', 'challengeSelect', 'challengeDetail', 'contentIntro', 'contentCard', 'rentalIntro', 'rentalCard', 'rentalSelect', 'rentalDetail'].includes(restored.step)) setActiveTab(TAB_NAMES.PROGRAMS);
+                if (['calendar', 'calendarDetail', 'haifnNav'].includes(restored.step)) setActiveTab(TAB_NAMES.CALENDAR);
+                if (['store', 'storeConfirm', 'storeResult', 'storeResultCard', 'complete'].includes(restored.step)) setActiveTab(TAB_NAMES.HAIFN);
+                setShowOnboardingTutorial(true);
+                return;
+            } catch (error) {
+                localStorage.removeItem(`student_onboarding_session_${user.id}`);
+            }
+        }
+        setShowOnboardingTutorial(false);
+    }, [user?.id]);
+
+    useEffect(() => {
+        if (!user?.id || !showOnboardingTutorial) return;
+        localStorage.setItem(`student_onboarding_session_${user.id}`, JSON.stringify(tutorialSession));
+    }, [tutorialSession, showOnboardingTutorial, user?.id]);
+
+    useEffect(() => {
+        if (!showOnboardingTutorial || !user?.id || !['checkinWait', 'checkoutWait'].includes(tutorialSession.step) || !tutorialSession.waitingSince) return;
+
+        const expectedType = tutorialSession.step === 'checkinWait' ? 'CHECKIN' : 'CHECKOUT';
+        let cancelled = false;
+        const verifyQrResult = async () => {
+            const { data, error } = await supabase
+                .from('logs')
+                .select('id, type, created_at, location_id')
+                .eq('user_id', user.id)
+                .eq('type', expectedType)
+                .gte('created_at', tutorialSession.waitingSince)
+                .order('created_at', { ascending: false })
+                .limit(1);
+
+            if (!cancelled && !error && data?.[0]) {
+                setActiveTab(TAB_NAMES.HOME);
+                setTutorialSession((current) => ({
+                    ...current,
+                    step: expectedType === 'CHECKIN' ? 'checkinSuccess' : 'checkoutSuccess',
+                    checkinMode: expectedType === 'CHECKIN' ? 'actual' : current.checkinMode,
+                    checkoutMode: expectedType === 'CHECKOUT' ? 'actual' : current.checkoutMode,
+                    waitingSince: null,
+                    statusAt: data[0].created_at
+                }));
+            }
+        };
+
+        verifyQrResult();
+        const interval = window.setInterval(verifyQrResult, 3000);
+        const channel = supabase
+            .channel(`student-tutorial-qr-${user.id}-${expectedType}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'logs', filter: `user_id=eq.${user.id}` }, verifyQrResult)
+            .subscribe();
+
+        return () => {
+            cancelled = true;
+            window.clearInterval(interval);
+            supabase.removeChannel(channel);
+        };
+    }, [showOnboardingTutorial, tutorialSession.step, tutorialSession.waitingSince, user?.id]);
+
+    useEffect(() => {
+        if (!showOnboardingTutorial) return undefined;
+        const handleStoreOpened = (event) => setTutorialSession((current) => ({ ...current, step: 'storeConfirm', purchasedItem: event.detail?.item || null }));
+        const handleStorePurchased = (event) => setTutorialSession((current) => ({ ...current, step: 'storeResult', purchasedItem: event.detail?.item || current.purchasedItem }));
+        const handleStoreResultViewed = (event) => setTutorialSession((current) => ({ ...current, step: 'storeResultCard', purchasedItem: event.detail?.item || current.purchasedItem }));
+        const handleRentalOpened = () => setTutorialSession((current) => ({ ...current, step: 'rentalDetail' }));
+        const handleRentalCancelled = () => setTutorialSession((current) => ({ ...current, step: 'rentalIntro' }));
+        const handleRentalCompleted = () => {
+            setActiveTab(TAB_NAMES.CALENDAR);
+            setTutorialSession((current) => ({ ...current, step: 'calendar' }));
+        };
+        window.addEventListener('student-onboarding:store-opened', handleStoreOpened);
+        window.addEventListener('student-onboarding:store-purchased', handleStorePurchased);
+        window.addEventListener('student-onboarding:store-result-viewed', handleStoreResultViewed);
+        window.addEventListener('student-onboarding:rental-opened', handleRentalOpened);
+        window.addEventListener('student-onboarding:rental-cancelled', handleRentalCancelled);
+        window.addEventListener('student-onboarding:rental-completed', handleRentalCompleted);
+        return () => {
+            window.removeEventListener('student-onboarding:store-opened', handleStoreOpened);
+            window.removeEventListener('student-onboarding:store-purchased', handleStorePurchased);
+            window.removeEventListener('student-onboarding:store-result-viewed', handleStoreResultViewed);
+            window.removeEventListener('student-onboarding:rental-opened', handleRentalOpened);
+            window.removeEventListener('student-onboarding:rental-cancelled', handleRentalCancelled);
+            window.removeEventListener('student-onboarding:rental-completed', handleRentalCompleted);
+        };
+    }, [showOnboardingTutorial]);
+
+    useEffect(() => {
+        const visitUserId = (hookData.effectiveUser || hookData.impersonatedUser || user)?.id;
+        if (!visitUserId) return undefined;
+
+        let cancelled = false;
+        const fetchVisitStatus = async () => {
+            let visitState;
+            try {
+                visitState = await getTodayVisitState(visitUserId);
+            } catch (error) {
+                console.error('Failed to load visit status:', error);
+                return;
+            }
+            if (cancelled) return;
+            if (visitState.status === 'NOT_CHECKED_IN') {
+                setVisitStatus(null);
+                return;
+            }
+            // Some older logs use a text location identifier without an
+            // enforceable relationship, so the embedded `locations(name)`
+            // value can be empty even though the location exists.
+            let locationName = null;
+            if (visitState.locationId) {
+                const { data: location } = await supabase
+                    .from('locations')
+                    .select('name')
+                    .eq('id', visitState.locationId)
+                    .maybeSingle();
+                locationName = location?.name || visitState.locationId;
+            }
+
+            setVisitStatus({
+                status: visitState.status === 'ACTIVE' ? 'ACTIVE' : 'COMPLETE',
+                createdAt: visitState.lastEvent?.created_at || null,
+                locationName,
+                locationId: visitState.locationId,
+                isExample: false
+            });
+        };
+
+        fetchVisitStatus();
+        const channel = supabase
+            .channel(`student-home-visit-${visitUserId}`)
+            .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'logs', filter: `user_id=eq.${visitUserId}` }, fetchVisitStatus)
+            .subscribe();
+
+        return () => {
+            cancelled = true;
+            supabase.removeChannel(channel);
+        };
+    }, [hookData.effectiveUser?.id, hookData.impersonatedUser?.id, user?.id]);
 
     useEffect(() => {
         if (!user?.id) return;
@@ -456,6 +658,15 @@ const StudentDashboard = () => {
         })
         .filter(Boolean);
 
+    const visibleTabIdSet = useMemo(() => new Set(visibleTabs.map(t => t.id)), [visibleTabs]);
+    const isProgramsTabVisible = visibleTabIdSet.has(TAB_NAMES.PROGRAMS);
+    const isCalendarTabVisible = visibleTabIdSet.has(TAB_NAMES.CALENDAR);
+    const isHaifnTabVisible = visibleTabIdSet.has(TAB_NAMES.HAIFN);
+    const isNoticeDashboardSectionVisible = useMemo(() => {
+        const noticesConfig = dashboardConfig?.find((item) => item?.id === 'notices');
+        return !noticesConfig || noticesConfig.isVisible !== false;
+    }, [dashboardConfig]);
+
     const defaultTabsList = [
         { id: TAB_NAMES.HOME, icon: Home, label: '홈' },
         { id: TAB_NAMES.BADGES, icon: Award, label: '뱃지' },
@@ -478,6 +689,513 @@ const StudentDashboard = () => {
         
         setDirection(dir);
         handleTabChange(newTab);
+    };
+
+    const tutorialPrograms = useMemo(() => buildTutorialPrograms([...(allPrograms || []), ...(notices || [])]), [allPrograms, notices]);
+    const tutorialHomeNotices = useMemo(
+        () => (
+            showOnboardingTutorial &&
+            isNoticeDashboardSectionVisible &&
+            (homeNotices || []).length === 0
+        )
+            ? [buildTutorialNotice()]
+            : (homeNotices || []),
+        [homeNotices, showOnboardingTutorial, isNoticeDashboardSectionVisible]
+    );
+    const tutorialOpenPrograms = useMemo(() => tutorialPrograms.filter((program) => !program.is_recruiting && !program.is_challenge), [tutorialPrograms]);
+    const tutorialChallengePrograms = useMemo(() => tutorialPrograms.filter((program) => Boolean(program.is_challenge)), [tutorialPrograms]);
+
+    const getNextAvailableTutorialStep = (step) => {
+        const shouldSkipCenterFlow = !isProgramsTabVisible;
+        const shouldSkipCalendarFlow = !isCalendarTabVisible;
+        const shouldSkipHaifnFlow = !isHaifnTabVisible;
+        let next = step;
+
+        if (next === 'home' && (!isNoticeDashboardSectionVisible || tutorialHomeNotices.length === 0)) {
+            if (shouldSkipCenterFlow) {
+                if (!shouldSkipCalendarFlow) return 'calendar';
+                if (!shouldSkipHaifnFlow) return 'haifnNav';
+                return 'complete';
+            }
+            return 'centerNav';
+        }
+        if (next === 'centerNav' && shouldSkipCenterFlow) {
+            if (!shouldSkipCalendarFlow) return 'calendar';
+            if (!shouldSkipHaifnFlow) return 'haifnNav';
+            return 'complete';
+        }
+        if ([
+            'programTypes', 'programCard', 'programSelect', 'programDetail', 'programApplied',
+            'openSelect', 'openDetail', 'challengeSelect', 'challengeDetail',
+            'contentIntro', 'contentCard', 'rentalIntro', 'rentalCard', 'rentalSelect', 'rentalDetail'
+        ].includes(next) && shouldSkipCenterFlow) {
+            if (!shouldSkipCalendarFlow) return 'calendar';
+            if (!shouldSkipHaifnFlow) return 'haifnNav';
+            return 'complete';
+        }
+        if (['calendar', 'calendarDetail'].includes(next) && shouldSkipCalendarFlow) {
+            if (!shouldSkipHaifnFlow) return 'haifnNav';
+            return 'complete';
+        }
+        if (['store', 'storeConfirm', 'storeResult', 'storeResultCard', 'complete'].includes(next) && shouldSkipHaifnFlow) {
+            return 'complete';
+        }
+
+        const hasProgramCard = document.querySelector('[data-tour="tutorial-program-card-0"]');
+        const hasOpenCard = document.querySelector('[data-tour="tutorial-open-card-0"]');
+        const hasChallengeCard = document.querySelector('[data-tour="tutorial-challenge-card-0"]');
+        const hasContentCard = document.querySelector('[data-tour="tutorial-content-card-0"]');
+        const hasRentalCard = document.querySelector('[data-tour="tutorial-rental-card-0"]');
+        const hasHomeNoticeCard = document.querySelector('[data-tour="home-notice-card"]');
+
+        if (next === 'programCard' && !hasProgramCard) return 'openSelect';
+        if (next === 'contentCard' && !hasContentCard) return 'rentalIntro';
+        if (next === 'rentalCard' && !hasRentalCard) return 'rentalSelect';
+        if (next === 'openSelect' && !hasOpenCard) return 'challengeSelect';
+        if (next === 'challengeSelect' && !hasChallengeCard) return 'contentIntro';
+        if (next === 'home' && !hasHomeNoticeCard && isNoticeDashboardSectionVisible) return 'centerNav';
+        return next;
+    };
+
+    useEffect(() => {
+        if (!showOnboardingTutorial) return;
+        setTutorialSession((current) => {
+            let nextStep = getNextAvailableTutorialStep(current.step);
+            let safety = 0;
+            while (nextStep !== current.step && safety < 10) {
+                if (nextStep === current.step) break;
+                const normalized = getNextAvailableTutorialStep(nextStep);
+                if (normalized === nextStep) break;
+                nextStep = normalized;
+                safety += 1;
+            }
+
+            if (nextStep === current.step) return current;
+            return { ...current, step: nextStep };
+        });
+    }, [showOnboardingTutorial, tutorialSession.step, dashboardConfig, tabConfig, homeNotices.length, isNoticeDashboardSectionVisible, isProgramsTabVisible, isCalendarTabVisible, isHaifnTabVisible, tutorialHomeNotices.length]);
+
+    const selectedTutorialProgram = tutorialPrograms.find((program) => program.id === tutorialSession.selectedProgramId) || null;
+    const tutorialResponses = tutorialSession.responses || {};
+    useEffect(() => {
+        if (!showOnboardingTutorial) return;
+        if (TUTORIAL_CENTER_STEPS.includes(tutorialSession.step) && isProgramsTabVisible && activeTab !== TAB_NAMES.PROGRAMS) {
+            handleTabChange(TAB_NAMES.PROGRAMS);
+            return;
+        }
+        if (['calendar', 'calendarDetail'].includes(tutorialSession.step) && isCalendarTabVisible && activeTab !== TAB_NAMES.CALENDAR) {
+            handleTabChange(TAB_NAMES.CALENDAR);
+            return;
+        }
+        if (['store', 'storeConfirm', 'storeResult', 'storeResultCard', 'complete'].includes(tutorialSession.step) && isHaifnTabVisible && activeTab !== TAB_NAMES.HAIFN) {
+            handleTabChange(TAB_NAMES.HAIFN);
+            return;
+        }
+        if (tutorialSession.step === 'centerNav' && isProgramsTabVisible && activeTab === TAB_NAMES.PROGRAMS) {
+            setTutorialSession((current) => ({ ...current, step: 'programTypes' }));
+        }
+        if (tutorialSession.step === 'haifnNav' && isHaifnTabVisible && activeTab === TAB_NAMES.HAIFN) {
+            setTutorialSession((current) => ({ ...current, step: 'store' }));
+        }
+    }, [activeTab, showOnboardingTutorial, tutorialSession.step]);
+
+    const openNoticeDetailForStudent = (notice, context = null) => {
+        if (showOnboardingTutorial && tutorialSession.step === 'home' && !isTutorialProgram(notice)) {
+            setTutorialSession((current) => ({ ...current, step: 'noticeRead', tutorialNoticeId: notice.id }));
+            if (isTutorialNotice(notice)) {
+                setSelectedNotice(notice);
+                setNoticeContext('tutorial_notice');
+                setComments([]);
+            } else {
+                openNoticeDetail(notice, context);
+            }
+            return;
+        }
+
+        if (!isTutorialProgram(notice)) {
+            openNoticeDetail(notice, context);
+            return;
+        }
+
+        setSelectedNotice(notice);
+        setNoticeContext('student_preview');
+        setComments([]);
+        setTutorialSession((current) => {
+            if (current.step === 'programSelect' && notice.is_recruiting && !notice.is_challenge) {
+                return { ...current, step: 'programDetail', selectedProgramId: notice.id, selectedProgramTitle: notice.title };
+            }
+            if (current.step === 'openSelect' && !notice.is_recruiting) return { ...current, step: 'openDetail' };
+            if (current.step === 'challengeSelect' && notice.is_challenge) return { ...current, step: 'challengeDetail' };
+            if (current.step === 'calendar') return { ...current, step: 'calendarDetail' };
+            return current;
+        });
+    };
+
+    const handleTutorialProgramOpen = (notice) => {
+        setTutorialSession((current) => {
+            if (notice.is_challenge) return { ...current, step: 'challengeDetail' };
+            if (!notice.is_recruiting) return { ...current, step: 'openDetail' };
+            return { ...current, step: 'programDetail', selectedProgramId: notice.id, selectedProgramTitle: notice.title };
+        });
+    };
+
+    const handleTutorialResponse = (noticeId, status) => {
+        if (!isTutorialProgram(noticeId)) {
+            return handleResponse(noticeId, status);
+        }
+        setTutorialSession((current) => ({
+            ...current,
+            step: status === 'JOIN' || status === 'WAITLIST' ? 'programApplied' : current.step,
+            responses: status === 'CANCEL'
+                ? Object.fromEntries(Object.entries(current.responses || {}).filter(([id]) => id !== noticeId))
+                : { ...(current.responses || {}), [noticeId]: status }
+        }));
+        return Promise.resolve();
+    };
+
+    const handleTutorialReaction = (emoji) => {
+        setTutorialSession((current) => ({ ...current, step: 'noticeComment', selectedReaction: emoji }));
+    };
+
+    const handleTutorialComment = (comment) => {
+        setTutorialSession((current) => ({ ...current, step: 'noticeCommentResult', tutorialComment: comment?.content || '' }));
+    };
+
+    const handleTutorialAction = async (action) => {
+        if (action === 'show-checkin') {
+            setTutorialSession((current) => ({ ...current, step: 'checkinIntro' }));
+            return;
+        }
+        if (action === 'wait-checkin') {
+            try {
+                const now = new Date();
+                const kstDate = new Date(now.getTime() + (now.getTimezoneOffset() * 60000) + (9 * 60 * 60 * 1000));
+                const todayKst = `${kstDate.getFullYear()}-${String(kstDate.getMonth() + 1).padStart(2, '0')}-${String(kstDate.getDate()).padStart(2, '0')}`;
+                const startOfTodayIso = `${todayKst}T00:00:00+09:00`;
+
+                const { data: checkinData } = await supabase
+                    .from('logs')
+                    .select('type, created_at')
+                    .eq('user_id', user.id)
+                    .eq('type', 'CHECKIN')
+                    .gte('created_at', startOfTodayIso)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+
+                const latestCheckin = checkinData?.[0];
+                if (!latestCheckin) {
+                    setTutorialSession((current) => ({ ...current, step: 'checkinWait', waitingSince: new Date().toISOString() }));
+                    return;
+                }
+
+                const { data: checkoutData } = await supabase
+                    .from('logs')
+                    .select('created_at')
+                    .eq('user_id', user.id)
+                    .eq('type', 'CHECKOUT')
+                    .gte('created_at', latestCheckin.created_at)
+                    .order('created_at', { ascending: false })
+                    .limit(1);
+
+                if (checkoutData?.[0]) {
+                    setTutorialSession((current) => ({ ...current, step: 'checkinWait', waitingSince: new Date().toISOString() }));
+                    return;
+                }
+
+                setActiveTab(TAB_NAMES.HOME);
+                setTutorialSession((current) => ({ ...current, step: 'checkinSuccess', checkinMode: 'actual', waitingSince: null, statusAt: latestCheckin.created_at }));
+            } catch (error) {
+                console.error('Failed to verify today check-in status:', error);
+                setTutorialSession((current) => ({ ...current, step: 'checkinWait', waitingSince: new Date().toISOString() }));
+            }
+            return;
+        }
+        if (action === 'skip-checkin') {
+            setActiveTab(TAB_NAMES.HOME);
+            setTutorialSession((current) => ({ ...current, step: 'checkinSuccess', checkinMode: 'example', waitingSince: null, statusAt: new Date().toISOString() }));
+            return;
+        }
+        if (action === 'show-checkout') {
+            setTutorialSession((current) => ({ ...current, step: 'checkoutIntro' }));
+            return;
+        }
+        if (action === 'wait-checkout') {
+            setTutorialSession((current) => ({ ...current, step: 'checkoutWait', waitingSince: new Date().toISOString() }));
+            return;
+        }
+        if (action === 'skip-checkout') {
+            setActiveTab(TAB_NAMES.HOME);
+            setTutorialSession((current) => ({ ...current, step: 'checkoutSuccess', checkoutMode: 'example', waitingSince: null, statusAt: new Date().toISOString() }));
+            return;
+        }
+        if (action === 'show-home') {
+            handleTabNavigation(TAB_NAMES.HOME);
+            setTutorialSession((current) => ({ ...current, step: 'homeOpenStatus' }));
+            return;
+        }
+        if (action === 'mission-opened') {
+            setTutorialSession((current) => ({ ...current, step: 'challengeMissionDetail' }));
+            return;
+        }
+        if (action === 'show-home-coffee-chat') {
+            setActiveTab(TAB_NAMES.HOME);
+            setTutorialSession((current) => ({ ...current, step: 'homeCoffeeChat' }));
+            return;
+        }
+        if (action === 'show-home-notice') {
+            setActiveTab(TAB_NAMES.HOME);
+            setTutorialSession((current) => ({ ...current, step: 'home' }));
+            return;
+        }
+        if (action === 'show-center-nav') {
+            setSelectedNotice(null);
+            setNoticeContext(null);
+            setTutorialSession((current) => {
+                if (!isProgramsTabVisible) {
+                    if (isCalendarTabVisible) return { ...current, step: 'calendar' };
+                    if (isHaifnTabVisible) return { ...current, step: 'haifnNav' };
+                    return { ...current, step: 'complete' };
+                }
+                return { ...current, step: 'centerNav' };
+            });
+            return;
+        }
+        if (action === 'show-program-cards') {
+            if (!isProgramsTabVisible) {
+                setTutorialSession((current) => {
+                    if (isCalendarTabVisible) return { ...current, step: 'calendar' };
+                    if (isHaifnTabVisible) return { ...current, step: 'haifnNav' };
+                    return { ...current, step: 'complete' };
+                });
+                return;
+            }
+            setTutorialSession((current) => ({ ...current, step: 'programCard', programCardIndex: 0 }));
+            return;
+        }
+        if (action === 'next-program-card') {
+            setTutorialSession((current) => {
+                const nextIndex = (current.programCardIndex || 0) + 1;
+                if (document.querySelector(`[data-tour="tutorial-program-card-${nextIndex}"]`)) {
+                    return { ...current, programCardIndex: nextIndex };
+                }
+                window.setTimeout(() => document.querySelector('[data-tour="tutorial-application-programs"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                return { ...current, step: 'programSelect' };
+            });
+            return;
+        }
+        if (action === 'show-open') {
+            if (!isProgramsTabVisible) {
+                if (isCalendarTabVisible) {
+                    setTutorialSession((current) => ({ ...current, step: 'calendar' }));
+                    return;
+                }
+                if (isHaifnTabVisible) {
+                    setTutorialSession((current) => ({ ...current, step: 'haifnNav' }));
+                    return;
+                }
+                setTutorialSession((current) => ({ ...current, step: 'complete' }));
+                return;
+            }
+            setSelectedNotice(null);
+            setNoticeContext(null);
+            if (tutorialOpenPrograms.length === 0) {
+                if (tutorialChallengePrograms.length > 0) {
+                    setTutorialSession((current) => ({ ...current, step: 'challengeSelect', challengeCardIndex: 0 }));
+                } else {
+                    setTutorialSession((current) => ({ ...current, step: 'contentIntro', contentCardIndex: 0 }));
+                }
+                return;
+            }
+            setTutorialSession((current) => ({ ...current, step: 'openSelect', openCardIndex: 0 }));
+            window.setTimeout(() => document.querySelector('[data-tour="tutorial-open-card-0"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250);
+            return;
+        }
+        if (action === 'next-open-card') {
+            setTutorialSession((current) => {
+                const nextIndex = (current.openCardIndex || 0) + 1;
+                if (tutorialOpenPrograms[nextIndex]) {
+                    window.setTimeout(() => document.querySelector(`[data-tour="tutorial-open-card-${nextIndex}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+                    return { ...current, step: 'openSelect', openCardIndex: nextIndex };
+                }
+                if (tutorialChallengePrograms.length > 0) {
+                    return { ...current, step: 'challengeSelect', challengeCardIndex: 0 };
+                }
+                return { ...current, step: 'contentIntro', contentCardIndex: 0 };
+            });
+            return;
+        }
+        if (action === 'show-challenge') {
+            if (!isProgramsTabVisible) {
+                if (isCalendarTabVisible) {
+                    setTutorialSession((current) => ({ ...current, step: 'calendar' }));
+                    return;
+                }
+                if (isHaifnTabVisible) {
+                    setTutorialSession((current) => ({ ...current, step: 'haifnNav' }));
+                    return;
+                }
+                setTutorialSession((current) => ({ ...current, step: 'complete' }));
+                return;
+            }
+            setSelectedNotice(null);
+            setNoticeContext(null);
+            if (tutorialChallengePrograms.length === 0) {
+                setTutorialSession((current) => ({ ...current, step: 'contentIntro', contentCardIndex: 0 }));
+                return;
+            }
+            setTutorialSession((current) => ({ ...current, step: 'challengeSelect', challengeCardIndex: 0 }));
+            window.setTimeout(() => document.querySelector('[data-tour="tutorial-challenge-card-0"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250);
+            return;
+        }
+        if (action === 'next-challenge-card') {
+            setTutorialSession((current) => {
+                const nextIndex = (current.challengeCardIndex || 0) + 1;
+                if (tutorialChallengePrograms[nextIndex]) {
+                    window.setTimeout(() => document.querySelector(`[data-tour="tutorial-challenge-card-${nextIndex}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 120);
+                    return { ...current, step: 'challengeSelect', challengeCardIndex: nextIndex };
+                }
+                return { ...current, step: 'contentIntro', contentCardIndex: 0 };
+            });
+            return;
+        }
+        if (action === 'show-content') {
+            if (!isProgramsTabVisible) {
+                if (isCalendarTabVisible) {
+                    setTutorialSession((current) => ({ ...current, step: 'calendar' }));
+                    return;
+                }
+                if (isHaifnTabVisible) {
+                    setTutorialSession((current) => ({ ...current, step: 'haifnNav' }));
+                    return;
+                }
+                setTutorialSession((current) => ({ ...current, step: 'complete' }));
+                return;
+            }
+            setSelectedNotice(null);
+            setNoticeContext(null);
+            setTutorialSession((current) => ({ ...current, step: 'contentIntro', contentCardIndex: 0 }));
+            window.setTimeout(() => document.querySelector('[data-tour="tutorial-content-section"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 250);
+            return;
+        }
+        if (action === 'show-content-cards') {
+            setTutorialSession((current) => ({ ...current, step: 'rentalIntro', rentalCardIndex: 0 }));
+            return;
+            /* legacy content-card flow retained for saved sessions */
+            if (document.querySelector('[data-tour="tutorial-content-card-0"]')) {
+                setTutorialSession((current) => ({ ...current, step: 'contentCard', contentCardIndex: 0 }));
+            } else {
+                setTutorialSession((current) => ({ ...current, step: 'rentalIntro', rentalCardIndex: 0 }));
+            }
+            return;
+        }
+        if (action === 'next-content-card') {
+            setTutorialSession((current) => {
+                const nextIndex = (current.contentCardIndex || 0) + 1;
+                if (document.querySelector(`[data-tour="tutorial-content-card-${nextIndex}"]`)) return { ...current, contentCardIndex: nextIndex };
+                window.setTimeout(() => document.querySelector('[data-tour="tutorial-rental-section"]')?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 50);
+                return { ...current, step: 'rentalIntro', rentalCardIndex: 0 };
+            });
+            return;
+        }
+        if (action === 'show-rental-cards') {
+            if (!isProgramsTabVisible) {
+                if (isCalendarTabVisible) {
+                    setTutorialSession((current) => ({ ...current, step: 'calendar' }));
+                    return;
+                }
+                if (isHaifnTabVisible) {
+                    setTutorialSession((current) => ({ ...current, step: 'haifnNav' }));
+                    return;
+                }
+                setTutorialSession((current) => ({ ...current, step: 'complete' }));
+                return;
+            }
+            if (document.querySelector('[data-tour="tutorial-rental-card-0"]')) {
+                setTutorialSession((current) => ({ ...current, step: 'rentalCard', rentalCardIndex: 0 }));
+            } else {
+                handleTabNavigation(TAB_NAMES.CALENDAR);
+                setTutorialSession((current) => ({ ...current, step: 'calendar' }));
+            }
+            return;
+        }
+        if (action === 'next-rental-card') {
+            setTutorialSession((current) => {
+                const nextIndex = (current.rentalCardIndex || 0) + 1;
+                if (document.querySelector(`[data-tour="tutorial-rental-card-${nextIndex}"]`)) return { ...current, rentalCardIndex: nextIndex };
+                window.setTimeout(() => document.querySelector('[data-tour="tutorial-rental-section"]')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                return { ...current, step: 'rentalSelect' };
+            });
+            return;
+        }
+        if (action === 'show-calendar') {
+            if (!isCalendarTabVisible) {
+                if (isHaifnTabVisible) {
+                    setTutorialSession((current) => ({ ...current, step: 'haifnNav' }));
+                    return;
+                }
+                setTutorialSession((current) => ({ ...current, step: 'complete' }));
+                return;
+            }
+            setSelectedNotice(null);
+            setNoticeContext(null);
+            handleTabNavigation(TAB_NAMES.CALENDAR);
+            setTutorialSession((current) => ({ ...current, step: 'calendar' }));
+            return;
+        }
+        if (action === 'show-haifn') {
+            if (!isHaifnTabVisible) {
+                setTutorialSession((current) => ({ ...current, step: 'complete' }));
+                return;
+            }
+            setSelectedNotice(null);
+            setNoticeContext(null);
+            setTutorialSession((current) => ({ ...current, step: 'haifnNav' }));
+            return;
+        }
+        if (action === 'finish-tour') {
+            setTutorialSession((current) => ({ ...current, step: 'complete' }));
+            return;
+        }
+        if (action === 'complete') {
+            localStorage.setItem(`student_onboarding_completed_${user.id}`, 'true');
+            localStorage.removeItem(`student_onboarding_session_${user.id}`);
+            setShowOnboardingTutorial(false);
+        }
+    };
+
+    const startTutorial = () => {
+        if (!STUDENT_ONBOARDING_TUTORIAL_ENABLED) return;
+        setSelectedNotice(null);
+        setNoticeContext(null);
+        handleTabNavigation(TAB_NAMES.HOME);
+        setTutorialSession(createInitialTutorialSession());
+        setShowOnboardingTutorial(true);
+        if (user?.id) {
+            localStorage.removeItem(`student_onboarding_dismissed_${user.id}`);
+            localStorage.removeItem(`student_onboarding_session_${user.id}`);
+        }
+    };
+
+    const closeTutorial = () => {
+        if (user?.id) {
+            localStorage.setItem(`student_onboarding_dismissed_${user.id}`, 'true');
+            localStorage.removeItem(`student_onboarding_session_${user.id}`);
+        }
+        setShowOnboardingTutorial(false);
+    };
+
+    const handleTutorialBack = () => {
+        const previousSteps = {
+            homeOpenStatus: 'checkoutSuccess', homeCoffeeChat: 'homeOpenStatus', home: 'homeCoffeeChat',
+            noticeRead: 'home', noticeComment: 'noticeRead', noticeCommentResult: 'noticeComment',
+            centerNav: 'noticeCommentResult', programTypes: 'centerNav', programCard: 'programTypes',
+            programSelect: 'programCard', programDetail: 'programSelect', programApplied: 'programDetail',
+            openSelect: 'programApplied', openDetail: 'openSelect', challengeSelect: 'openDetail', challengeDetail: 'challengeSelect',
+            contentIntro: 'challengeDetail', rentalIntro: 'contentIntro', rentalCard: 'rentalIntro', rentalSelect: 'rentalIntro', rentalDetail: 'rentalSelect',
+            calendar: 'rentalIntro', calendarDetail: 'calendar', haifnNav: 'calendar', store: 'haifnNav', storeConfirm: 'store', storeResult: 'storeConfirm', storeResultCard: 'storeResult'
+        };
+        const previous = previousSteps[tutorialSession.step];
+        if (previous) setTutorialSession((current) => ({ ...current, step: previous }));
     };
 
     const tabVariants = {
@@ -578,6 +1296,22 @@ const StudentDashboard = () => {
     const effectiveRegion = user?.role === 'admin'
         ? (hookData.selectedRegion === 'GANGDONG' ? '강동' : hookData.selectedRegion === 'GANGSEO' ? '강서' : null)
         : studentRegion;
+    const displayedVisitStatus = showOnboardingTutorial && tutorialSession.checkinMode
+        ? {
+            ...(visitStatus || {}),
+            status: tutorialSession.checkoutMode ? 'COMPLETE' : 'ACTIVE',
+            createdAt: tutorialSession.statusAt || visitStatus?.createdAt || new Date().toISOString(),
+            locationName: visitStatus?.locationName || (effectiveRegion === '강서' ? '이높플레이스' : '하이픈'),
+            isExample: tutorialSession.checkinMode !== 'actual' || (tutorialSession.checkoutMode && tutorialSession.checkoutMode !== 'actual')
+        }
+        : visitStatus;
+    const isTutorialNoticeDetail = Boolean(
+        showOnboardingTutorial
+        && selectedNotice
+        && !isTutorialProgram(selectedNotice)
+        && TUTORIAL_NOTICE_STEPS.includes(tutorialSession.step)
+    );
+    const isTutorialSelectedNotice = Boolean(selectedNotice && (isTutorialProgram(selectedNotice) || isTutorialNoticeDetail));
 
     return (
         <div 
@@ -686,14 +1420,44 @@ const StudentDashboard = () => {
                         key={selectedNotice.id}
                         notice={selectedNotice}
                         context={noticeContext}
-                        onClose={() => { setSelectedNotice(null); setNoticeContext(null); }}
+                        onClose={() => {
+                            if (isTutorialProgram(selectedNotice)) {
+                                setTutorialSession((current) => {
+                                    const openCardsCount = tutorialOpenPrograms.length;
+                                    const challengeCardsCount = tutorialChallengePrograms.length;
+                                    const isLastOpenCard = (current.openCardIndex || 0) >= Math.max(0, openCardsCount - 1);
+                                    const isLastChallengeCard = (current.challengeCardIndex || 0) >= Math.max(0, challengeCardsCount - 1);
+                                    const fallback = current.step === 'openDetail'
+                                        ? (isLastOpenCard ? 'challengeSelect' : 'openSelect')
+                                        : current.step === 'challengeDetail'
+                                            ? (isLastChallengeCard ? 'contentIntro' : 'challengeSelect')
+                                            : current.step === 'calendarDetail' ? 'calendar'
+                                                : current.step === 'programApplied' ? 'openSelect'
+                                                    : 'programSelect';
+                                    return { ...current, step: fallback };
+                                });
+                            } else if (TUTORIAL_NOTICE_STEPS.includes(tutorialSession.step)) {
+                                setTutorialSession((current) => ({ ...current, step: 'home' }));
+                            }
+                            setSelectedNotice(null);
+                            setNoticeContext(null);
+                        }}
                         isImpersonating={Boolean(hookData.impersonatedUser)}
                         user={hookData.effectiveUser || hookData.impersonatedUser || user}
-                        responses={responses}
+                        responses={isTutorialProgram(selectedNotice) ? { ...responses, ...tutorialResponses } : responses}
                         responseDetails={responseDetails}
-                        onResponse={handleResponse}
+                        onResponse={handleTutorialResponse}
                         onRefresh={fetchNotices}
                         onRegisterRegularUser={() => setShowRegisterModal(true)}
+                        tutorialMode={isTutorialSelectedNotice}
+                        tutorialStep={tutorialSession.step}
+                        onTutorialAction={handleTutorialAction}
+                        tutorialOpenCardsTotal={tutorialOpenPrograms.length}
+                        tutorialOpenCardIndex={tutorialSession.openCardIndex || 0}
+                        tutorialChallengeCardsTotal={tutorialChallengePrograms.length}
+                        tutorialChallengeCardIndex={tutorialSession.challengeCardIndex || 0}
+                        onTutorialReaction={handleTutorialReaction}
+                        onTutorialComment={handleTutorialComment}
                         comments={comments}
                         newComment={newComment}
                         setNewComment={setNewComment}
@@ -768,6 +1532,10 @@ const StudentDashboard = () => {
                         updateProfile={updateProfile}
                         withdrawMembership={hookData.withdrawMembership}
                         profileLoadingState={profileLoadingState}
+                        onStartTutorial={((isAdminUser || user?.name?.replace('(guest)', '').trim() === '김학생') && STUDENT_ONBOARDING_TUTORIAL_ENABLED) ? () => {
+                            setShowProfileSettings(false);
+                            startTutorial();
+                        } : undefined}
                     />
                 )}
 
@@ -871,8 +1639,14 @@ const StudentDashboard = () => {
                     <CoffeeChatModal
                         staff={selectedStaffForChat.id === user.id ? { ...selectedStaffForChat, ...user } : selectedStaffForChat}
                         student={user}
+                        tutorialMode={showOnboardingTutorial && tutorialSession.step === 'homeCoffeeChat'}
                         onClose={() => setSelectedStaffForChat(null)}
-                        onSuccess={() => setSelectedStaffForChat(null)}
+                        onSuccess={() => {
+                            setSelectedStaffForChat(null);
+                            if (showOnboardingTutorial && tutorialSession.step === 'homeCoffeeChat') {
+                                setTutorialSession((current) => ({ ...current, step: 'centerNav' }));
+                            }
+                        }}
                     />
                 )}
 
@@ -1182,8 +1956,8 @@ const StudentDashboard = () => {
                     handleLogout={handleLogout}
                     homePrograms={homePrograms}
                     responses={responses}
-                    openNoticeDetail={openNoticeDetail}
-                    homeNotices={homeNotices}
+                    openNoticeDetail={openNoticeDetailForStudent}
+                    homeNotices={tutorialHomeNotices}
                     locationGroups={locationGroups}
                     activeUserCountByGroup={activeUserCountByGroup}
                     dynamicChallenges={dynamicBadges}
@@ -1201,6 +1975,9 @@ const StudentDashboard = () => {
                     dismissedRejectedChatId={dismissedRejectedChatId}
                     onDismissRejection={handleDismissRejection}
                     onRegisterRegularUser={() => setShowRegisterModal(true)}
+                    visitStatus={displayedVisitStatus}
+                    tutorialMode={showOnboardingTutorial && ['home', 'homeOpenStatus', 'homeCoffeeChat'].includes(tutorialSession.step)}
+                    tutorialStep={tutorialSession.step}
                 />
             )}
 
@@ -1222,18 +1999,23 @@ const StudentDashboard = () => {
                     allPrograms={allPrograms}
                     responses={responses}
                     responseDetails={responseDetails}
-                    openNoticeDetail={openNoticeDetail}
+                    openNoticeDetail={openNoticeDetailForStudent}
                     refreshTrigger={refreshTrigger}
                     setRefreshTrigger={setRefreshTrigger}
                     selectedRegion={hookData.selectedRegion}
                     studentRegion={effectiveRegion}
+                    tutorialMode={showOnboardingTutorial && TUTORIAL_CENTER_STEPS.includes(tutorialSession.step)}
+                    tutorialStep={tutorialSession.step}
+                    tutorialResponses={tutorialResponses}
+                    onTutorialProgramOpen={handleTutorialProgramOpen}
+                    onTutorialClose={closeTutorial}
                 />
             )}
 
             {activeTab === TAB_NAMES.NOTICES && (
                 <StudentNoticesTab
                     filteredNotices={filteredNotices}
-                    openNoticeDetail={openNoticeDetail}
+                    openNoticeDetail={openNoticeDetailForStudent}
                 />
             )}
 
@@ -1254,9 +2036,12 @@ const StudentDashboard = () => {
                     adminSchedules={adminSchedules}
                     notices={filteredPrograms}
                     calendarCategories={calendarCategories}
-                    openNoticeDetail={openNoticeDetail}
+                    openNoticeDetail={openNoticeDetailForStudent}
                     studentRegion={effectiveRegion}
                     onStaffClick={(staff) => setSelectedStaffForChat(staff)}
+                    tutorialMode={showOnboardingTutorial}
+                    tutorialPrograms={selectedTutorialProgram && tutorialResponses[selectedTutorialProgram.id] ? [selectedTutorialProgram] : []}
+                    onTutorialEventOpen={() => setTutorialSession((current) => ({ ...current, step: 'calendarDetail' }))}
                 />
             )}
 
@@ -1277,20 +2062,40 @@ const StudentDashboard = () => {
                         });
                     }}
                     refreshTrigger={refreshTrigger}
+                    tutorialMode={showOnboardingTutorial}
+                    tutorialStep={tutorialSession.step}
                 />
             )}
                 </motion.div>
             </AnimatePresence>
 
+            <AnimatePresence>
+                {showOnboardingTutorial && (
+                    <div className="fixed left-1/2 top-3 z-[700] flex -translate-x-1/2 items-center gap-3 rounded-full bg-white/95 px-4 py-2 shadow-[0_6px_20px_rgba(0,0,0,0.16)] backdrop-blur">
+                        <span className="text-xs font-black text-tossGrey700">센터 이용 튜토리얼</span>
+                        <button type="button" onClick={closeTutorial} className="rounded-full bg-tossGrey100 px-3 py-1 text-xs font-black text-tossGrey600 hover:bg-tossGrey200">종료</button>
+                    </div>
+                )}
+                {showOnboardingTutorial && (!selectedNotice || isTutorialSelectedNotice) && (
+                    <StudentGuidedTour
+                        session={tutorialSession}
+                        onAction={handleTutorialAction}
+                        onClose={closeTutorial}
+                    />
+                )}
+            </AnimatePresence>
+
             {/* Bottom Navigation */}
             <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full md:max-w-lg bg-white border-t border-tossGrey200 flex justify-around items-center px-4 py-3 z-[120] safe-area-bottom">
                 {navigationTabs.map((tab) => (
-                    <motion.button
-                        key={tab.id}
-                        whileTap={{ scale: 0.9 }}
-                        onClick={() => handleTabNavigation(tab.id)}
-                        className={`flex flex-col items-center gap-1 p-2 transition-all duration-300 flex-1 relative btn-tactile ${activeTab === tab.id ? 'text-tossBlue' : 'text-tossGrey400'}`}
-                    >
+                            <motion.button
+                                key={tab.id}
+                                data-tour={`nav-${tab.id}`}
+                                data-tour-center={tab.id === TAB_NAMES.PROGRAMS ? 'nav-center' : undefined}
+                                whileTap={{ scale: 0.9 }}
+                                onClick={() => handleTabNavigation(tab.id)}
+                                className={`flex flex-col items-center gap-1 p-2 rounded-2xl transition-all duration-300 flex-1 relative btn-tactile ${activeTab === tab.id ? 'text-tossBlue' : 'text-tossGrey400'}`}
+                            >
                         <tab.icon size={22} strokeWidth={activeTab === tab.id ? 2.2 : 1.8} />
                         <span className={`text-[11px] font-medium tracking-tight mt-1 ${activeTab === tab.id ? 'text-tossBlue' : 'text-tossGrey500'}`}>
                             {tab.label}

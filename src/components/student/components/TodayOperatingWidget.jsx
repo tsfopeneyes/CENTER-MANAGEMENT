@@ -4,7 +4,7 @@ import { supabase } from '../../../supabaseClient';
 import UserAvatar from '../../common/UserAvatar';
 import { startOfDay, addDays, startOfWeek } from 'date-fns';
 
-const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCategories = [], onStaffClick }) => {
+const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCategories = [], onStaffClick, tutorialMode = false, tutorialStep = null }) => {
     const [operatingHours, setOperatingHours] = useState(null);
     const [staffConfig, setStaffConfig] = useState({ "하이픈": [], "이높플레이스": [] });
     const [presenceStatus, setPresenceStatus] = useState({});
@@ -305,11 +305,15 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
     })();
 
     // Present (non-duty) staff: after 6 PM all are absent
-    const presentStaff = isAfter6PM 
+    const presentStaff = tutorialMode ? [] : (isAfter6PM 
         ? [] 
-        : staffList.filter(u => !!presenceStatus[u.id] && u.id !== dutyStaffId);
+        : staffList.filter(u => !!presenceStatus[u.id] && u.id !== dutyStaffId));
 
-    const hasDuty = !!dutyMember;
+    const isCoffeeChatStep = tutorialMode && tutorialStep === 'homeCoffeeChat';
+    const tutorialStaff = { id: 'tutorial-staff', name: '스처', user_group: 'STAFF', role: 'staff', isBusy: false };
+    const effectiveDutyMember = isCoffeeChatStep && !dutyMember ? tutorialStaff : dutyMember;
+
+    const hasDuty = !!effectiveDutyMember && (!tutorialMode || isCoffeeChatStep);
     const hasPresent = presentStaff.length > 0;
     const hasAnyone = hasDuty || hasPresent;
 
@@ -484,10 +488,10 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
 
             {/* Present/Duty Staff Section */}
             {hasAnyone && (
-                <div className="w-full flex flex-col gap-3 mt-5 pt-5 border-t border-tossGrey100 animate-fade-in">
+                <div data-tour={tutorialMode ? 'home-coffee-chat' : undefined} className="-mx-5 px-5 w-[calc(100%+2.5rem)] flex flex-col gap-3 mt-5 pt-5 border-t border-tossGrey100 rounded-xl overflow-hidden animate-fade-in">
                     <div className="flex flex-wrap items-center gap-1">
                         <span className="text-[11px] font-bold text-tossGrey500 tracking-tight">지금 센터에서 만나요!</span>
-                        <span className="text-[11px] font-bold text-tossBlue tracking-tight shrink-0">(스처쌤을 클릭하면 커피챗을 신청할 수 있어요)</span>
+                        <span className="text-[11px] font-bold text-tossBlue tracking-tight shrink-0">(스처쌤을 클릭하면 대화를 신청할 수 있어요)</span>
                     </div>
                     <div className={`flex items-center ${containerGap} pl-0.5`}>
                         {/* Duty Staff — always first */}
@@ -495,18 +499,18 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
                             <div className="flex flex-col items-center justify-center text-center gap-1.5 min-w-[40px] animate-scale-in">
                                 <div 
                                     onClick={() => {
-                                        if (dutyMember.isBusy) {
+                                        if (effectiveDutyMember.isBusy) {
                                             alert('현재 대화가 진행 중입니다. 30분 뒤에 다시 신청해 주세요! ☕');
                                             return;
                                         }
-                                        onStaffClick && onStaffClick(dutyMember);
+                                        onStaffClick && onStaffClick(effectiveDutyMember);
                                     }}
                                     className={`relative shrink-0 shadow-toss-subtle rounded-full ring-2 ring-tossBlue/30 transition-transform ${
-                                        dutyMember.isBusy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:scale-105'
+                                        effectiveDutyMember.isBusy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:scale-105'
                                     }`}
                                 >
-                                    <UserAvatar user={dutyMember} size={dutySize} textSize={dutyTextSize} />
-                                    {dutyMember.isBusy ? (
+                                    <UserAvatar user={effectiveDutyMember} size={dutySize} textSize={dutyTextSize} />
+                                    {effectiveDutyMember.isBusy ? (
                                         <span className="absolute -top-1 -right-1 bg-amber-500 text-[8px] text-white px-1 py-0.5 rounded-full font-bold leading-none scale-90 border border-white whitespace-nowrap select-none animate-pulse">
                                             대화 중
                                          </span>
@@ -517,7 +521,7 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
                                     )}
                                 </div>
                                 <span className={`font-bold leading-tight text-tossBlue`} style={{ fontSize: dutyLabelSize.replace('text-[', '').replace(']', '') }}>
-                                    {dutyMember.name}
+                                    {effectiveDutyMember.name}
                                 </span>
                             </div>
                         )}

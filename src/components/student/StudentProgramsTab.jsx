@@ -1,19 +1,33 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import ProgramCard from './ProgramCard';
 import ProgramFeedbackModal from './modals/ProgramFeedbackModal';
 import { motion, AnimatePresence } from 'framer-motion';
 import { feedbackApi } from '../../api/feedbackApi';
+import { buildTutorialPrograms } from './studentTutorialData';
 
 const StudentProgramsTab = ({
     filteredPrograms,
     allPrograms,
     responses,
     responseDetails,
-    openNoticeDetail
+    openNoticeDetail,
+    tutorialMode = false,
+    tutorialStep = '',
+    tutorialResponses = {},
+    onTutorialProgramOpen
 }) => {
     const [subTab, setSubTab] = useState('AVAILABLE'); // 'AVAILABLE' | 'HISTORY'
     const [selectedFeedbackProgram, setSelectedFeedbackProgram] = useState(null);
     const [userFeedbacks, setUserFeedbacks] = useState([]);
+    const tutorialPrograms = useMemo(() => buildTutorialPrograms(allPrograms), [allPrograms]);
+    const tutorialApplicationPrograms = tutorialPrograms.filter((program) => program.is_recruiting && !program.is_challenge);
+    const tutorialOpenPrograms = tutorialPrograms.filter((program) => !program.is_recruiting);
+    const tutorialChallenges = tutorialPrograms.filter((program) => program.is_challenge);
+
+    const openTutorialProgram = (program) => {
+        onTutorialProgramOpen?.(program);
+        openNoticeDetail(program, 'tutorial');
+    };
 
     useEffect(() => {
         const fetchFeedback = async () => {
@@ -84,8 +98,72 @@ const StudentProgramsTab = ({
                                 exit={{ opacity: 0, x: 10 }}
                                 className="space-y-6"
                             >
-                                {filteredPrograms.length === 0 ? (
+                                {filteredPrograms.length === 0 && !tutorialMode ? (
                                     <div className="text-center py-20 text-tossGrey400 font-bold">진행 중인 프로그램이 없습니다.</div>
+                                ) : tutorialMode ? (
+                                    <div className="space-y-7">
+                                        <section data-tour="tutorial-application-programs" className="rounded-toss-xl overflow-hidden">
+                                            <div className="mb-3">
+                                                <h3 className="text-sm font-black text-tossGrey900">신청 프로그램</h3>
+                                                <p className="mt-0.5 text-[11px] font-semibold text-tossGrey500">아래 프로그램 중 관심 있는 하나를 직접 골라 보세요.</p>
+                                            </div>
+                                            {tutorialStep === 'programSelect' && (
+                                                <div className="mb-3 rounded-2xl border border-tossBlue/15 bg-tossBlueLight px-4 py-3 text-xs font-bold leading-5 text-tossGrey700">
+                                                    세 카드 중 관심 있는 프로그램 하나를 직접 눌러 상세 소개, 일정, 장소와 정원을 확인해 보세요.
+                                                </div>
+                                            )}
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {tutorialApplicationPrograms.slice(0, 1).map((program) => (
+                                                    <ProgramCard
+                                                        key={program.id}
+                                                        program={{ ...program, responseStatus: tutorialResponses[program.id] }}
+                                                        onClick={openTutorialProgram}
+                                                        compact={true}
+                                                        tourTarget="tutorial-program-card-0"
+                                                        tourLabel={program.title}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </section>
+
+                                        <section data-tour="tutorial-open-programs">
+                                            <div className="mb-3">
+                                                <h3 className="text-sm font-black text-tossGrey900">오픈 프로그램</h3>
+                                                <p className="mt-0.5 text-[11px] font-semibold text-tossGrey500">신청 버튼 없이 일정과 장소를 확인하고 참여해요.</p>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {tutorialOpenPrograms.map((program, index) => (
+                                                    <ProgramCard
+                                                        key={program.id}
+                                                        program={program}
+                                                        onClick={openTutorialProgram}
+                                                        compact={true}
+                                                        tourTarget={`tutorial-open-card-${index}`}
+                                                        tourLabel={program.title}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </section>
+
+                                        <section data-tour="tutorial-challenge-programs">
+                                            <div className="mb-3">
+                                                <h3 className="text-sm font-black text-tossGrey900">챌린지</h3>
+                                                <p className="mt-0.5 text-[11px] font-semibold text-tossGrey500">상세 화면에서 미션과 인증 방법을 확인해요.</p>
+                                            </div>
+                                            <div className="grid grid-cols-2 gap-3">
+                                                {tutorialChallenges.map((program, index) => (
+                                                    <ProgramCard
+                                                        key={program.id}
+                                                        program={program}
+                                                        onClick={openTutorialProgram}
+                                                        compact={true}
+                                                        tourTarget={`tutorial-challenge-card-${index}`}
+                                                        tourLabel={program.title}
+                                                    />
+                                                ))}
+                                            </div>
+                                        </section>
+                                    </div>
                                 ) : (
                                     <div className="grid grid-cols-2 gap-3">
                                         {filteredPrograms.map(n => (
@@ -185,6 +263,7 @@ const StudentProgramsTab = ({
                     />
                 )}
             </AnimatePresence>
+
             </div>
         </div>
     );

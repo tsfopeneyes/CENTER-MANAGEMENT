@@ -12,7 +12,10 @@ const StudentCalendarTab = ({
     calendarCategories,
     openNoticeDetail,
     studentRegion,
-    onStaffClick
+    onStaffClick,
+    tutorialMode = false,
+    tutorialPrograms = [],
+    onTutorialEventOpen
 }) => {
     return (
         <div className="animate-fade-in pb-32 relative min-h-screen">
@@ -35,12 +38,12 @@ const StudentCalendarTab = ({
                     />
                 </div>
 
-            <div className="space-y-2.5">
+            <div data-tour="calendar-schedule-list" className="space-y-2.5">
                 {/* Group schedules by date or simple list for now, 
                 but a list of upcoming events is often better for mobile */}
                 {(() => {
                     const programEvents = [];
-                    notices.filter(n => n.category === CATEGORIES.PROGRAM).forEach(n => {
+                    [...notices, ...(tutorialMode ? tutorialPrograms : [])].filter(n => n.category === CATEGORIES.PROGRAM).forEach(n => {
                         if (!n.is_recruiting && n.program_start_date && n.program_end_date && n.program_days && n.program_days.length > 0) {
                             const start = new Date(n.program_start_date);
                             const end = new Date(n.program_end_date);
@@ -171,11 +174,17 @@ const StudentCalendarTab = ({
                                 return (
                                     <motion.div
                                         key={idx}
+                                        data-tour={event.tutorial_mode ? 'tutorial-calendar-event' : undefined}
+                                        data-tour-label={event.tutorial_mode ? event.title : undefined}
                                         initial={{ opacity: 0, y: 10 }}
                                         animate={{ opacity: 1, y: 0 }}
                                         transition={{ delay: idx * 0.03 }}
-                                        className={`flex gap-4 sm:gap-5 items-center py-4 text-left group cursor-pointer ${idx === 0 ? 'pt-0' : ''} ${idx === sortedEvents.length - 1 ? 'pb-0' : ''}`}
-                                        onClick={() => event.type === 'PROGRAM' ? openNoticeDetail(event) : null}
+                                        className={`flex gap-4 sm:gap-5 items-center py-4 text-left group cursor-pointer ${event.tutorial_mode ? '-mx-6 w-[calc(100%+3rem)] min-h-[120px] px-6 py-6 rounded-3xl overflow-hidden' : ''} ${!event.tutorial_mode && idx === 0 ? 'pt-0' : ''} ${!event.tutorial_mode && idx === sortedEvents.length - 1 ? 'pb-0' : ''}`}
+                                        onClick={() => {
+                                            if (event.type !== 'PROGRAM') return;
+                                            if (event.tutorial_mode) onTutorialEventOpen?.(event);
+                                            openNoticeDetail(event);
+                                        }}
                                     >
                                         {/* Left: Flat Date */}
                                         <div className="flex flex-col items-start justify-center min-w-[64px] shrink-0 text-left">

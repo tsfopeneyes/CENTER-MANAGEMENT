@@ -14,6 +14,7 @@ import FilterBar from './components/filters/FilterBar';
 import WriteForm from './components/forms/WriteForm';
 import NoticeGrid from './components/grid/NoticeGrid';
 import ParticipantModal from './components/modals/ParticipantModal';
+import AdminFeedbackListModal from './components/modals/AdminFeedbackListModal';
 import NoticeModal from '../../student/NoticeModal';
 
 // Constants
@@ -45,6 +46,7 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
     const [selectedNoticeForEdit, setSelectedNoticeForEdit] = useState(null);
 
     const [modalNotice, setModalNotice] = useState(null);
+    const [feedbackNotice, setFeedbackNotice] = useState(null);
     const [viewNotice, setViewNotice] = useState(null); // For NoticeModal
 
     const { viewMode, setViewMode } = useViewPreferences();
@@ -151,6 +153,7 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
 
             await noticesApi.update(id, { 
                 program_status: newStatus,
+                ...(newStatus === 'COMPLETED' ? { is_recruiting: false } : {}),
                 guest_properties: {
                     ...currentGp,
                     is_ended: isEndedVal
@@ -159,6 +162,7 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
             setNotices(prev => prev.map(n => n.id === id ? { 
                 ...n, 
                 program_status: newStatus,
+                ...(newStatus === 'COMPLETED' ? { is_recruiting: false } : {}),
                 guest_properties: {
                     ...(n.guest_properties || {}),
                     is_ended: isEndedVal
@@ -183,6 +187,10 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
 
     const handleCloseParticipants = useCallback(() => {
         setModalNotice(null);
+    }, []);
+
+    const handleOpenFeedback = useCallback((notice) => {
+        setFeedbackNotice(notice);
     }, []);
 
     const handleViewDetails = useCallback((notice) => {
@@ -264,6 +272,7 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
                             noticeStats={noticeStats}
                             onViewDetails={handleViewDetails}
                             onOpenParticipants={handleOpenParticipants}
+                            onOpenFeedback={handleOpenFeedback}
                             onStatusChange={handleProgramStatusChange}
                             onEdit={handleEditNotice}
                             onDelete={handleDeleteNotice}
@@ -282,6 +291,13 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
                     initialView={modalNotice.initialView}
                     onClose={handleCloseParticipants}
                     onRefresh={() => fetchNotices()}
+                />
+            )}
+
+            {feedbackNotice && (
+                <AdminFeedbackListModal
+                    notice={feedbackNotice}
+                    onClose={() => setFeedbackNotice(null)}
                 />
             )}
 

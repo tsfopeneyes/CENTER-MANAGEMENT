@@ -4,8 +4,9 @@ import { haifnApi } from '../../api/haifnApi';
 import { Wallet, Store, ShieldAlert, History, ChevronRight, CheckCircle2, FileSpreadsheet, Search } from 'lucide-react';
 import HaifnHistoryModal from './modals/HaifnHistoryModal';
 import PurchaseReceiptModal from './modals/PurchaseReceiptModal';
+import { createPortal } from 'react-dom';
 
-const StudentHaifnTab = ({ user, notifyParentRefresh, refreshTrigger }) => {
+const StudentHaifnTab = ({ user, notifyParentRefresh, refreshTrigger, tutorialMode = false, tutorialStep = '' }) => {
     const [showHistory, setShowHistory] = useState(false);
     const [receiptData, setReceiptData] = useState(null);
     const [storeItems, setStoreItems] = useState([]);
@@ -13,6 +14,9 @@ const StudentHaifnTab = ({ user, notifyParentRefresh, refreshTrigger }) => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [searchQuery, setSearchQuery] = useState('');
     const [selectedCategory, setSelectedCategory] = useState('전체');
+    const [tutorialPurchaseItem, setTutorialPurchaseItem] = useState(null);
+    const [tutorialPendingItem, setTutorialPendingItem] = useState(null);
+    const [tutorialResultItem, setTutorialResultItem] = useState(null);
     const categories = ['전체', '음료', '간식', '사용', '대관', '기타'];
 
     const pullData = async () => {
@@ -40,8 +44,17 @@ const StudentHaifnTab = ({ user, notifyParentRefresh, refreshTrigger }) => {
     }, [user.id, refreshTrigger]);
 
     const handlePurchase = async (item) => {
-        if (user.current_haifn < item.amount) {
-            alert(`하이픈이 부족합니다. (필요: ${item.amount}H, 현재: ${user.current_haifn || 0}H)`);
+        const availableHaifn = tutorialMode
+            ? Math.max(0, 50 - (tutorialPurchaseItem && !tutorialPurchaseItem.requires_approval ? tutorialPurchaseItem.amount : 0))
+            : (user.current_haifn || 0);
+        if (availableHaifn < item.amount) {
+            alert(`하이픈이 부족합니다. (필요: ${item.amount}H, 현재: ${availableHaifn}H)`);
+            return;
+        }
+
+        if (tutorialMode) {
+            setTutorialPendingItem(item);
+            window.dispatchEvent(new CustomEvent('student-onboarding:store-opened', { detail: { item } }));
             return;
         }
 
@@ -86,6 +99,23 @@ const StudentHaifnTab = ({ user, notifyParentRefresh, refreshTrigger }) => {
         return true;
     });
 
+    const confirmTutorialPurchase = () => {
+        if (!tutorialPendingItem) return;
+        setTutorialPurchaseItem(tutorialPendingItem);
+        setTutorialResultItem(tutorialPendingItem);
+        setTutorialPendingItem(null);
+        window.dispatchEvent(new CustomEvent('student-onboarding:store-purchased', { detail: { item: tutorialPendingItem } }));
+    };
+
+    const closeTutorialResult = () => {
+        setTutorialResultItem(null);
+        window.dispatchEvent(new CustomEvent('student-onboarding:store-result-viewed', { detail: { item: tutorialPurchaseItem } }));
+    };
+
+    const displayedHaifn = tutorialMode
+        ? Math.max(0, 50 - (tutorialPurchaseItem && !tutorialPurchaseItem.requires_approval ? tutorialPurchaseItem.amount : 0))
+        : (user.current_haifn || 0);
+
     return (
         <div className="animate-fade-in pb-32">
             {receiptData && <PurchaseReceiptModal transaction={receiptData} onClose={() => setReceiptData(null)} />}
@@ -103,7 +133,7 @@ const StudentHaifnTab = ({ user, notifyParentRefresh, refreshTrigger }) => {
                             <span className="font-bold text-white text-[11px] italic pr-[1.5px]">H</span>
                         </div>
                         <span className="text-[13px] font-medium text-tossGrey600 tracking-tight ml-0.5">포인트</span>
-                        <span className="text-lg font-bold text-tossBlue ml-1">{user.current_haifn || 0}</span>
+                        <span className="text-lg font-bold text-tossBlue ml-1">{displayedHaifn}</span>
                         <span className="text-[13px] font-medium text-tossGrey600">개</span>
                     </div>
                 </div>
@@ -156,12 +186,14 @@ const StudentHaifnTab = ({ user, notifyParentRefresh, refreshTrigger }) => {
 
                     {/* Spend Items Section */}
                     {spendItems.length > 0 && (
-                        <div className="flex flex-col gap-2.5">
-                            {spendItems.map(item => {
-                                const canAfford = user.current_haifn >= item.amount;
+                        <div data-tour={tutorialMode ? 'tutorial-store-list' : undefined} className="flex flex-col gap-2.5 rounded-3xl overflow-hidden">
+                            {spendItems.map((item) => {
+                                const canAfford = displayedHaifn >= item.amount;
                                 return (
                                     <div 
                                         key={item.id} 
+                                        data-tour={tutorialPurchaseItem?.id === item.id ? 'tutorial-store-result' : undefined}
+                                        data-tour-label={item.name}
                                         onClick={() => canAfford && !isProcessing && handlePurchase(item)}
                                         className={`bg-white px-4 py-3.5 rounded-toss-xl flex items-center gap-3.5 relative transition-all shadow-toss-standard hover:shadow-toss-elevated border-none ${
                                             canAfford && !isProcessing ? 'cursor-pointer active:scale-[0.98]' : 'opacity-60 grayscale-[0.3]'
@@ -198,6 +230,11 @@ const StudentHaifnTab = ({ user, notifyParentRefresh, refreshTrigger }) => {
                                                         포인트 부족
                                                     </span>
                                                 )}
+                                                {tutorialPurchaseItem?.id === item.id && (
+                                                    <span className={`text-[10px] font-bold px-1.5 py-[1px] rounded-toss-sm leading-none flex items-center h-[16px] ${item.requires_approval ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                                                        {item.requires_approval ? '승인 대기' : '체험 교환 완료'}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -214,6 +251,59 @@ const StudentHaifnTab = ({ user, notifyParentRefresh, refreshTrigger }) => {
                     onClose={() => setShowHistory(false)} 
                     storeItems={storeItems}
                 />
+            )}
+
+            {tutorialPendingItem && createPortal(
+                <div className="fixed inset-0 z-[400] flex items-end sm:items-center justify-center bg-black/45 sm:p-5">
+                    <div className="w-full max-w-md rounded-t-[28px] sm:rounded-[28px] bg-white p-6 shadow-2xl">
+                        <div className="mx-auto flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl bg-tossGrey50">
+                            {tutorialPendingItem.image_url ? <img src={tutorialPendingItem.image_url} alt="" className="h-full w-full object-cover" /> : <Store size={24} className="text-tossGrey400" />}
+                        </div>
+                        <h3 className="mt-4 text-center text-xl font-black text-tossGrey900">이 아이템으로 교환할까요?</h3>
+                        <p className="mt-2 text-center text-sm font-semibold text-tossGrey600">{tutorialPendingItem.name}</p>
+                        <div className="mt-5 flex items-center justify-between rounded-2xl bg-tossGrey50 px-4 py-3">
+                            <span className="text-sm font-bold text-tossGrey600">사용할 하이픈</span>
+                            <span className="text-base font-black text-tossBlue">{tutorialPendingItem.amount} H</span>
+                        </div>
+                        <div className="mt-2 flex items-center justify-between rounded-2xl bg-tossGrey50 px-4 py-3">
+                            <span className="text-sm font-bold text-tossGrey600">교환 후 예시 잔액</span>
+                            <span className="text-base font-black text-tossGrey900">{tutorialPendingItem.requires_approval ? 50 : Math.max(0, 50 - tutorialPendingItem.amount)} H</span>
+                        </div>
+                        {tutorialPendingItem.requires_approval && (
+                            <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-center text-[11px] font-bold leading-5 text-amber-700">승인 필요 품목은 관리자 승인 전까지 하이픈이 차감되지 않아요.</p>
+                        )}
+                        <button
+                            type="button"
+                            data-tour="tutorial-store-confirm"
+                            onClick={confirmTutorialPurchase}
+                            className="mt-4 w-full rounded-2xl bg-tossBlue py-4 text-sm font-black text-white"
+                        >
+                            체험으로 교환하기
+                        </button>
+                        <p className="mt-3 text-center text-[11px] font-medium text-tossGrey500">실제 하이픈과 재고는 차감되지 않습니다.</p>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            {tutorialResultItem && createPortal(
+                <div className="fixed inset-0 z-[420] flex items-end justify-center bg-black/55 sm:items-center sm:p-5">
+                    <div className="w-full max-w-md rounded-t-[28px] bg-white p-6 text-center shadow-2xl sm:rounded-[28px]">
+                        <div className={`mx-auto flex h-16 w-16 items-center justify-center rounded-full ${tutorialResultItem.requires_approval ? 'bg-amber-50 text-amber-600' : 'bg-emerald-50 text-emerald-600'}`}>
+                            <CheckCircle2 size={34} />
+                        </div>
+                        <h3 className="mt-4 text-xl font-black text-tossGrey900">{tutorialResultItem.requires_approval ? '교환 신청이 완료됐어요' : '교환이 완료됐어요'}</h3>
+                        <p className="mt-2 text-sm font-semibold text-tossGrey600">{tutorialResultItem.name}</p>
+                        <div className="mt-5 space-y-2 rounded-2xl bg-tossGrey50 p-4 text-sm font-bold">
+                            <div className="flex justify-between text-tossGrey600"><span>사용 하이픈</span><span>{tutorialResultItem.requires_approval ? '승인 후 차감' : `${tutorialResultItem.amount} H`}</span></div>
+                            <div className="flex justify-between text-tossGrey900"><span>남은 예시 잔액</span><span>{tutorialResultItem.requires_approval ? 50 : Math.max(0, 50 - tutorialResultItem.amount)} H</span></div>
+                            <div className="flex justify-between"><span className="text-tossGrey600">상태</span><span className={tutorialResultItem.requires_approval ? 'text-amber-700' : 'text-emerald-700'}>{tutorialResultItem.requires_approval ? '승인 대기' : '교환 완료'}</span></div>
+                        </div>
+                        <p className="mt-3 text-[11px] font-semibold text-tossGrey500">실제 하이픈과 재고는 변경되지 않았어요.</p>
+                        <button type="button" onClick={closeTutorialResult} className="mt-5 w-full rounded-2xl bg-tossBlue py-4 text-sm font-black text-white">목록에서 상태 확인하기</button>
+                    </div>
+                </div>,
+                document.body
             )}
         </div>
     );

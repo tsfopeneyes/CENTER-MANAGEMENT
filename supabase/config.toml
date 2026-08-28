@@ -405,3 +405,16 @@ entrypoint = "./functions/send-push/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/send-push/*.html" ]
+
+[functions.dispatch-notification]
+enabled = true
+# Kiosk screens can be used before a member signs in. The function is public in
+# this compatibility phase, but it never returns service secrets.
+verify_jwt = false
+import_map = "./functions/dispatch-notification/deno.json"
+
+[functions.slack-tsf]
+enabled = true
+# Slack authenticates requests with its own HMAC signature, not a Supabase JWT.
+verify_jwt = false
+import_map = "./functions/slack-tsf/deno.json"

@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion } from 'framer-motion';
 import { X, Heart, Smile, Users, HelpCircle, Sparkles } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
+import { dispatchSlackAlert } from '../../../utils/serverIntegration';
+import { requestSupabaseFunction } from '../../../utils/supabaseRest';
 
-const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
+const CoffeeChatModal = ({ staff, student, onClose, onSuccess, tutorialMode = false }) => {
     const [submitting, setSubmitting] = useState(false);
     const [selectedTopics, setSelectedTopics] = useState([]);
     const [message, setMessage] = useState('');
+    const [tutorialComplete, setTutorialComplete] = useState(false);
 
     useEffect(() => {
         const handleKeyDown = (e) => {
@@ -42,24 +46,27 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
 
         setSubmitting(true);
         try {
+            if (tutorialMode) {
+                await new Promise((resolve) => setTimeout(resolve, 450));
+                setTutorialComplete(true);
+                return;
+            }
             // 1. Insert into Supabase
-            const { error: dbError } = await supabase
-                .from('coffee_chats')
-                .insert({
-                    student_id: student.id,
-                    staff_id: staff.id,
-                    topics: selectedTopics,
-                    message: message.trim() || null,
-                    status: 'PENDING'
-                });
-
-            if (dbError) throw dbError;
+            await requestSupabaseFunction('dispatch-notification', {
+                action: 'create-coffee-chat',
+                studentId: student.id,
+                staffId: staff.id,
+                topics: selectedTopics,
+                coffeeChatMessage: message.trim() || null,
+            });
 
             // 2. Send LINE and Discord notifications
             let lineToken = localStorage.getItem('line_channel_access_token');
             let lineGroupId = localStorage.getItem('line_group_id');
             let gsWebhookUrl = localStorage.getItem('gs_webhook_url');
             let discordWebhookUrl = localStorage.getItem('discord_webhook_url');
+            let lineCoffeeChatEnabled = localStorage.getItem('line_coffee_chat_notifications_enabled') !== 'false';
+            let slackCoffeeChatEnabled = localStorage.getItem('slack_coffee_chat_notifications_enabled') !== 'false';
 
             try {
                 const { data: settings } = await supabase.from('global_settings').select('*');
@@ -81,6 +88,14 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
                             discordWebhookUrl = s.value;
                             localStorage.setItem('discord_webhook_url', s.value);
                         }
+                        if (s.key === 'line_coffee_chat_notifications_enabled') {
+                            lineCoffeeChatEnabled = s.value !== 'false';
+                            localStorage.setItem('line_coffee_chat_notifications_enabled', String(lineCoffeeChatEnabled));
+                        }
+                        if (s.key === 'slack_coffee_chat_notifications_enabled') {
+                            slackCoffeeChatEnabled = s.value !== 'false';
+                            localStorage.setItem('slack_coffee_chat_notifications_enabled', String(slackCoffeeChatEnabled));
+                        }
                     });
                 }
             } catch (e) {
@@ -88,7 +103,11 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
             }
 
             const formattedTopics = selectedTopics.join(', ');
-            const alertMsg = `[COFFEE CHAT]\n☕ ${student.name} 학생이 ${staff.name} 쌤에게 대화를 신청했어요!\n📌 주제: ${formattedTopics}${message.trim() ? `\n💬 스처쌤에게 하고 싶은 말:\n"${message.trim()}"` : ''}`;
+            const alertMsg = `[COFFEE CHAT]\n☕ ${student.name}님이 ${staff.name} 쌤에게 대화를 신청했어요!\n📌 주제: ${formattedTopics}${message.trim() ? `\n💬 스처쌤에게 하고 싶은 말:\n"${message.trim()}"` : ''}`;
+
+            if (slackCoffeeChatEnabled) {
+                dispatchSlackAlert(alertMsg, { notificationCategory: 'coffee_chat' }).catch(error => console.error('Slack coffee chat notification error:', error));
+            }
 
             // Discord Webhook
             if (discordWebhookUrl) {
@@ -109,7 +128,7 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
             const isEnoughPlace = studentSchool.includes('강서') || studentSchool.includes('이높') || staffGroup.includes('이높') || staffGroup.includes('강서');
             const isHaifnUser = !isEnoughPlace;
 
-            if (isHaifnUser && lineToken && lineGroupId && gsWebhookUrl) {
+            if (lineCoffeeChatEnabled && isHaifnUser && lineToken && lineGroupId && gsWebhookUrl) {
                 try {
                     await fetch(gsWebhookUrl, {
                         method: 'POST',
@@ -136,17 +155,28 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
         }
     };
 
-    return (
+    return createPortal((
         <div 
-            className="fixed inset-0 z-[999] flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/40 backdrop-blur-[2px]"
+            className="fixed inset-0 z-[999] flex items-end justify-center bg-black/50 p-0 sm:items-center sm:p-4"
             onClick={onClose}
         >
+            {tutorialComplete && (
+                <div className="fixed inset-0 z-[1001] flex items-center justify-center bg-black/40 p-4" onClick={(e) => e.stopPropagation()}>
+                    <div className="w-full max-w-md rounded-[24px] border border-black/5 bg-white p-6 text-center shadow-[0_20px_60px_rgba(0,0,0,0.28)]">
+                        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"><span className="text-3xl">✓</span></div>
+                        <h3 className="mt-5 text-xl font-black text-tossGrey900">커피챗 신청이 완료됐어요</h3>
+                        <p className="mt-2 text-sm font-semibold leading-6 text-tossGrey600">튜토리얼 체험이라 실제 신청으로 저장되지는 않아요.</p>
+                        <button type="button" onClick={onSuccess} className="mt-6 w-full rounded-2xl bg-tossBlue py-4 text-sm font-black text-white">다음으로</button>
+                    </div>
+                </div>
+            )}
             <motion.div
-                initial={{ opacity: 0, y: "100%" }}
+                initial={{ opacity: 0, y: 28 }}
                 animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: "100%" }}
-                transition={{ type: "spring", damping: 28, stiffness: 220 }}
-                className="relative bg-white w-full max-h-[85vh] sm:h-auto sm:max-h-[90vh] sm:max-w-md rounded-t-[2.5rem] sm:rounded-3xl shadow-2xl flex flex-col overflow-hidden"
+                exit={{ opacity: 0, y: 20 }}
+                transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+                style={{ willChange: 'transform, opacity' }}
+                className="relative flex max-h-[85vh] w-full flex-col overflow-hidden rounded-t-[2.5rem] bg-white shadow-[0_-8px_30px_rgba(0,0,0,0.18)] sm:h-auto sm:max-h-[90vh] sm:max-w-md sm:rounded-3xl sm:shadow-[0_18px_50px_rgba(0,0,0,0.2)]"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Close Button Float */}
@@ -161,7 +191,7 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
                 <div className="flex flex-col items-center text-center px-6 pt-6 pb-4 border-b border-tossGrey100 bg-white shrink-0">
                     <div className="relative mb-2">
                         {staff.profile_image_url ? (
-                            <img src={staff.profile_image_url} alt={staff.name} className="w-20 h-20 rounded-full object-cover border border-tossGrey200 shadow-sm" />
+                            <img src={staff.profile_image_url} alt={staff.name} decoding="async" className="w-20 h-20 rounded-full object-cover border border-tossGrey200 shadow-sm" />
                         ) : (
                             <div className="w-20 h-20 rounded-full bg-tossBlue/10 flex items-center justify-center text-tossBlue font-bold text-2xl">
                                 {staff.name?.substring(0, 1)}
@@ -244,7 +274,7 @@ const CoffeeChatModal = ({ staff, student, onClose, onSuccess }) => {
                 </div>
             </motion.div>
         </div>
-    );
+    ), document.body);
 };
 
 export default CoffeeChatModal;

@@ -36,6 +36,13 @@ const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, 
         gsWebhookUrl, setGsWebhookUrl,
         lineChannelAccessToken, setLineChannelAccessToken,
         lineGroupId, setLineGroupId,
+        lineVisitNotificationsEnabled, setLineVisitNotificationsEnabled,
+        lineCoffeeChatNotificationsEnabled, setLineCoffeeChatNotificationsEnabled,
+        lineProgramNotificationsEnabled, setLineProgramNotificationsEnabled,
+        slackVisitNotificationsEnabled, setSlackVisitNotificationsEnabled,
+        slackCoffeeChatNotificationsEnabled, setSlackCoffeeChatNotificationsEnabled,
+        slackProgramNotificationsEnabled, setSlackProgramNotificationsEnabled,
+        slackRentalNotificationsEnabled, setSlackRentalNotificationsEnabled,
         discordWebhookUrl, setDiscordWebhookUrl,
         kioskMasterPin, setKioskMasterPin,
         isBackingUp, syncProgress,
@@ -221,6 +228,20 @@ const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, 
                             setLineChannelAccessToken={setLineChannelAccessToken}
                             lineGroupId={lineGroupId}
                             setLineGroupId={setLineGroupId}
+                            lineVisitNotificationsEnabled={lineVisitNotificationsEnabled}
+                            setLineVisitNotificationsEnabled={setLineVisitNotificationsEnabled}
+                            lineCoffeeChatNotificationsEnabled={lineCoffeeChatNotificationsEnabled}
+                            setLineCoffeeChatNotificationsEnabled={setLineCoffeeChatNotificationsEnabled}
+                            lineProgramNotificationsEnabled={lineProgramNotificationsEnabled}
+                            setLineProgramNotificationsEnabled={setLineProgramNotificationsEnabled}
+                            slackVisitNotificationsEnabled={slackVisitNotificationsEnabled}
+                            setSlackVisitNotificationsEnabled={setSlackVisitNotificationsEnabled}
+                            slackCoffeeChatNotificationsEnabled={slackCoffeeChatNotificationsEnabled}
+                            setSlackCoffeeChatNotificationsEnabled={setSlackCoffeeChatNotificationsEnabled}
+                            slackProgramNotificationsEnabled={slackProgramNotificationsEnabled}
+                            setSlackProgramNotificationsEnabled={setSlackProgramNotificationsEnabled}
+                            slackRentalNotificationsEnabled={slackRentalNotificationsEnabled}
+                            setSlackRentalNotificationsEnabled={setSlackRentalNotificationsEnabled}
                             discordWebhookUrl={discordWebhookUrl}
                             setDiscordWebhookUrl={setDiscordWebhookUrl}
                             kioskMasterPin={kioskMasterPin}

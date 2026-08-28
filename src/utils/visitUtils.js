@@ -183,7 +183,12 @@ export const aggregateVisitSessions = (allLogs, users, locations, startDate = ''
                 age: calculateAge(user.birth) || '-',
                 rawLogs: sessionLogs,
                 startTime: startTimeStr,
+                // A visit without a scan-out is automatically closed at 22:00.
+                // A later scan-out replaces this automatic end time with the
+                // actual CHECKOUT timestamp.
                 endTime: (lastCheckOut || isAutoCheckOut) ? endAt.toLocaleTimeString('ko-KR', { hour12: false, hour: '2-digit', minute: '2-digit' }) : '-',
+                hasActualCheckout: Boolean(lastCheckOut),
+                isAutoCheckedOut: isAutoCheckOut,
                 durationStr,
                 durationMin: `${durationMin}분`,
                 usedSpaces: spaceChain.join('-'),

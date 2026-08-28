@@ -5,6 +5,17 @@ import AdminPageHeader from '../common/AdminPageHeader';
 import { format } from 'date-fns';
 import AdminBookingEditModal from './AdminBookingEditModal';
 
+const getUserAge = (birth) => {
+    const normalizedBirth = String(birth || '').replace(/\D/g, '');
+    if (normalizedBirth.length !== 6) return null;
+
+    const shortYear = Number(normalizedBirth.slice(0, 2));
+    if (!Number.isFinite(shortYear)) return null;
+
+    const birthYear = shortYear <= 40 ? 2000 + shortYear : 1900 + shortYear;
+    return new Date().getFullYear() - birthYear + 1;
+};
+
 const AdminRentals = () => {
     const [bookings, setBookings] = useState([]);
     const [rentals, setRentals] = useState([]);
@@ -135,7 +146,7 @@ const AdminRentals = () => {
                 .from('rental_bookings')
                 .select(`
                     *,
-                    users (name, school, grade),
+                    users (name, school, birth),
                     rentals (name, school_id, schools(name, region))
                 `)
                 .order('booking_date', { ascending: false })
@@ -426,7 +437,7 @@ const AdminRentals = () => {
                                                         {booking.users?.name || '알 수 없음'}
                                                     </span>
                                                     <span className="text-gray-400 text-[11px] font-semibold">
-                                                        ({booking.users?.school || '학교 미기재'} / {booking.users?.grade || '학년 미기재'})
+                                                        ({booking.users?.school || '학교 미기재'} / {getUserAge(booking.users?.birth) ? `${getUserAge(booking.users?.birth)}세` : '나이 미기재'})
                                                     </span>
                                                 </div>
                                                 {headcount && (

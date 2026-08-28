@@ -3,7 +3,7 @@ import PropTypes from 'prop-types';
 import IntuitiveTimePicker from '../../../../common/IntuitiveTimePicker';
 import { splitDateTime, joinDateTime } from '../../utils/noticeHelpers';
 import { PROGRAM_TYPES } from '../../utils/constants';
-import { Calendar, Clock, MapPin, Gift, CheckSquare, Users, ChevronUp, ChevronDown, MessageSquare, Target, Trash, Bookmark, User, School, Smartphone, Sparkles, ToggleLeft, ToggleRight, HelpCircle, Dices } from 'lucide-react';
+import { Calendar, Clock, MapPin, Gift, CheckSquare, Users, ChevronUp, ChevronDown, MessageSquare, Target, Trash, Bookmark, User, School, Smartphone, Sparkles, ToggleLeft, ToggleRight, HelpCircle, Dices, Camera, FileText } from 'lucide-react';
 import { supabase } from '../../../../../supabaseClient';
 
 const HAIFN_DETAILS = [
@@ -343,32 +343,94 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {formData.is_challenge ? (
                         // Challenge Program (Start Date & End Date)
-                        <div className="space-y-1.5 lg:col-span-2">
-                            <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">챌린지 진행 기간</label>
-                            <div className="flex items-center gap-3">
-                                <div className="flex-1 relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
-                                    <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
-                                    <input
-                                        type="date"
-                                        value={formData.program_start_date || ''}
-                                        onChange={e => updateField('program_start_date', e.target.value)}
-                                        className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
-                                        required
-                                    />
+                        <div className="space-y-4 lg:col-span-2">
+                            <div className="space-y-1.5">
+                                <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">챌린지 진행 기간</label>
+                                <div className="flex items-center gap-3">
+                                    <div className="flex-1 relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
+                                        <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
+                                        <input
+                                            type="date"
+                                            value={formData.program_start_date || ''}
+                                            onChange={e => {
+                                                const startDate = e.target.value;
+                                                updateField('program_start_date', startDate);
+                                                if (formData.challenge_has_time) {
+                                                    updateField('program_date', joinDateTime(startDate, splitDateTime(formData.program_date).time));
+                                                }
+                                            }}
+                                            className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
+                                            required
+                                        />
+                                    </div>
+                                    <span className="text-slate-400 font-bold text-xs">~</span>
+                                    <div className="flex-1 relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
+                                        <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
+                                        <input
+                                            type="date"
+                                            value={formData.program_end_date || ''}
+                                            onChange={e => updateField('program_end_date', e.target.value)}
+                                            className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
+                                            required
+                                        />
+                                    </div>
                                 </div>
-                                <span className="text-slate-400 font-bold text-xs">~</span>
-                                <div className="flex-1 relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
-                                    <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
-                                    <input
-                                        type="date"
-                                        value={formData.program_end_date || ''}
-                                        onChange={e => updateField('program_end_date', e.target.value)}
-                                        className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
-                                        required
-                                    />
-                                </div>
+                                <p className="text-[11px] text-slate-400 font-medium mt-1.5 ml-1 block leading-normal">챌린지가 진행되는 전체 기간입니다.</p>
                             </div>
-                            <p className="text-[11px] text-slate-400 font-medium mt-1.5 ml-1 block leading-normal">챌린지가 진행되는 전체 기간입니다.</p>
+
+                            <label className="flex items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-200/70 rounded-xl cursor-pointer hover:bg-slate-100/70 transition-colors">
+                                <input
+                                    type="checkbox"
+                                    checked={formData.challenge_has_time === true}
+                                    onChange={e => {
+                                        const enabled = e.target.checked;
+                                        updateField('challenge_has_time', enabled);
+                                        if (enabled && formData.program_start_date && !formData.program_date) {
+                                            updateField('program_date', joinDateTime(formData.program_start_date, '12:00'));
+                                        }
+                                    }}
+                                    className="w-4 h-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                                />
+                                <div>
+                                    <p className="text-xs font-bold text-slate-700">시작 시간 및 소요 시간 설정</p>
+                                    <p className="text-[11px] text-slate-400 mt-0.5">정해진 시간에 진행되는 챌린지일 때 사용합니다.</p>
+                                </div>
+                            </label>
+
+                            {formData.challenge_has_time && (
+                                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-fade-in">
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">시작 시간</label>
+                                        <div className="h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5">
+                                            <Clock className="text-slate-400 shrink-0 mr-2" size={15} />
+                                            <div className="flex-1 h-full">
+                                                <IntuitiveTimePicker
+                                                    value={splitDateTime(formData.program_date).time}
+                                                    onChange={time => updateField(
+                                                        'program_date',
+                                                        joinDateTime(formData.program_start_date, time)
+                                                    )}
+                                                />
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-1.5">
+                                        <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">소요 시간</label>
+                                        <div className="relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
+                                            <Clock className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
+                                            <input
+                                                type="text"
+                                                placeholder="예: 2시간 또는 90분"
+                                                value={formData.program_duration || ''}
+                                                onChange={e => updateField('program_duration', e.target.value)}
+                                                className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs"
+                                                required
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ) : formData.is_recruiting ? (
                         // Recruiting Program (Single Date & Time & Duration)
@@ -1229,7 +1291,12 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                     <div className="space-y-4">
                         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                             {(formData.challenge_missions || []).map((mission, index) => {
-                                const showCustomLoc = mission.location_type === 'custom' || (!['', '이높플레이스', ...HAIFN_DETAILS.map(d => `하이픈 ${d}`)].includes(mission.location) && mission.location);
+                                const knownLocations = ['이높플레이스', ...HAIFN_DETAILS.map(d => `하이픈 ${d}`)];
+                                const isKnownLocation = knownLocations.includes(mission.location);
+                                const showCustomLoc = mission.location_type === 'custom' || Boolean(mission.location && !isKnownLocation);
+                                const locationSelectValue = showCustomLoc
+                                    ? 'custom'
+                                    : (isKnownLocation ? mission.location : '');
                                 return (
                                     <div key={mission.id || index} className="bg-white border border-slate-200/60 rounded-xl p-4 space-y-3 relative transition-all hover:border-blue-400 shadow-sm animate-fade-in">
                                         <div className="flex justify-between items-center pb-2 border-b border-slate-200/40">
@@ -1271,23 +1338,29 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                                     <div className="flex-1 h-10 relative flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3">
                                                         <MapPin className="text-slate-400 shrink-0 mr-2" size={14} />
                                                         <select
-                                                            value={mission.location_type || (HAIFN_DETAILS.map(d => `하이픈 ${d}`).includes(mission.location) ? '하이픈' : (mission.location === '이높플레이스' ? '이높플레이스' : (mission.location ? 'custom' : '')))}
+                                                            value={locationSelectValue}
                                                             onChange={(e) => {
-                                                                const type = e.target.value;
+                                                                const location = e.target.value;
                                                                 const updated = [...(formData.challenge_missions || [])];
-                                                                if (type === '하이픈') {
-                                                                    updated[index] = { ...updated[index], location_type: '하이픈', location: '하이픈 B1F STAGE' };
-                                                                } else if (type === '이높플레이스') {
-                                                                    updated[index] = { ...updated[index], location_type: '이높플레이스', location: '이높플레이스' };
-                                                                } else {
+                                                                if (location === 'custom') {
                                                                     updated[index] = { ...updated[index], location_type: 'custom', location: '' };
+                                                                } else {
+                                                                    updated[index] = {
+                                                                        ...updated[index],
+                                                                        location_type: location,
+                                                                        location
+                                                                    };
                                                                 }
                                                                 updateField('challenge_missions', updated);
                                                             }}
                                                             className="w-full bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer appearance-none"
                                                         >
-                                                            <option value="">장소 선택</option>
-                                                            <option value="하이픈">하이픈 (센터)</option>
+                                                            <option value="">장소 선택 안함</option>
+                                                            {HAIFN_DETAILS.map(detail => (
+                                                                <option key={detail} value={`하이픈 ${detail}`}>
+                                                                    하이픈 {detail}
+                                                                </option>
+                                                            ))}
                                                             <option value="이높플레이스">이높플레이스</option>
                                                             <option value="custom">기타 (직접 입력)</option>
                                                         </select>
@@ -1326,6 +1399,37 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                                     className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200/60 rounded-xl outline-none font-bold text-slate-800 text-xs focus:border-blue-600 focus:bg-white transition-all resize-none placeholder:text-slate-400"
                                                 />
                                             </div>
+
+                                            <div className="flex flex-col gap-1">
+                                                <label className="text-xs font-bold text-slate-500 mb-1 block">인증 방식</label>
+                                                <div className="grid grid-cols-2 gap-2">
+                                                    {[
+                                                        { value: 'photo', label: '사진 업로드', icon: Camera },
+                                                        { value: 'text', label: '텍스트 입력', icon: FileText }
+                                                    ].map(({ value, label, icon: Icon }) => {
+                                                        const selected = (mission.verification_type || 'photo') === value;
+                                                        return (
+                                                            <button
+                                                                key={value}
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    const updated = [...(formData.challenge_missions || [])];
+                                                                    updated[index] = { ...updated[index], verification_type: value };
+                                                                    updateField('challenge_missions', updated);
+                                                                }}
+                                                                className={`h-10 px-3 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 transition-all ${
+                                                                    selected
+                                                                        ? 'bg-blue-50 border-blue-500 text-blue-600'
+                                                                        : 'bg-slate-50 border-slate-200/60 text-slate-500 hover:border-slate-300'
+                                                                }`}
+                                                            >
+                                                                <Icon size={14} />
+                                                                {label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
                                         </div>
                                     </div>
                                 );
@@ -1335,7 +1439,14 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                         <button
                             type="button"
                             onClick={() => {
-                                const newMission = { id: `m-${Date.now()}-${Math.random()}`, title: '' };
+                                const newMission = {
+                                    id: `m-${Date.now()}-${Math.random()}`,
+                                    title: '',
+                                    location: '',
+                                    location_type: '',
+                                    description: '',
+                                    verification_type: 'photo'
+                                };
                                 updateField('challenge_missions', [...(formData.challenge_missions || []), newMission]);
                             }}
                             className="w-full py-3 bg-slate-50 border border-dashed border-slate-200 hover:border-blue-500 rounded-xl font-bold text-slate-500 hover:text-blue-600 transition-all text-xs flex items-center justify-center gap-1.5 shadow-sm"

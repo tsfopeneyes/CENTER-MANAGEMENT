@@ -214,6 +214,90 @@ export const haifnApi = {
         return data;
     },
 
+    async getStoreOrders() {
+        const { data, error } = await supabase
+            .from('store_orders')
+            .select(`
+                *,
+                users (name, school),
+                haifn_items (name, image_url, category, requires_approval)
+            `)
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+        if (error) throw error;
+        return data;
+    },
+
+    async getInstantStoreExchanges() {
+        const { data, error } = await supabase
+            .from('haifn_transactions')
+            .select(`
+                id,
+                user_id,
+                amount,
+                source_description,
+                created_at,
+                users (name, school)
+            `)
+            .eq('transaction_type', 'SPEND')
+            .like('source_description', '[스토어 교환]%')
+            .order('created_at', { ascending: false })
+            .limit(100);
+
+        if (error) throw error;
+        return data;
+    },
+
+    async deleteStoreOrder(order) {
+        const requiresPointRestore = !['PENDING', 'REJECTED'].includes(order.displayStatus || order.status);
+
+        if (requiresPointRestore) {
+            let transactionId = order.transactionId;
+
+            if (!transactionId) {
+                const sourceDescription = `[스토어 교환] ${order.haifn_items?.name}`;
+                const { data: transactions, error: findError } = await supabase
+                    .from('haifn_transactions')
+                    .select('id, created_at')
+                    .eq('user_id', order.user_id)
+                    .eq('transaction_type', 'SPEND')
+                    .eq('amount', -Math.abs(order.amount))
+                    .eq('source_description', sourceDescription)
+                    .order('created_at', { ascending: false })
+                    .limit(20);
+
+                if (findError) throw findError;
+
+                transactionId = transactions?.sort((a, b) => (
+                    Math.abs(new Date(a.created_at) - new Date(order.created_at))
+                    - Math.abs(new Date(b.created_at) - new Date(order.created_at))
+                ))[0]?.id;
+            }
+
+            if (!transactionId) {
+                throw new Error('포인트 소모 내역을 찾을 수 없어 삭제하지 않았습니다.');
+            }
+
+            // 하이픈 소모 내역을 먼저 삭제합니다. DB 잔액 트리거가 해당 포인트를 자동으로 복구합니다.
+            const { error: transactionError } = await supabase
+                .from('haifn_transactions')
+                .delete()
+                .eq('id', transactionId);
+
+            if (transactionError) throw transactionError;
+        }
+
+        if (order.source === 'ORDER') {
+            const { error: orderError } = await supabase
+                .from('store_orders')
+                .delete()
+                .eq('id', order.id);
+
+            if (orderError) throw orderError;
+        }
+    },
+
     async processOrder(orderId, userId, amount, isApproved, adminId, itemName, itemType = 'SPEND') {
         const newStatus = isApproved ? 'APPROVED' : 'REJECTED';
         

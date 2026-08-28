@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { Globe, RefreshCw, Clock, UserX, UserCheck } from 'lucide-react';
 import { isAdminOrStaff } from '../../../../utils/userUtils';
+import { hasExpiredWebAccessTimestamp } from '../../../../utils/webAccessUtils';
 
 const formatKSTDate = (isoString) => {
     if (!isoString) return '-';
@@ -70,7 +71,7 @@ const WebAccessSettings = ({ users = [], fetchData }) => {
 
         return users
             .filter(u => {
-                if (!u || !u.preferences?.last_web_login_at) return false;
+                if (!u || !u.preferences?.last_web_login_at || hasExpiredWebAccessTimestamp(u.preferences)) return false;
                 if (excludeStaff && isAdminOrStaff(u)) return false;
                 return true;
             })

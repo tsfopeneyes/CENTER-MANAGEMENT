@@ -174,8 +174,11 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
             };
 
             if (isProgram) {
+                const challengeHasTime = formData.is_challenge && formData.challenge_has_time === true;
                 let finalProgramDate = null;
-                const pVal = formData.program_date;
+                const pVal = (formData.is_challenge && !challengeHasTime)
+                    ? ''
+                    : formData.program_date;
                 if (pVal && pVal !== '') {
                     const parsedDate = new Date(pVal);
                     if (!isNaN(parsedDate.getTime())) {
@@ -183,7 +186,9 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                     }
                 }
                 noticeData.program_date = finalProgramDate;
-                noticeData.program_duration = formData.program_duration || '';
+                noticeData.program_duration = (formData.is_challenge && !challengeHasTime)
+                    ? ''
+                    : (formData.program_duration || '');
                 noticeData.program_location = formData.program_location || '';
                 
                 noticeData.program_type = formData.program_type;
@@ -211,6 +216,7 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 noticeData.guest_properties = {
                     ...gp,
                     cached_hosts: configuredHosts.length > 0 ? configuredHosts : (gp.cached_hosts || []),
+                    challenge_has_time: challengeHasTime,
                     enable_post_program_button: formData.enable_post_program_button || false,
                     post_program_button_trigger: formData.post_program_button_trigger || 'start_time',
                     post_program_button_offset_minutes: Number(formData.post_program_button_offset_minutes || 0),
