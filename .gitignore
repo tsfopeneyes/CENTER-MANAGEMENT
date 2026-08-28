@@ -37,3 +37,11 @@ list_*.cjs
 list_*.js
 trace_*.cjs
 trace_*.js
+
+# Local runtime logs, user attachments, and data exports
+.codex-*.log
+.codex-remote-attachments/
+dev-server*.log
+analysis/
+backups/
+reports/
