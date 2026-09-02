@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, User, School, ArrowRight, Check, CheckCircle2, ChevronRight, X, LogOut, Clock, LogIn, Lock, AlertCircle, Phone, ShieldCheck, Calendar } from 'lucide-react';
 import confetti from 'canvas-confetti';
 import { supabase } from '../supabaseClient';
+import { verifiedProfileLogin } from '../utils/verifiedProfileLogin';
 import { requestSupabaseFunction } from '../utils/supabaseRest';
 import { findMatchingGuestAccount, normalizeSchoolName } from '../utils/userUtils';
 import { hashPassword } from '../utils/hashUtils';
@@ -16,6 +17,12 @@ import { getTodayVisitState, recordVisitEvent } from '../utils/visitLifecycle';
 import { isHaifnRotatingQrEnabled, isKioskQrAccessError, requiresRotatingQrAccess } from '../utils/kioskQr';
 import { markTodayProgramAttendance } from '../utils/programAttendance';
 import { buildGuestPrivacyPreferences, parseGuestBirthDate } from '../utils/guestBirthUtils';
+import { getAccountAuthClient, isAccountAuthEnabled } from '../auth/accountAuthRuntime';
+import { createAccountLoginAdapter } from '../auth/accountLoginAdapter';
+import { loadAssignedSurvey } from '../utils/surveyAssignments';
+
+let secureLoginAdapter;
+const getSecureLoginAdapter=()=>secureLoginAdapter??=createAccountLoginAdapter({client:getAccountAuthClient(),auth:supabase.auth});
 
 const VISIT_REASON_OPTIONS = [
     { id: '1', emoji: '👥', label: '친구 / 지인 추천' },
@@ -239,22 +246,23 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     const [selectedPurposes, setSelectedPurposes] = useState([DEFAULT_CHECKIN_OPTIONS[0].label]);
     const [activeUserForSurvey, setActiveUserForSurvey] = useState(null);
     const [surveyQuestion, setSurveyQuestion] = useState('오늘 센터에서 무엇을 하고 싶나요?');
+    const [surveyDescription, setSurveyDescription] = useState('');
+    const [activeSurveyId, setActiveSurveyId] = useState(null);
     const [dynamicSurveyOptions, setDynamicSurveyOptions] = useState(DEFAULT_CHECKIN_OPTIONS);
     const [isRedirecting, setIsRedirecting] = useState(false);
 
     useEffect(() => {
         const fetchSurveyConfig = async () => {
             try {
-                const { data } = await supabase
-                    .from('notices')
-                    .select('content')
-                    .eq('category', 'SYSTEM')
-                    .eq('title', 'CHECKIN_SURVEY_CONFIG')
-                    .maybeSingle();
-
-                if (data?.content) {
-                    const parsed = JSON.parse(data.content);
+                const assigned = await loadAssignedSurvey({
+                    surveyType: 'CHECKIN',
+                    locationName: qrAccess.location?.name || locParam
+                });
+                if (assigned?.config) {
+                    const parsed = assigned.config;
+                    setActiveSurveyId(assigned.id || null);
                     if (parsed.question) setSurveyQuestion(parsed.question);
+                    setSurveyDescription(parsed.description || '');
                     if (parsed.options && parsed.options.length > 0) {
                         setDynamicSurveyOptions(parsed.options);
                         setSelectedPurposes([parsed.options[0].label]);
@@ -265,7 +273,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             }
         };
         fetchSurveyConfig();
-    }, []);
+    }, [locParam, qrAccess.location?.name]);
 
     const getSafeKSTDate = () => {
         const now = new Date();
@@ -277,6 +285,9 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     };
 
     const findLoginCandidates = async (targetName) => {
+        if(isAccountAuthEnabled()){
+            return getSecureLoginAdapter().candidates(targetName);
+        }
         let lastError = null;
 
         for (let attempt = 0; attempt < 2; attempt += 1) {
@@ -327,8 +338,8 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     const handlePasswordReset = async (event) => {
         event.preventDefault();
         if (!resetCandidate || isAdminAccount(resetCandidate)) return;
-        if (resetPassword.length < 4) {
-            alert('새 비밀번호는 4자리 이상으로 설정해주세요.');
+        if (resetPassword.length < 6) {
+            alert('새 비밀번호는 6자리 이상으로 설정해주세요.');
             return;
         }
         if (resetPassword !== resetPasswordConfirm) {
@@ -629,6 +640,19 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
 
         setLoginLoading(true);
         try {
+            if(isAccountAuthEnabled()){
+                let direct=await attemptLoginAuth({name:loginName.trim()},null,loginPassword);
+                if(direct===true||direct===false)return;
+                if(direct==='name_not_found'){
+                    direct=await attemptLoginAuth({name:`${loginName.trim()}(guest)`},null,loginPassword);
+                    if(direct===true||direct===false)return;
+                    if(direct==='name_not_found'){
+                        alert('가입된 이름이 없습니다. 이름을 다시 확인해주세요.');return;
+                    }
+                }
+                if(direct!=='selection_required')return;
+            }
+
             const hashedPassword = await hashPassword(loginPassword);
 
             let candidates = await findLoginCandidates(loginName.trim());
@@ -653,7 +677,11 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             }
         } catch (err) {
             console.error('Login submit error:', err);
-            alert('로그인 중 오류가 발생했습니다: ' + (err.message || '다시 시도해주세요.'));
+            if (isAccountAuthEnabled() && ['temporarily_unavailable', 'cancelled'].includes(err?.code)) {
+                alert('인증 서버 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
+            } else {
+                alert('로그인 정보를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.');
+            }
         } finally {
             setLoginLoading(false);
         }
@@ -662,6 +690,11 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     const attemptLoginAuth = async (userCandidate, hashedPw, rawPassword) => {
         try {
             let matchedUser = null;
+
+            if(isAccountAuthEnabled()){
+                matchedUser=await getSecureLoginAdapter().login(userCandidate.id?{profileId:userCandidate.id,password:rawPassword}:
+                    {name:userCandidate.name,password:rawPassword});
+            } else {
 
             const userResponse = await fetch(
                 `${import.meta.env.VITE_SUPABASE_URL}/rest/v1/users?select=*&id=eq.${encodeURIComponent(userCandidate.id)}`,
@@ -680,52 +713,16 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             const fullUser = dbUser ? { ...userCandidate, ...dbUser } : userCandidate;
 
             if (fullUser && (fullUser.password === hashedPw || fullUser.password === rawPassword)) {
-                // Newer accounts already have a matching Supabase Auth user.
-                // Use that signed session for every protected server action;
-                // browser-stored profile data is no longer treated as proof of
-                // identity.
-                const authEmail = fullUser.email || `${String(fullUser.phone || '').replace(/[^0-9]/g, '')}@youth-access.app`;
-                const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-                    email: authEmail,
-                    password: hashedPw,
+                const authId=await verifiedProfileLogin({
+                    profileId:fullUser.id,password:rawPassword,hashedPassword:hashedPw,
+                    resolve:payload=>requestSupabaseFunction('dispatch-notification',payload),auth:supabase.auth,
                 });
-                if (!authError && (
-                    authData?.user?.id === fullUser.id ||
-                    authData?.user?.id === fullUser.auth_user_id
-                )) {
-                    matchedUser = fullUser;
-                } else {
-                    const linkResult = await requestSupabaseFunction('dispatch-notification', {
-                        action: 'ensure-auth-link',
-                        profileId: fullUser.id,
-                        password: rawPassword,
-                    });
-                    const { data: linkedAuth, error: linkedAuthError } = await supabase.auth.signInWithPassword({
-                        email: linkResult.email,
-                        password: hashedPw,
-                    });
-                    if (linkedAuthError || !linkedAuth?.user) {
-                        throw new Error('로그인 연결을 완료하지 못했습니다. 잠시 후 다시 시도해 주세요.');
-                    }
-                    matchedUser = fullUser;
-                }
-            } else if (userCandidate?.email) {
-                try {
-                    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-                        email: userCandidate.email,
-                        password: rawPassword
-                    });
-
-                    if (!authError && authData?.user) {
-                        matchedUser = fullUser;
-                    }
-                } catch (e) {
-                    console.error('Supabase Auth attempt failed:', e);
-                }
+                matchedUser={...fullUser,auth_user_id:authId};
+            }
             }
 
             if (!matchedUser) {
-                setResetCandidate(isAdminAccount(fullUser) ? null : fullUser);
+                setResetCandidate(isAdminAccount(userCandidate) ? null : userCandidate);
                 alert('비밀번호가 일치하지 않습니다. 다시 확인해 주세요.');
                 return false;
             }
@@ -754,7 +751,17 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             return true;
         } catch (err) {
             console.error('Login auth error:', err);
-            alert('로그인 시도 중 오류가 발생했습니다: ' + (err.message || '다시 시도해주세요.'));
+            if(isAccountAuthEnabled()&&err?.code==='invalid_login'){
+                setResetCandidate(null);
+                alert('비밀번호가 일치하지 않습니다. 다시 확인해 주세요.');
+                return false;
+            }
+            if(isAccountAuthEnabled()&&['name_not_found','selection_required'].includes(err?.code))return err.code;
+            if (isAccountAuthEnabled() && ['temporarily_unavailable', 'cancelled'].includes(err?.code)) {
+                alert('인증 서버 연결이 지연되고 있습니다. 잠시 후 다시 시도해주세요.');
+                return false;
+            }
+            alert('로그인 시도 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.');
             return false;
         }
     };
@@ -890,7 +897,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         user_group: '게스트',
                         role: 'student',
                         status: 'approved',
-                        password: '0000',
+                        password: null,
                         gender: 'M',
                         birth: birthInfo.yymmdd,
                         phone: uniquePhone,
@@ -1016,6 +1023,10 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         user_id: guestUserId,
                         survey_type: 'CHECKIN',
                         selections: surveyPurposes,
+                        ...(activeSurveyId ? {
+                            survey_id: activeSurveyId,
+                            survey_snapshot: { question: surveyQuestion, description: surveyDescription, options: dynamicSurveyOptions }
+                        } : {}),
                         created_at: new Date().toISOString()
                     }]);
                 } catch (vErr) {
@@ -1045,7 +1056,9 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                     locationName: haifnLoc.name,
                     isGuest: true,
                     referralPath: finalVisitReason,
-                    purposes: surveyPurposes
+                    purposes: surveyPurposes,
+                    surveyQuestion,
+                    surveyAnswers: surveyPurposes
                 });
             } catch (notifErr) {
                 console.error('Notification dispatch error:', notifErr);
@@ -1207,7 +1220,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
         setStep('CHECKOUT_SUCCESS');
     };
 
-    const finishMemberCheckout = async ({ feedbackText = '', surveySubmitted = false } = {}) => {
+    const finishMemberCheckout = async ({ feedbackText = '', surveyQuestion = '', surveyAnswers = [], surveySubmitted = false } = {}) => {
         // Only a checkout event created/reconciled by this flow may produce an
         // alert. UI state alone is not evidence that a checkout happened.
         const session = checkoutSurveySession;
@@ -1252,6 +1265,9 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                             // A skipped/abandoned survey is an empty response, not
                             // a fabricated "퇴실 완료" answer.
                             feedbackText: surveySubmitted ? feedbackText : '',
+                            surveyQuestion: surveySubmitted ? surveyQuestion : '',
+                            surveyAnswers: surveySubmitted ? surveyAnswers : [],
+                            isGuest: canonicalUser.user_group === '게스트' || canonicalUser.name?.includes('(guest)'),
                             checkInTime: session.checkInTime || null,
                         });
                     } catch (error) {
@@ -1351,7 +1367,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     }
 
     return (
-        <div className="h-screen bg-[#F8F9FA] text-[#191F28] flex flex-col justify-between relative overflow-hidden select-none font-sans bg-[radial-gradient(rgba(148,163,184,0.12)_1.5px,transparent_0)] bg-[size:32px_32px]">
+        <div className="h-screen h-[100dvh] bg-[#F8F9FA] text-[#191F28] flex flex-col relative overflow-hidden select-none font-sans bg-[radial-gradient(rgba(148,163,184,0.12)_1.5px,transparent_0)] bg-[size:32px_32px]">
             {/* Background Glow Accents */}
             <div className="absolute inset-0 overflow-hidden -z-10 pointer-events-none">
                 <motion.div animate={{ scale: [1, 1.2, 1], x: [0, 30, 0] }} transition={{ duration: 20, repeat: Infinity, ease: "linear" }} className="absolute -top-32 left-1/2 -translate-x-1/2 w-[480px] h-[480px] bg-gradient-to-b from-[#E63946]/10 to-orange-500/5 rounded-full blur-[100px]" />
@@ -1386,7 +1402,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             </header>
 
             {/* Main Content Areas */}
-            <main className="flex-1 px-6 py-0 flex flex-col justify-center relative z-10 max-w-md mx-auto w-full overflow-hidden">
+            <main className={`flex-1 min-h-0 px-6 relative z-10 max-w-md mx-auto w-full overflow-y-auto overscroll-contain ${step === 'SURVEY' ? 'py-4 flex flex-col justify-start' : 'py-0 flex flex-col justify-center'}`}>
                 <AnimatePresence mode="wait">
                     {step === 'HOME' && (
                         <motion.div
@@ -1665,9 +1681,11 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                                 <h2 className="text-2xl font-black text-gray-900 tracking-tight">
                                     {surveyQuestion}
                                 </h2>
-                                <p className="text-xs font-semibold text-gray-500">
-                                    원하시는 방문 목적을 선택해 주시면 체크인이 완료됩니다 ✨
-                                </p>
+                                {surveyDescription && (
+                                    <p className="text-xs font-semibold leading-relaxed text-gray-500 whitespace-pre-line">
+                                        {surveyDescription}
+                                    </p>
+                                )}
                             </div>
 
                             <div className="space-y-2.5">
@@ -1839,7 +1857,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 user={checkoutSurveySession || activeSession}
                 locationName={(checkoutSurveySession || activeSession)?.locationName}
                 onClose={() => setShowCheckoutSurvey(false)}
-                onSurveySaved={(feedbackText) => finishMemberCheckout({ feedbackText, surveySubmitted: true })}
+                onSurveySaved={(surveyResult) => finishMemberCheckout({ ...surveyResult, surveySubmitted: true })}
                 onSurveySkipped={() => finishMemberCheckout({ surveySubmitted: false })}
             />
 
@@ -1905,7 +1923,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                                 {loginLoading ? '로그인 중...' : (isQRCheckin ? '로그인 및 자동 체크인' : '로그인')}
                                 <ArrowRight size={18} />
                             </button>
-                            {resetCandidate && (
+                            {resetCandidate && !isAccountAuthEnabled() && (
                                 <button
                                     type="button"
                                     onClick={openPasswordReset}
@@ -1958,16 +1976,16 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         <input
                             type="password"
                             required
-                            minLength="4"
+                            minLength="6"
                             value={resetPassword}
                             onChange={(event) => setResetPassword(event.target.value)}
-                            placeholder="새 비밀번호 (4자리 이상)"
+                            placeholder="새 비밀번호 (6자리 이상)"
                             className="w-full rounded-xl border border-[#E5E8EB] bg-[#F9FAFB] px-3 py-3 text-sm font-bold outline-none focus:border-[#3182F6]"
                         />
                         <input
                             type="password"
                             required
-                            minLength="4"
+                            minLength="6"
                             value={resetPasswordConfirm}
                             onChange={(event) => setResetPasswordConfirm(event.target.value)}
                             placeholder="새 비밀번호 확인"

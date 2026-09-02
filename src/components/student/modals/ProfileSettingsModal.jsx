@@ -6,6 +6,7 @@ import getCroppedImg from '../../../utils/imageUtils';
 import { hashPassword } from '../../../utils/hashUtils';
 import useModalClose from '../../../hooks/useModalClose';
 import { promptAndEnableNotification, removeFirebaseToken } from '../../../firebase';
+import { getAccountAuthClient, isAccountAuthEnabled } from '../../../auth/accountAuthRuntime';
 
 const ProfileSettingsModal = ({ 
     user, 
@@ -104,16 +105,21 @@ const ProfileSettingsModal = ({
     const handleSaveProfile = async () => {
         const updates = {};
         if (newPassword) {
-            if (newPassword.length < 4) {
-                alert('비밀번호는 4자리 이상이어야 합니다.');
+            if (newPassword.length < 6) {
+                alert('비밀번호는 6자리 이상이어야 합니다.');
                 return;
             }
             if (newPassword !== confirmPassword) {
                 alert('비밀번호 확인이 일치하지 않습니다.');
                 return;
             }
-            const hashedPassword = await hashPassword(newPassword);
-            updates.password = hashedPassword;
+            if(isAccountAuthEnabled()){
+                try{await getAccountAuthClient().password({profileId:user.id,newPassword});}
+                catch(error){alert('비밀번호 변경 실패: '+(error.message||'잠시 후 다시 시도해주세요.'));return;}
+            } else {
+                const hashedPassword = await hashPassword(newPassword);
+                updates.password = hashedPassword;
+            }
         }
 
         if (school !== user?.school) updates.school = school;
@@ -261,7 +267,7 @@ const ProfileSettingsModal = ({
                     <div className="space-y-4 pb-6">
                         <h4 className="font-bold text-gray-800 border-b pb-2">비밀번호 변경</h4>
                         <div>
-                            <label className="block text-xs font-bold text-gray-500 mb-1 ml-1">새 비밀번호 (4자리 이상)</label>
+                            <label className="block text-xs font-bold text-gray-500 mb-1 ml-1">새 비밀번호 (6자리 이상)</label>
                             <input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="변경할 비밀번호를 입력하세요" className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-blue-500 text-base" />
                         </div>
                         <div>

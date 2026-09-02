@@ -14,14 +14,17 @@ import {
 import { supabase } from '../../../../supabaseClient';
 import { CATEGORIES } from '../../../../constants/appConstants';
 import { motion, AnimatePresence } from 'framer-motion';
-import { COLOR_THEMES } from '../calendarConstants';
+import { getProgramCalendarCategories, getProgramCalendarKey, isProgramCalendarCategory } from '../../../../utils/calendarColors';
+import { saveCalendarCategory } from '../../../../api/calendarCategoriesApi';
 import { extractProgramInfo } from '../../../../utils/textUtils';
 
 export const useAdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
     // State
     const [currentDate, setCurrentDate] = useState(new Date());
     const [adminSchedules, setAdminSchedules] = useState([]);
-    const [dynamicCategories, setDynamicCategories] = useState([]);
+    const [calendarCategories, setCalendarCategories] = useState([]);
+    const dynamicCategories = useMemo(() => calendarCategories.filter(category => !isProgramCalendarCategory(category)), [calendarCategories]);
+    const programCategories = useMemo(() => getProgramCalendarCategories(calendarCategories), [calendarCategories]);
     const [rentalBookings, setRentalBookings] = useState([]);
     const [loading, setLoading] = useState(false);
     const [showModal, setShowModal] = useState(false);
@@ -33,6 +36,8 @@ export const useAdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
     // Category Management State
     const [editCategory, setEditCategory] = useState(null);
     const [categoryForm, setCategoryForm] = useState({ name: '', color_theme: 'blue' });
+    const [categorySaving, setCategorySaving] = useState(false);
+    const [categoryMessage, setCategoryMessage] = useState('');
 
     // Mobile Specific State
     const [showDayDetail, setShowDayDetail] = useState(false);
@@ -68,19 +73,7 @@ export const useAdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
 
             if (catError) throw catError;
             
-            // Rename '대관' category to '공간 대여' if '공간 대여' does not already exist
-            const rCatOld = (catData || []).find(c => c.name === '대관');
-            const rCatNew = (catData || []).find(c => c.name === '공간 대여');
-            if (rCatOld && !rCatNew) {
-                try {
-                    await supabase.from('calendar_categories').update({ name: '공간 대여' }).eq('id', rCatOld.id);
-                    rCatOld.name = '공간 대여';
-                } catch (e) {
-                    console.error('Failed to rename category to 공간 대여:', e);
-                }
-            }
-            
-            setDynamicCategories(catData || []);
+            setCalendarCategories(catData || []);
 
             // 2. Fetch Schedules
             const { data: schData, error: schError } = await supabase
@@ -133,7 +126,6 @@ export const useAdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
         notices
             .filter(n => n.category === CATEGORIES.PROGRAM && n.program_date)
             .forEach(n => {
-                const type = n.program_type || 'CENTER';
                 const { cleanContent, location, duration } = extractProgramInfo(n.content);
                 const finalLocation = location || n.program_location || '';
                 
@@ -156,7 +148,7 @@ export const useAdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
                                 content: cleanContent,
                                 start: parseISO(programDateStr),
                                 end: parseISO(programDateStr),
-                                category: type === 'CENTER' ? 'PROGRAM_CENTER' : 'PROGRAM_SCHOOL',
+                                category: getProgramCalendarKey(n),
                                 isPublic: true,
                                 raw: { ...n, program_location: finalLocation, duration, program_date: programDateStr }
                             });
@@ -171,7 +163,7 @@ export const useAdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
                         content: cleanContent,
                         start: parseISO(n.program_date),
                         end: parseISO(n.program_date),
-                        category: type === 'CENTER' ? 'PROGRAM_CENTER' : 'PROGRAM_SCHOOL',
+                        category: getProgramCalendarKey(n),
                         isPublic: true,
                         raw: { ...n, program_location: finalLocation, duration }
                     });
@@ -544,31 +536,26 @@ export const useAdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
 
     const handleSaveCategory = async (e) => {
         e.preventDefault();
+        if (categorySaving) return;
+        setCategorySaving(true);
+        setCategoryMessage('');
         try {
-            let response;
-            if (editCategory) {
-                response = await supabase.from('calendar_categories').update(categoryForm).eq('id', editCategory.id).select();
-            } else {
-                response = await supabase.from('calendar_categories').insert([categoryForm]).select();
-            }
-
-            if (response.error) throw response.error;
-
-            if (!response.data || response.data.length === 0) {
-                alert('변경사항이 저장되지 않았습니다. (DB 정책에 의해 차단되었을 수 있습니다.)');
-            } else {
-                setEditCategory(null);
-                setCategoryForm({ name: '', color_theme: 'blue' });
-                await fetchAllData();
-                alert('카테고리가 저장되었습니다.');
-            }
+            const saved = await saveCalendarCategory(supabase, categoryForm, editCategory);
+            setCalendarCategories(previous => [...previous.filter(item => item.id !== saved.id), saved]);
+            setVisibleCategories(previous => ({ ...previous, [saved.id]: previous[saved.id] ?? true }));
+            setEditCategory(null);
+            setCategoryForm({ name: '', color_theme: 'blue' });
+            setCategoryMessage('저장했습니다. 관리자·학생 캘린더에 같은 색상이 적용됩니다.');
+            window.dispatchEvent(new Event('calendar-categories-updated'));
         } catch (err) {
             console.error(err);
-            alert(`카테고리 저장 실패: ${err.message || 'Unknown error'}`);
-        }
+            setCategoryMessage(`카테고리 저장 실패: ${err.message || '다시 시도해주세요.'}`);
+        } finally { setCategorySaving(false); }
     };
 
     const handleDeleteCategory = async (id) => {
+        const category = calendarCategories.find(item => item.id === id);
+        if (!category || category.is_system || isProgramCalendarCategory(category)) return;
         if (!confirm('이 카테고리를 삭제하시겠습니까? 연결된 일정이 있을 경우 삭제되지 않을 수 있습니다.')) return;
         try {
             const { data, error } = await supabase.from('calendar_categories').delete().eq('id', id).select();
@@ -593,7 +580,7 @@ export const useAdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
     return {
         currentDate, setCurrentDate,
         adminSchedules, setAdminSchedules,
-        dynamicCategories, setDynamicCategories,
+        dynamicCategories, calendarCategories, programCategories,
         loading, setLoading,
         showModal, setShowModal,
         showCategoryModal, setShowCategoryModal,
@@ -602,6 +589,7 @@ export const useAdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
         visibleCategories, setVisibleCategories,
         editCategory, setEditCategory,
         categoryForm, setCategoryForm,
+        categorySaving, categoryMessage, setCategoryMessage,
         showDayDetail, setShowDayDetail,
         formData, setFormData,
         setActiveMenu,

@@ -42,6 +42,7 @@ TSF_WEBAPP_DATA_ENABLED=true
 TSF_ACTION_SIGNING_SECRET=별도_긴_랜덤_문자열
 TSF_WRITE_ALLOWED_USER_IDS=내_Slack_멤버_ID
 TSF_WRITE_ALLOWED_CHANNEL_IDS=저장을_허용할_Slack_채널_ID
+TSF_REPORT_ALLOWED_CHANNEL_IDS=보고서_수합을_허용할_채널_ID
 ```
 
 `SUPABASE_URL`과 `SUPABASE_SERVICE_ROLE_KEY`는 Supabase 호스팅 환경에서 자동으로 제공됩니다.
@@ -59,16 +60,20 @@ https://erecqalsxoxrufggvmcc.supabase.co/functions/v1/slack-tsf
 ```text
 app_mentions:read
 chat:write
+channels:read
 channels:history
+groups:read
 groups:history
 im:history
 mpim:history
 commands
 ```
 
-또한 Slack App 설정에서 Interactivity를 켜고 Request URL에 같은 Edge Function 주소를 넣어야 확인 버튼이 동작합니다. 저장 뒤 앱을 다시 설치해 변경 권한을 적용하세요.
+또한 Slack App 설정에서 Interactivity를 켜고 Request URL에 같은 Edge Function 주소를 넣어야 확인 버튼이 동작합니다. App Home의 **Messages Tab**도 켜고 Event Subscriptions에 `message.im`을 추가하면 퐁퐁에게 DM으로도 질문할 수 있습니다. 저장 뒤 앱을 다시 설치해 변경 권한을 적용하세요.
 
 TSF는 멘션된 같은 스레드의 최근 대화만 읽어 후속 답변(예: “그 프로젝트에 연결해줘”)을 이어서 처리합니다. 이를 위해 위의 History 권한이 필요합니다.
+
+`@TSF 지난주 전 채널 운영 보고서 만들어줘` 또는 `/tsf 지난주 전체 채널 내용을 수합해서 운영 보고서 만들어줘`라고 요청하면, 봇이 초대된 공개·비공개 채널의 해당 기간 메시지와 웹앱 집계를 함께 정리합니다. DM과 그룹 DM은 보고서 수합 대상에서 제외합니다. `TSF_REPORT_ALLOWED_CHANNEL_IDS`를 비워 두면 봇이 들어가 있는 모든 채널을 대상으로 하고, 값을 넣으면 해당 채널만 대상으로 제한합니다.
 
 ## 작성·저장 기능
 

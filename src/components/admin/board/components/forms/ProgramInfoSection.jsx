@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import PropTypes from 'prop-types';
-import IntuitiveTimePicker from '../../../../common/IntuitiveTimePicker';
+import RecruitmentPeriodFields from './RecruitmentPeriodFields';
+import DateTimeFields from './DateTimeFields';
+import DatePicker from '../../../../common/DatePicker';
+import TimePicker from '../../../../common/TimePicker';
 import { splitDateTime, joinDateTime } from '../../utils/noticeHelpers';
-import { PROGRAM_TYPES } from '../../utils/constants';
+import { PROGRAM_TYPES, MAX_PROGRAM_HAIFN_REWARD } from '../../utils/constants';
 import { Calendar, Clock, MapPin, Gift, CheckSquare, Users, ChevronUp, ChevronDown, MessageSquare, Target, Trash, Bookmark, User, School, Smartphone, Sparkles, ToggleLeft, ToggleRight, HelpCircle, Dices, Camera, FileText } from 'lucide-react';
 import { supabase } from '../../../../../supabaseClient';
+import { fromKstInput } from '../../../../../utils/programRecruitment';
+import { useCurrentTime } from '../../../../../hooks/useCurrentTime';
 
 const HAIFN_DETAILS = [
     'B1F STAGE',
@@ -18,6 +23,8 @@ const HAIFN_DETAILS = [
 ];
 
 const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
+    const recruitmentNow = useCurrentTime();
+    const isScheduledRegistration = formData.is_recruiting && new Date(fromKstInput(formData.recruitment_start_at)).getTime() > recruitmentNow;
     // Single Source of Truth for Host Active State
     const isHostActive = formData.enable_hosts === true;
 
@@ -362,33 +369,26 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                             <div className="space-y-1.5">
                                 <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">챌린지 진행 기간</label>
                                 <div className="flex items-center gap-3">
-                                    <div className="flex-1 relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
-                                        <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
-                                        <input
-                                            type="date"
-                                            value={formData.program_start_date || ''}
-                                            onChange={e => {
-                                                const startDate = e.target.value;
-                                                updateField('program_start_date', startDate);
-                                                if (formData.challenge_has_time) {
-                                                    updateField('program_date', joinDateTime(startDate, splitDateTime(formData.program_date).time));
-                                                }
-                                            }}
-                                            className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
-                                            required
-                                        />
-                                    </div>
+                                    <DatePicker
+                                        label="챌린지 시작 날짜"
+                                        className="flex-1"
+                                        value={formData.program_start_date || ''}
+                                        onChange={startDate => {
+                                            updateField('program_start_date', startDate);
+                                            if (formData.challenge_has_time) {
+                                                updateField('program_date', joinDateTime(startDate, splitDateTime(formData.program_date).time));
+                                            }
+                                        }}
+                                        required
+                                    />
                                     <span className="text-slate-400 font-bold text-xs">~</span>
-                                    <div className="flex-1 relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
-                                        <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
-                                        <input
-                                            type="date"
-                                            value={formData.program_end_date || ''}
-                                            onChange={e => updateField('program_end_date', e.target.value)}
-                                            className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
-                                            required
-                                        />
-                                    </div>
+                                    <DatePicker
+                                        label="챌린지 종료 날짜"
+                                        className="flex-1"
+                                        value={formData.program_end_date || ''}
+                                        onChange={date => updateField('program_end_date', date)}
+                                        required
+                                    />
                                 </div>
                                 <p className="text-[11px] text-slate-400 font-medium mt-1.5 ml-1 block leading-normal">챌린지가 진행되는 전체 기간입니다.</p>
                             </div>
@@ -416,18 +416,14 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-fade-in">
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">시작 시간</label>
-                                        <div className="h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5">
-                                            <Clock className="text-slate-400 shrink-0 mr-2" size={15} />
-                                            <div className="flex-1 h-full">
-                                                <IntuitiveTimePicker
-                                                    value={splitDateTime(formData.program_date).time}
-                                                    onChange={time => updateField(
-                                                        'program_date',
-                                                        joinDateTime(formData.program_start_date, time)
-                                                    )}
-                                                />
-                                            </div>
-                                        </div>
+                                        <TimePicker
+                                            label="챌린지 시작 시간"
+                                            value={splitDateTime(formData.program_date).time}
+                                            onChange={time => updateField(
+                                                'program_date',
+                                                joinDateTime(formData.program_start_date, time)
+                                            )}
+                                        />
                                     </div>
 
                                     <div className="space-y-1.5">
@@ -440,7 +436,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                                 value={formData.program_duration || ''}
                                                 onChange={e => updateField('program_duration', e.target.value)}
                                                 className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs"
-                                                required
+                                                required={!isScheduledRegistration}
                                             />
                                         </div>
                                     </div>
@@ -449,44 +445,20 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                         </div>
                     ) : formData.is_recruiting ? (
                         // Recruiting Program (Single Date & Time & Duration)
-                        <>
-                            <div className="space-y-1.5">
+                        <div className="lg:col-span-2 grid min-w-0 grid-cols-1 xl:grid-cols-[minmax(0,2fr)_minmax(0,1fr)] gap-4">
+                            <div className="min-w-0 space-y-1.5">
                                 <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">프로그램 일시</label>
-                                <div className="flex flex-col gap-2">
-                                    <div className="relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
-                                        <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
-                                        <input
-                                            type="date"
-                                            value={splitDateTime(formData.program_date).date}
-                                            onChange={e => {
-                                                const newDate = joinDateTime(e.target.value, splitDateTime(formData.program_date).time);
-                                                updateField('program_date', newDate);
-                                                if (!formData.recruitment_deadline) {
-                                                    const newRecDate = joinDateTime(e.target.value, splitDateTime(formData.recruitment_deadline).time);
-                                                    updateField('recruitment_deadline', newRecDate);
-                                                }
-                                            }}
-                                            className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
-                                            required
-                                        />
-                                    </div>
-                                    <div className="h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5">
-                                        <Clock className="text-slate-400 shrink-0 mr-2" size={15} />
-                                        <div className="flex-1 h-full">
-                                            <IntuitiveTimePicker
-                                                value={splitDateTime(formData.program_date).time}
-                                                onChange={time => {
-                                                    const newDate = joinDateTime(splitDateTime(formData.program_date).date, time);
-                                                    updateField('program_date', newDate);
-                                                    if (!formData.recruitment_deadline) {
-                                                        const newRecDate = joinDateTime(splitDateTime(formData.recruitment_deadline).date, time);
-                                                        updateField('recruitment_deadline', newRecDate);
-                                                    }
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
+                                <DateTimeFields
+                                    label="프로그램 일시"
+                                    value={formData.program_date}
+                                    required
+                                    onChange={nextDate => {
+                                        updateField('program_date', nextDate);
+                                        if (nextDate && !formData.recruitment_deadline) {
+                                            updateField('recruitment_deadline', nextDate);
+                                        }
+                                    }}
+                                />
                                 <p className="text-[11px] text-slate-400 font-medium mt-1.5 ml-1 block leading-normal">프로그램이 시작되는 날짜와 시간입니다.</p>
                             </div>
 
@@ -497,15 +469,16 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                     <input
                                         type="text"
                                         placeholder="예: 2시간 또는 1.5시간"
+                                        aria-label="소요 시간"
                                         value={formData.program_duration}
                                         onChange={e => updateField('program_duration', e.target.value)}
                                         className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs"
-                                        required
+                                        required={!isScheduledRegistration}
                                     />
                                 </div>
                                 <p className="text-[11px] text-slate-400 font-medium mt-1.5 ml-1 block leading-normal">마감 시각 자동 계산 및 노출용 정보입니다.</p>
                             </div>
-                        </>
+                        </div>
                     ) : (
                         // Open Program (Start Date, End Date, Time & Days)
                         <>
@@ -513,45 +486,35 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                 <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">프로그램 기간 및 시간</label>
                                 <div className="flex flex-col gap-2">
                                     <div className="flex items-center gap-2">
-                                        <div className="flex-1 relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
-                                            <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
-                                            <input
-                                                type="date"
-                                                value={formData.program_start_date || ''}
-                                                onChange={e => {
-                                                    updateField('program_start_date', e.target.value);
-                                                    const timePart = splitDateTime(formData.program_date).time;
-                                                    updateField('program_date', joinDateTime(e.target.value, timePart));
-                                                }}
-                                                className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
-                                                required
-                                            />
-                                        </div>
+                                        <DatePicker
+                                            label="프로그램 시작 날짜"
+                                            className="flex-1"
+                                            value={formData.program_start_date || ''}
+                                            onChange={date => {
+                                                updateField('program_start_date', date);
+                                                const timePart = splitDateTime(formData.program_date).time;
+                                                updateField('program_date', joinDateTime(date, timePart));
+                                            }}
+                                            required
+                                        />
                                         <span className="text-slate-400 font-bold text-xs shrink-0 px-1">~</span>
-                                        <div className="flex-1 relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
-                                            <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
-                                            <input
-                                                type="date"
-                                                value={formData.program_end_date || ''}
-                                                onChange={e => updateField('program_end_date', e.target.value)}
-                                                className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
-                                                required
-                                            />
-                                        </div>
+                                        <DatePicker
+                                            label="프로그램 종료 날짜"
+                                            className="flex-1"
+                                            value={formData.program_end_date || ''}
+                                            onChange={date => updateField('program_end_date', date)}
+                                            required
+                                        />
                                     </div>
-                                    <div className="h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5">
-                                        <Clock className="text-slate-400 shrink-0 mr-2" size={15} />
-                                        <div className="flex-1 h-full">
-                                            <IntuitiveTimePicker
-                                                value={splitDateTime(formData.program_date).time}
-                                                onChange={time => {
-                                                    const datePart = formData.program_start_date || splitDateTime(formData.program_date).date;
-                                                    const newDate = joinDateTime(datePart, time);
-                                                    updateField('program_date', newDate);
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
+                                    <TimePicker
+                                        label="프로그램 시작 시간"
+                                        value={splitDateTime(formData.program_date).time}
+                                        onChange={time => {
+                                            const datePart = formData.program_start_date || splitDateTime(formData.program_date).date;
+                                            const newDate = joinDateTime(datePart, time);
+                                            updateField('program_date', newDate);
+                                        }}
+                                    />
                                 </div>
                             </div>
 
@@ -567,7 +530,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                             value={formData.program_duration}
                                             onChange={e => updateField('program_duration', e.target.value)}
                                             className="w-full h-full pl-10 pr-3 bg-transparent outline-none font-bold text-slate-800 text-xs"
-                                            required
+                                            required={!isScheduledRegistration}
                                         />
                                     </div>
                                     <p className="text-[11px] text-slate-400 font-medium mt-1.5 ml-1 block leading-normal">매회 진행되는 소요 시간 정보입니다.</p>
@@ -624,18 +587,19 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                     <span className="text-sm font-bold text-slate-800">장소 및 모집 관리</span>
                 </div>
 
-                <div className="space-y-4">
+                <div className={formData.is_recruiting ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : 'space-y-4'}>
                     {/* 진행 장소 드롭다운 */}
-                    <div className="space-y-1.5">
+                    <div className="min-w-0 space-y-1.5">
                         <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">진행 장소</label>
                         <div className="flex flex-col sm:flex-row gap-3">
-                            <div className="flex-1 h-11 relative flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5">
+                            <div className="flex-1 min-w-0 min-h-11 h-11 relative flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5">
                                 <MapPin className="text-slate-400 shrink-0 mr-2" size={15} />
                                 <select
+                                    aria-label="진행 장소"
                                     value={localMain}
                                     onChange={handleMainChange}
                                     className="w-full bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer appearance-none"
-                                    required
+                                    required={!isScheduledRegistration}
                                 >
                                     <option value="">공간 선택</option>
                                     <option value="하이픈">하이픈</option>
@@ -645,13 +609,14 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                             </div>
 
                             {localMain === '하이픈' && (
-                                <div className="flex-1 h-11 relative flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5 animate-fade-in">
+                                <div className="flex-1 min-w-0 min-h-11 h-11 relative flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5 animate-fade-in">
                                     <MapPin className="text-slate-400 shrink-0 mr-2" size={15} />
                                     <select
+                                        aria-label="세부 공간"
                                         value={selectedDetail}
                                         onChange={handleDetailChange}
                                         className="w-full bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer appearance-none"
-                                        required
+                                        required={!isScheduledRegistration}
                                     >
                                         <option value="">세부 공간 선택</option>
                                         {HAIFN_DETAILS.map(opt => (
@@ -662,7 +627,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                             )}
 
                             {localMain === '기타' && (
-                                <div className="flex-1 h-11 relative flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5 animate-fade-in">
+                                <div className="flex-1 min-w-0 min-h-11 h-11 relative flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5 animate-fade-in">
                                     <MapPin className="text-slate-400 shrink-0 mr-2" size={15} />
                                     <input
                                         type="text"
@@ -670,7 +635,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                         value={customVal}
                                         onChange={handleCustomChange}
                                         className="w-full bg-transparent outline-none font-bold text-slate-800 text-xs placeholder:text-slate-400"
-                                        required
+                                        required={!isScheduledRegistration}
                                     />
                                 </div>
                             )}
@@ -683,15 +648,16 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                         </p>
                     </div>
 
-                    {/* 모집 정원 및 마감 시간 (신청 프로그램만 노출) */}
+                    {/* 장소 옆의 정원, 아래 전체 너비의 모집 기간 (신청 프로그램만 노출) */}
                     {formData.is_recruiting && (
-                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-3 border-t border-slate-100/60">
-                            <div className="space-y-1.5">
+                        <>
+                            <div className="min-w-0 space-y-1.5">
                                 <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">모집 정원</label>
                                 <div className="relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
                                     <Users className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
                                     <input
                                         type="number"
+                                        aria-label="모집 정원"
                                         placeholder="예: 10 (0: 무제한)"
                                         value={formData.max_capacity}
                                         onChange={e => updateField('max_capacity', e.target.value)}
@@ -701,36 +667,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                 <p className="text-[11px] text-slate-400 font-medium mt-1.5 ml-1 block leading-normal">0을 입력하면 신청 인원 제한이 해제됩니다.</p>
                             </div>
 
-                            <div className="space-y-1.5">
-                                <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">신청 마감 시간</label>
-                                <div className="flex flex-col gap-2">
-                                    <div className="relative h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all">
-                                        <Calendar className="absolute left-3.5 text-slate-400 shrink-0" size={15} />
-                                        <input
-                                            type="date"
-                                            value={splitDateTime(formData.recruitment_deadline).date}
-                                            onChange={e => {
-                                                const newDate = joinDateTime(e.target.value, splitDateTime(formData.recruitment_deadline).time);
-                                                updateField('recruitment_deadline', newDate);
-                                            }}
-                                            className="w-full h-full pl-10 pr-3.5 bg-transparent outline-none font-bold text-slate-800 text-xs cursor-pointer"
-                                        />
-                                    </div>
-                                    <div className="h-11 flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5">
-                                        <Clock className="text-slate-400 shrink-0 mr-2" size={15} />
-                                        <div className="flex-1 h-full">
-                                            <IntuitiveTimePicker
-                                                value={splitDateTime(formData.recruitment_deadline).time}
-                                                onChange={time => {
-                                                    const newDate = joinDateTime(splitDateTime(formData.recruitment_deadline).date, time);
-                                                    updateField('recruitment_deadline', newDate);
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-                                <p className="text-[11px] text-slate-400 font-medium mt-1.5 ml-1 block leading-normal">미지정 시 프로그램 시작 시각에 자동으로 마감됩니다.</p>
-                            </div>
+                            <RecruitmentPeriodFields formData={formData} updateField={updateField} />
 
                             {/* 비공개 여부 */}
                             <div 
@@ -752,7 +689,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                     <span className="text-[10px] text-slate-400 font-semibold mt-0.5">공유 링크를 가지고 있는 대상자만 접근 및 신청이 가능합니다.</span>
                                 </div>
                             </div>
-                        </div>
+                        </>
                     )}
                 </div>
             </div>
@@ -870,7 +807,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                             updateField('enable_feedback', false);
                             updateField('is_review_required', false);
                         } else {
-                            updateField('haifn_reward', 30);
+                            updateField('haifn_reward', MAX_PROGRAM_HAIFN_REWARD);
                             updateField('enable_feedback', true);
                         }
                     }}
@@ -923,12 +860,16 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                         type="number"
                                         placeholder="단위: 하이픈 (지급 포인트)"
                                         min="0"
+                                        max={MAX_PROGRAM_HAIFN_REWARD}
                                         value={formData.haifn_reward ?? ''}
-                                        onChange={e => updateField('haifn_reward', parseInt(e.target.value) || 0)}
+                                        onChange={e => updateField(
+                                            'haifn_reward',
+                                            Math.min(MAX_PROGRAM_HAIFN_REWARD, Math.max(0, parseInt(e.target.value) || 0))
+                                        )}
                                         className="w-full h-full pl-10 pr-3.5 bg-transparent outline-none font-bold text-slate-800 text-xs"
                                     />
                                 </div>
-                                <p className="text-[11px] text-slate-400 font-medium mt-1.5 block leading-normal">프로그램 참여 완료 시 학생에게 부여할 포인트입니다. (0 입력 시 포인트 미지급)</p>
+                                <p className="text-[11px] text-slate-400 font-medium mt-1.5 block leading-normal">프로그램 참여 완료 시 학생에게 부여할 포인트입니다. (최대 5H, 0 입력 시 미지급)</p>
                             </div>
 
                             {/* 피드백 설문 수집 여부 스위치 */}

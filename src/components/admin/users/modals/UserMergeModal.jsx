@@ -36,13 +36,16 @@ const UserMergeModal = ({
     };
 
     const mergeCandidates = useMemo(() => {
-        if (!mergeSearchTerm.trim()) return [];
-        return users.filter(u => 
+        const recommendedId=editingUser?.linkReview?.newProfileId;
+        const recommended=recommendedId?users.find(user=>user.id===recommendedId):null;
+        if (!mergeSearchTerm.trim()) return recommended ? [recommended] : [];
+        const matches=users.filter(u =>
             u.id !== editingUser?.id && 
             !u.preferences?.is_temporary && 
             u.user_group !== '게스트' &&
             (u.name.includes(mergeSearchTerm) || (u.phone && u.phone.includes(mergeSearchTerm)))
-        ).slice(0, 5);
+        );
+        return [...(recommended?[recommended]:[]),...matches.filter(user=>user.id!==recommendedId)].slice(0,5);
     }, [users, mergeSearchTerm, editingUser]);
 
     useEffect(() => {

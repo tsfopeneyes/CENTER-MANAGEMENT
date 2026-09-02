@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
 import { resolveSchoolRegion } from '../../utils/schoolRegionUtils';
+import { recruitmentNotificationGroup } from '../../utils/recruitmentNotificationAudience';
 
 export const useDashboardNotifications = (user) => {
     const [notifications, setNotifications] = useState([]);
@@ -9,6 +10,11 @@ export const useDashboardNotifications = (user) => {
 
     const getNotificationGroups = useCallback(async (currentUser) => {
         const groups = ['전체', currentUser.user_group, `USER_${currentUser.id}`];
+        const { data: auth, error: authError } = await supabase.auth.getSession();
+        if (!authError) {
+            const ownGroup = recruitmentNotificationGroup(currentUser, auth?.session?.user);
+            if (ownGroup) groups.push(ownGroup);
+        }
         if (currentUser.role === 'admin' || currentUser.user_group === 'STAFF') groups.push('STAFF');
 
         // Notifications can target a center region without exposing the full
@@ -54,13 +60,13 @@ export const useDashboardNotifications = (user) => {
                 .filter(Boolean))];
             let visibleNotifs = notifs || [];
             if (noticeIds.length > 0 && currentUser.role !== 'admin' && currentUser.user_group !== 'STAFF') {
-                const { data: sourceNotices, error: sourceNoticeError } = await supabase
-                    .from('notices')
-                    .select('id, target_regions')
-                    .in('id', noticeIds);
+                const [{ data: sourceNotices, error: sourceNoticeError }, previews] = await Promise.all([
+                    supabase.from('notices').select('id, target_regions').in('id', noticeIds),
+                    supabase.from('program_calendar_previews').select('id, target_regions').in('id', noticeIds)
+                ]);
 
                 if (!sourceNoticeError) {
-                    const regionsByNoticeId = new Map((sourceNotices || []).map((notice) => [notice.id, notice.target_regions]));
+                    const regionsByNoticeId = new Map([...(previews.data || []), ...(sourceNotices || [])].map((notice) => [notice.id, notice.target_regions]));
                     visibleNotifs = (notifs || []).filter((notif) => {
                         if (notif.notification_type !== 'NOTICE') return true;
                         const targetRegions = regionsByNoticeId.get(notif.notice_id);
@@ -165,6 +171,24 @@ export const useDashboardNotifications = (user) => {
             fetchNotifications(user);
         }
     }, [showNotificationsModal, user?.id, fetchNotifications]);
+
+    // Realtime is not guaranteed after a backgrounded mobile browser resumes.
+    useEffect(() => {
+        if (!user?.id) return;
+        const refresh = () => {
+            if (document.visibilityState === 'visible') fetchNotifications(user);
+        };
+        window.addEventListener('focus', refresh);
+        window.addEventListener('recruitment-interest-changed', refresh);
+        document.addEventListener('visibilitychange', refresh);
+        const timer = window.setInterval(refresh, 60000);
+        return () => {
+            window.removeEventListener('focus', refresh);
+            window.removeEventListener('recruitment-interest-changed', refresh);
+            document.removeEventListener('visibilitychange', refresh);
+            window.clearInterval(timer);
+        };
+    }, [user, fetchNotifications]);
 
     return {
         notifications,

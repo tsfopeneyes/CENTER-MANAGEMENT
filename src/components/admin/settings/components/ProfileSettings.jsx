@@ -46,7 +46,7 @@ const ProfileSettings = ({
                         type="password" 
                         value={newAdminPassword} 
                         onChange={(e) => setNewAdminPassword(e.target.value)} 
-                        placeholder="변경할 비밀번호 (4자리 이상)" 
+                        placeholder="변경할 비밀번호 (6자리 이상)"
                         className="w-full px-4 py-2.5 bg-[#f2f4f6] border border-transparent rounded-xl outline-none focus:bg-white focus:border-[#3182f6] focus:ring-4 focus:ring-[#3182f6]/10 transition-all font-semibold text-[#191f28] text-sm" 
                     />
                 </div>

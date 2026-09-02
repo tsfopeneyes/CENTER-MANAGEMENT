@@ -83,7 +83,11 @@ export const requestSupabaseFunction = async (functionName, body, attempts = 2, 
 
             const responseBody = await response.text();
             const result = responseBody ? JSON.parse(responseBody) : null;
-            if (!response.ok) throw new Error(result?.error || `요청을 처리하지 못했습니다. (${response.status})`);
+            if (!response.ok) {
+                const error = new Error(result?.error || `요청을 처리하지 못했습니다. (${response.status})`);
+                error.status = response.status;
+                throw error;
+            }
             return result;
         } catch (error) {
             lastError = error;

@@ -4,4 +4,4 @@ center_entrance | 4F 워크숍룸 | 7c96718f-ed2b-446f-bc57-ce0178f51078
 main_hall | 4F 회의실 | 7c96718f-ed2b-446f-bc57-ce0178f51078
 오픈아이즈센터 | 6F 멤버십 | 7c96718f-ed2b-446f-bc57-ce0178f51078
 cafe | 2,3F 라운지 | 7c96718f-ed2b-446f-bc57-ce0178f51078
-하이픈 5층 회의실 | 이높플레이스 | 06d8ca2b-a2b4-4fe8-a568-7d425cd2d0ca
+ENOUGH_PLACE | 이높플레이스 | 06d8ca2b-a2b4-4fe8-a568-7d425cd2d0ca

@@ -9,16 +9,16 @@ const SignUpSecurityInfo = ({ formData, setFormData, handleChange, agreements, s
                 <div className="relative border-b border-gray-200">
                     <AlertCircle className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-[#8B95A1]'}`} size={isKiosk ? 22 : 20} />
                     <input
-                        type="password" name="password" required minLength="4"
+                        type="password" name="password" required minLength="6"
                         value={formData.password} onChange={handleChange}
-                        placeholder="비밀번호 설정 (4자리 이상)"
+                        placeholder="비밀번호 설정 (6자리 이상)"
                         className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold ${isKiosk ? 'sm:py-4' : ''}`}
                     />
                 </div>
                 <div className="relative">
                     <CheckCircle className={`absolute left-4 top-1/2 -translate-y-1/2 ${isKiosk ? 'text-slate-300' : 'text-[#8B95A1]'}`} size={isKiosk ? 22 : 20} />
                     <input
-                        type="password" name="confirmPassword" required minLength="4"
+                        type="password" name="confirmPassword" required minLength="6"
                         value={formData.confirmPassword} onChange={handleChange}
                         placeholder="비밀번호 재입력"
                         className={`w-full pl-12 pr-4 py-3 bg-transparent outline-none font-bold text-sm text-[#191F28] placeholder-[#B0B8C1] placeholder:font-bold ${formData.confirmPassword && formData.password !== formData.confirmPassword ? 'bg-red-50 text-red-600' : ''} ${isKiosk ? 'sm:py-4' : ''}`}

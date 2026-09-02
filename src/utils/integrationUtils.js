@@ -33,6 +33,35 @@ const isSlackDeliveryConfirmed = (result) => {
     return payload?.results?.slack === 'sent';
 };
 
+const normalizeSurveyAnswers = (answers) => (Array.isArray(answers) ? answers : [answers])
+    .map(value => String(value || '').trim())
+    .filter(Boolean);
+
+export const buildVisitNotificationMessage = ({
+    type,
+    userName,
+    schoolName,
+    isGuest = false,
+    referralPath = '',
+    surveyQuestion = '',
+    surveyAnswers = []
+}) => {
+    const cleanName = String(userName || '알 수 없음').replace('(guest)', '').trim();
+    const cleanSchool = String(schoolName || '').trim();
+    const identity = cleanSchool && cleanSchool !== '-' ? `${cleanName} (${cleanSchool})` : cleanName;
+    const isCheckout = type === 'CHECKOUT';
+    const title = `[${isGuest ? 'GUEST ' : ''}${isCheckout ? 'CHECK-OUT' : 'CHECK-IN'}]`;
+    const identityLine = `${isCheckout ? '💙' : '💌'} ${identity}`;
+    const referralBlock = !isCheckout && referralPath
+        ? `\n\n🧭 방문 경로\n▪ ${referralPath}`
+        : '';
+    const answers = normalizeSurveyAnswers(surveyAnswers);
+    const surveyBlock = surveyQuestion && answers.length > 0
+        ? `\n\n${isCheckout ? '📝' : '🎯'} ${surveyQuestion}\n▪ ${answers.join('\n▪ ')}`
+        : '';
+    return `${title}\n${identityLine}${referralBlock}${surveyBlock}`;
+};
+
 export const sendCategoryNotification = async ({ category, message, lineTarget = 'haifn', sendLine = true, sendSlack = true }) => {
     if (areExternalNotificationsMuted()) return { muted: true };
     const [linePreference, slackPreference] = await Promise.all([
@@ -102,7 +131,7 @@ export const sendCategoryNotification = async ({ category, message, lineTarget =
 /**
  * Trigger Realtime LINE / Discord Checkin Notification
  */
-export const sendCheckinNotification = async ({ userId, userName, schoolName, locationName, studentRegion, isGuest = false, referralPath = '', purposes = [] }) => {
+export const sendCheckinNotification = async ({ userId, userName, schoolName, locationName, studentRegion, isGuest = false, referralPath = '', purposes = [], surveyQuestion = '', surveyAnswers }) => {
     if (areExternalNotificationsMuted()) return { muted: true };
     try {
         const targetLocName = locationName || (studentRegion === '강서' ? '이높플레이스' : '하이픈');
@@ -147,35 +176,12 @@ export const sendCheckinNotification = async ({ userId, userName, schoolName, lo
             }
         }
 
-        const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
-
-        let alertMessage = '';
-        if (isGuest) {
-            const cleanGuestName = (userName || '알 수 없음').replace('(guest)', '').trim();
-            const cleanSchool = schoolName || '-';
-            
-            let referralText = referralPath ? `\n🧭 방문 경로\n▪ ${referralPath}` : '';
-            let purposeText = '';
-
-            if (purposes && purposes.length > 0) {
-                const referralItems = purposes.filter(p => p.includes('추천') || p.includes('SNS') || p.includes('지나'));
-                const checkinItems = purposes.filter(p => !referralItems.includes(p));
-
-                if (referralItems.length > 0 && !referralText) {
-                    referralText = `\n🧭 방문 경로\n▪ ${referralItems.join('\n▪ ')}`;
-                }
-                if (checkinItems.length > 0) {
-                    purposeText = `\n🎯 방문 목적\n▪ ${checkinItems.join('\n▪ ')}`;
-                }
-            }
-
-            alertMessage = `[GUEST CHECK-IN]\n💌 ${cleanGuestName}(${cleanSchool})님이 게스트로 ${targetLocName}에 방문했어요 (${timeStr})${referralText}${purposeText}`;
-        } else {
-            const surveyText = (purposes && purposes.length > 0)
-                ? `\n🎯 방문 목적\n▪ ${purposes.join('\n▪ ')}`
-                : '';
-            alertMessage = `[CHECK-IN]\n💌 ${userName}님이 ${targetLocName}에 방문했어요 (${timeStr})${surveyText}`;
-        }
+        const finalAnswers = surveyAnswers ?? purposes;
+        const alertMessage = buildVisitNotificationMessage({
+            type: 'CHECKIN', userName, schoolName, isGuest, referralPath,
+            surveyQuestion: surveyQuestion || (normalizeSurveyAnswers(finalAnswers).length ? '방문 목적' : ''),
+            surveyAnswers: finalAnswers
+        });
 
         if (serverIntegrationsEnabled()) {
             await dispatchServerNotification({
@@ -252,7 +258,7 @@ export const sendCheckinNotification = async ({ userId, userName, schoolName, lo
 /**
  * Trigger Realtime LINE / Discord Checkout Notification
  */
-export const sendCheckoutNotification = async ({ userId, userName, schoolName, locationName, studentRegion, feedbackText = '', checkInTime = null }) => {
+export const sendCheckoutNotification = async ({ userId, userName, schoolName, locationName, studentRegion, isGuest = false, feedbackText = '', surveyQuestion = '', surveyAnswers, checkInTime = null }) => {
     if (areExternalNotificationsMuted()) return { muted: true };
     try {
         const targetLocName = locationName || (studentRegion === '강서' ? '이높플레이스' : '하이픈');
@@ -297,20 +303,12 @@ export const sendCheckoutNotification = async ({ userId, userName, schoolName, l
             }
         }
 
-        const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
-        const feedbackStr = feedbackText ? `\n▪ 이용 소감: ${feedbackText}` : '';
-        let durationStr = '';
-        if (checkInTime) {
-            const checkInTimestamp = new Date(checkInTime).getTime();
-            if (Number.isFinite(checkInTimestamp)) {
-                const durationMinutes = Math.max(1, Math.floor((Date.now() - checkInTimestamp) / (1000 * 60)));
-                const hours = Math.floor(durationMinutes / 60);
-                const minutes = durationMinutes % 60;
-                durationStr = `\n🕑 ${hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`} 이용`;
-            }
-        }
-
-        const alertMessage = `[CHECK-OUT]\n💙 ${userName}님이 ${targetLocName}에서 퇴실했어요 (${timeStr})${durationStr}${feedbackStr}`;
+        const finalAnswers = surveyAnswers ?? (feedbackText ? [feedbackText] : []);
+        const alertMessage = buildVisitNotificationMessage({
+            type: 'CHECKOUT', userName, schoolName, isGuest,
+            surveyQuestion: surveyQuestion || (normalizeSurveyAnswers(finalAnswers).length ? '이용 소감' : ''),
+            surveyAnswers: finalAnswers
+        });
 
         if (serverIntegrationsEnabled()) {
             await dispatchServerNotification({

@@ -141,3 +141,28 @@ export const onMessageListener = () =>
   });
 
 export { app, messaging };
+
+// Recruitment opt-ins store this device token only in their owner-protected
+// table. Do not reuse requestFirebaseToken's public users-table writes here.
+export const requestRecruitmentPushToken = async () => {
+    if (typeof window==='undefined' || !window.Notification || !messaging || !('serviceWorker' in navigator)) {
+        throw new Error('이 브라우저에서는 푸시 알림을 사용할 수 없습니다. 알림을 지원하는 브라우저나 설치된 앱에서 시도해주세요.');
+    }
+    const permission = window.Notification.permission==='granted'
+        ? 'granted' : await window.Notification.requestPermission();
+    if (permission!=='granted') throw new Error('알림을 받으려면 브라우저 알림을 허용해주세요. 아직 관심 등록은 저장하지 않았습니다.');
+    const vapidKey = import.meta.env.VITE_FIREBASE_VAPID_KEY;
+    if (!vapidKey) throw new Error('푸시 알림 설정을 준비 중입니다. 잠시 후 다시 시도해주세요.');
+    let timeout;
+    try {
+        return await Promise.race([
+            (async () => {
+                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                const token = await getToken(messaging,{vapidKey,serviceWorkerRegistration:registration});
+                if (!token) throw new Error('이 기기의 알림 등록을 완료하지 못했습니다. 다시 시도해주세요.');
+                return token;
+            })(),
+            new Promise((_,reject)=>{timeout=window.setTimeout(()=>reject(new Error('알림 설정 시간이 초과되었습니다. 다시 시도해주세요.')),20000);}),
+        ]);
+    } finally { window.clearTimeout(timeout); }
+};

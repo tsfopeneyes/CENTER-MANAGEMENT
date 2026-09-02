@@ -2,19 +2,33 @@ import React from 'react';
 import { Check, ChevronRight, Edit3, BookOpen, Coffee, Heart, Smile } from 'lucide-react';
 import { motion } from 'framer-motion';
 
-const PurposeSelectionModal = ({ isOpen, user, onComplete }) => {
+const PurposeSelectionModal = ({ isOpen, user, onComplete, surveyConfig }) => {
     const [selected, setSelected] = React.useState([]);
+    const [textAnswer, setTextAnswer] = React.useState('');
 
     React.useEffect(() => {
-        if (isOpen) setSelected([]);
+        if (isOpen) { setSelected([]); setTextAnswer(''); }
     }, [isOpen]);
 
-    const categories = [
+    const fallbackCategories = [
         { id: '개인 할 일', label: '개인 할 일', icon: Edit3, color: 'bg-blue-50 text-blue-600', active: 'bg-blue-600 text-white shadow-blue-200' },
         { id: '프로그램 참여', label: '프로그램 참여', icon: BookOpen, color: 'bg-indigo-50 text-indigo-600', active: 'bg-indigo-600 text-white shadow-indigo-200' },
         { id: '교제 및 휴식', label: '교제 및 휴식', icon: Coffee, color: 'bg-orange-50 text-orange-600', active: 'bg-orange-600 text-white shadow-orange-200' },
         { id: '스처쌤 만남', label: '스처쌤 만남', icon: Heart, color: 'bg-rose-50 text-rose-600', active: 'bg-rose-600 text-white shadow-rose-200' }
     ];
+    const categories = surveyConfig?.options?.length
+        ? surveyConfig.options.map((option, index) => ({
+            id: option.label,
+            label: option.label,
+            icon: [Edit3, BookOpen, Coffee, Heart][index % 4],
+            color: 'bg-blue-50 text-blue-600',
+            active: 'bg-blue-600 text-white shadow-blue-200'
+        }))
+        : fallbackCategories;
+    const isTextSurvey = surveyConfig?.mode === 'FEEDBACK_QA';
+    const question = isTextSurvey
+        ? (surveyConfig?.qaQuestion || surveyConfig?.question)
+        : surveyConfig?.question;
 
     const toggle = (id) => {
         setSelected(prev =>
@@ -40,11 +54,11 @@ const PurposeSelectionModal = ({ isOpen, user, onComplete }) => {
                     <div className="inline-flex items-center justify-center w-20 h-20 bg-blue-50 rounded-3xl mb-6 shadow-sm border border-blue-100/50">
                         <Smile className="text-blue-600" size={40} />
                     </div>
-                    <h3 className="text-3xl sm:text-4xl font-black text-slate-800 mb-3 tracking-tight">오늘 센터에서<br />어떤 활동을 했나요?</h3>
-                    <p className="text-slate-400 font-bold text-lg">중복 선택이 가능해요! ✨</p>
+                    <h3 className="text-3xl sm:text-4xl font-black text-slate-800 mb-3 tracking-tight">{question || <>오늘 센터에서<br />어떤 활동을 했나요?</>}</h3>
+                    <p className="text-slate-400 font-bold text-lg">{isTextSurvey ? '자유롭게 의견을 남겨 주세요.' : '중복 선택이 가능해요!'}</p>
                 </div>
 
-                <div className="grid grid-cols-2 gap-4 sm:gap-6 mb-12">
+                {isTextSurvey ? <textarea value={textAnswer} onChange={event => setTextAnswer(event.target.value)} placeholder={surveyConfig?.qaPlaceholder || '자유롭게 작성해 주세요'} rows={5} className="w-full mb-12 rounded-3xl border-2 border-slate-100 bg-slate-50 p-5 text-lg font-bold outline-none focus:border-blue-500" /> : <div className="grid grid-cols-2 gap-4 sm:gap-6 mb-12">
                     {categories.map((cat) => {
                         const Icon = cat.icon;
                         const isActive = selected.includes(cat.id);
@@ -69,12 +83,12 @@ const PurposeSelectionModal = ({ isOpen, user, onComplete }) => {
                             </button>
                         );
                     })}
-                </div>
+                </div>}
 
                 <button
-                    disabled={selected.length === 0}
-                    onClick={() => onComplete(selected)}
-                    className={`w-full py-6 rounded-3xl font-black text-xl transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 ${selected.length > 0
+                    disabled={isTextSurvey ? !textAnswer.trim() : selected.length === 0}
+                    onClick={() => onComplete(isTextSurvey ? [textAnswer.trim()] : selected)}
+                    className={`w-full py-6 rounded-3xl font-black text-xl transition-all shadow-xl active:scale-95 flex items-center justify-center gap-3 ${(isTextSurvey ? textAnswer.trim() : selected.length > 0)
                         ? 'bg-slate-800 text-white hover:bg-slate-900 shadow-slate-200'
                         : 'bg-slate-100 text-slate-300 cursor-not-allowed shadow-none'
                         }`}

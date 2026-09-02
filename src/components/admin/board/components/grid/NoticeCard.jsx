@@ -1,9 +1,13 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { parseISO } from 'date-fns';
-import { RefreshCw, CheckCircle2, Eye, Edit2, Trash2, ImageIcon, Calendar, Clock } from 'lucide-react';
+import { ImageIcon, Calendar, Clock } from 'lucide-react';
+import NoticeCardActions from './NoticeCardActions';
 import { CATEGORIES } from '../../utils/constants';
 import { parseDurationToMinutes, formatKoreanTimeRange } from '../../../../../utils/dateUtils';
+import RecruitmentBadge from '../../../../student/components/RecruitmentBadge';
+import { useCurrentTime } from '../../../../../hooks/useCurrentTime';
+import { getRecruitment } from '../../../../../utils/programRecruitment';
 
 const NoticeCard = ({ 
     notice, 
@@ -17,6 +21,8 @@ const NoticeCard = ({
     onEdit, 
     onDelete 
 }) => {
+    const recruitmentNow = useCurrentTime();
+    const recruitment = getRecruitment(notice, recruitmentNow);
     const formatProgramDays = (daysArray) => {
         if (!daysArray || daysArray.length === 0) return '요일 미지정';
         const labels = ['일', '월', '화', '수', '목', '금', '토'];
@@ -61,7 +67,6 @@ const NoticeCard = ({
     const isCompleted = notice.program_status === 'COMPLETED' || isEnded;
     const isCancelled = notice.program_status === 'CANCELLED';
     const isActive = (notice.program_status === 'ACTIVE' || !notice.program_status) && !isCompleted && !isCancelled;
-    const hasFeedback = (noticeStats[notice.id]?.feedbackCount || 0) > 0;
 
     const getDeadlineWarning = () => {
         if (!notice.recruitment_deadline) return null;
@@ -87,6 +92,7 @@ const NoticeCard = ({
 
     return (
         <div className={cardClass}>
+            {notice.category === 'PROGRAM' && <div className="mb-2"><RecruitmentBadge program={notice} now={recruitmentNow} showStart />{recruitment.preparing && <p className="text-[10px] font-semibold text-amber-700 mt-1">상세 정보 미작성 · 신청 대기</p>}</div>}
             <div className={contentClass}>
                 {viewMode !== 'list' && (
                     <div onClick={() => onViewDetails(notice)} className={thumbClass}>
@@ -205,113 +211,9 @@ const NoticeCard = ({
                 </div>
             </div>
 
-            {/* Actions & Stats */}
-            <div className="mt-auto space-y-2 md:space-y-3">
-                {(mode === CATEGORIES.PROGRAM || notice.is_poll) && (
-                    <div className={`p-2.5 rounded-[16px] flex justify-between items-center transition-all border ${
-                        isActive 
-                            ? 'bg-[#f9fafb] border-[#f2f4f6]' 
-                            : 'bg-[#f9fafb]/60 border-[#f2f4f6]/60 opacity-70'
-                    } `}>
-                        <div className={`flex gap-3 font-semibold items-center text-[#4e5968] ${viewMode === 'smaller' ? 'text-[9px]' : 'text-[10px] md:text-[11px]'}`}>
-                            {notice.is_poll && notice.is_recruiting ? (
-                                <>
-                                    <span>신청 <span className={isActive ? "text-[#1b64da] font-bold" : "text-[#8b95a1] font-bold"}>{noticeStats[notice.id]?.JOIN || 0}</span></span>
-                                    <span>투표 <span className={isActive ? "text-[#7c3aed] font-bold" : "text-[#8b95a1] font-bold"}>{noticeStats[notice.id]?.pollTotal || 0}</span></span>
-                                </>
-                            ) : notice.is_poll ? (
-                                <span>
-                                    투표 <span className={isActive ? "text-[#7c3aed] font-bold" : "text-[#8b95a1] font-bold"}>{noticeStats[notice.id]?.pollTotal || 0}</span>
-                                </span>
-                            ) : notice.is_recruiting ? (
-                                <>
-                                    <span>신청 <span className={isActive ? "text-[#1b64da] font-bold" : "text-[#8b95a1] font-bold"}>{noticeStats[notice.id]?.JOIN || 0}</span></span>
-                                    {viewMode !== 'smaller' && <span className="text-[#8b95a1] font-medium">대기 <span className="text-[#ff6b00] font-bold">{noticeStats[notice.id]?.WAITLIST || 0}</span></span>}
-                                </>
-                            ) : (
-                                <span className={isActive ? "text-[#333d4b] font-semibold" : "text-[#8b95a1] font-semibold"}>오픈 프로그램</span>
-                            )}
-                        </div>
-
-                        {notice.is_poll && (notice.category === 'PROGRAM' || notice.is_recruiting || mode === CATEGORIES.PROGRAM) ? (
-                            <div className="flex items-center gap-1.5">
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, 'attendance'); }} 
-                                    className="text-[9px] md:text-[10px] px-2.5 py-1 rounded-xl font-semibold transition-all bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff] active:scale-95"
-                                >
-                                    명단
-                                </button>
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, 'poll'); }} 
-                                    className="text-[9px] md:text-[10px] px-2.5 py-1 rounded-xl font-semibold transition-all bg-purple-100 text-purple-700 hover:bg-purple-200 active:scale-95"
-                                >
-                                    투표결과
-                                </button>
-                                {hasFeedback && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onOpenFeedback(notice); }}
-                                        className="text-[9px] md:text-[10px] px-2.5 py-1 rounded-xl font-semibold transition-all bg-amber-100 text-amber-700 hover:bg-amber-200 active:scale-95"
-                                    >
-                                        피드백
-                                    </button>
-                                )}
-                            </div>
-                        ) : (
-                            <div className="flex items-center gap-1.5">
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, notice.is_poll ? 'poll' : 'attendance'); }} 
-                                    className={`text-[9px] md:text-[10px] px-3 py-1.5 rounded-xl font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] ${
-                                        isActive 
-                                            ? 'bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff]' 
-                                            : 'bg-[#f2f4f6] text-[#4e5968] hover:bg-[#e4e8eb]'
-                                    }`}
-                                >
-                                    {notice.is_poll ? '투표결과' : '명단'}
-                                </button>
-                                {hasFeedback && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); onOpenFeedback(notice); }}
-                                        className="text-[9px] md:text-[10px] px-2.5 py-1.5 rounded-xl font-semibold transition-all bg-amber-100 text-amber-700 hover:bg-amber-200 active:scale-[0.98]"
-                                    >
-                                        피드백
-                                    </button>
-                                )}
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                <div className={`flex items-center justify-between lg:gap-2 pt-2 md:pt-3 border-t border-[#f2f4f6]`}>
-                    <div className="flex items-center gap-1 text-[11px] font-bold text-gray-500 bg-gray-50 px-2 py-1 rounded-md" title="이용자 조회수 (스탭 제외)">
-                        <Eye size={12} className="text-gray-400" />
-                        <span>조회 {notice.view_count || 0}회</span>
-                    </div>
-                    <div className="flex items-center gap-1 shrink-0">
-                        {mode === CATEGORIES.PROGRAM && (
-                            <>
-                                {isActive ? (
-                                    <button onClick={() => onStatusChange(notice.id, 'COMPLETED')} className="p-1 sm:p-1.5 md:p-2 text-gray-400 hover:text-green-600 hover:bg-green-50 rounded-lg transition-all" title="완료 처리">
-                                        <CheckCircle2 size={viewMode === 'large' ? 16 : 14} />
-                                    </button>
-                                ) : (
-                                    <button onClick={() => onStatusChange(notice.id, 'ACTIVE')} className="p-1 sm:p-1.5 md:p-2 text-blue-500 hover:bg-blue-50 rounded-lg transition-all" title="되돌리기">
-                                        <RefreshCw size={viewMode === 'large' ? 16 : 14} />
-                                    </button>
-                                )}
-                            </>
-                        )}
-                        <button onClick={() => onViewDetails(notice)} className="p-1 sm:p-1.5 md:p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="미리보기">
-                            <Eye size={viewMode === 'large' ? 16 : 14} />
-                        </button>
-                        <button onClick={() => onEdit(notice)} className="p-1 sm:p-1.5 md:p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-all" title="수정">
-                            <Edit2 size={viewMode === 'list' ? 18 : viewMode === 'smaller' ? 14 : 14} />
-                        </button>
-                        <button onClick={() => onDelete(notice.id)} className="p-1.5 md:p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all" title="삭제">
-                            <Trash2 size={viewMode === 'list' ? 18 : viewMode === 'smaller' ? 14 : 14} />
-                        </button>
-                    </div>
-                </div>
-            </div>
+            <NoticeCardActions notice={notice} viewMode={viewMode} mode={mode} noticeStats={noticeStats} isActive={isActive}
+                onViewDetails={onViewDetails} onOpenParticipants={onOpenParticipants} onOpenFeedback={onOpenFeedback}
+                onStatusChange={onStatusChange} onEdit={onEdit} onDelete={onDelete} />
         </div>
     );
 };

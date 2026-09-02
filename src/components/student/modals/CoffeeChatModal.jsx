@@ -5,22 +5,14 @@ import { X, Heart, Smile, Users, HelpCircle, Sparkles } from 'lucide-react';
 import { supabase } from '../../../supabaseClient';
 import { dispatchSlackAlert } from '../../../utils/serverIntegration';
 import { requestSupabaseFunction } from '../../../utils/supabaseRest';
+import useModalClose from '../../../hooks/useModalClose';
 
 const CoffeeChatModal = ({ staff, student, onClose, onSuccess, tutorialMode = false }) => {
+    useModalClose(true, onClose);
     const [submitting, setSubmitting] = useState(false);
     const [selectedTopics, setSelectedTopics] = useState([]);
     const [message, setMessage] = useState('');
     const [tutorialComplete, setTutorialComplete] = useState(false);
-
-    useEffect(() => {
-        const handleKeyDown = (e) => {
-            if (e.key === 'Escape') {
-                onClose();
-            }
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [onClose]);
 
     const topics = [
         { name: '신앙', icon: Heart },

@@ -5,6 +5,8 @@ import confetti from 'canvas-confetti';
 import { TERMS_VERSION } from '../constants/appConstants';
 import { areExternalNotificationsMuted, dispatchServerNotification, dispatchVisitSlackAlert, serverIntegrationsEnabled } from '../utils/serverIntegration';
 import { getTodayVisitState, recordVisitEvent } from '../utils/visitLifecycle';
+import { loadAssignedSurvey } from '../utils/surveyAssignments';
+import { buildVisitNotificationMessage } from '../utils/integrationUtils';
 
 const sendRealtimeNotification = async (user, type, location, metadata = {}) => {
     if (areExternalNotificationsMuted()) return { muted: true };
@@ -105,37 +107,25 @@ const sendRealtimeNotification = async (user, type, location, metadata = {}) => 
         console.error("Failed to check branch for notification:", err);
     }
 
-    const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
     let message = '';
     
     if (type === 'CHECKIN') {
         const isGuest = user.user_group === '게스트' || user.name?.includes('(guest)');
-        if (isGuest) {
-            const cleanName = user.name.replace('(guest)', '').trim();
-            const cleanSchool = user.school || '-';
-            const surveyText = metadata.survey 
-                ? `\n🧭 방문 경로\n▪ ${metadata.survey.split(', ').join('\n▪ ')}` 
-                : '';
-            message = `[GUEST CHECK-IN]\n💌 ${cleanName}(${cleanSchool})님이 게스트로 ${location.name}에 방문했어요 (${timeStr})${surveyText}`;
-        } else {
-            const surveyText = metadata.survey 
-                ? `\n▪ ${metadata.survey.split(', ').join('\n▪ ')}` 
-                : '';
-            message = `[CHECK-IN]\n💌 ${user.name}님이 ${location.name}에 방문했어요 (${timeStr})${surveyText}`;
-        }
+        message = buildVisitNotificationMessage({
+            type: 'CHECKIN', userName: user.name, schoolName: user.school, isGuest,
+            referralPath: metadata.referralPath || '',
+            surveyQuestion: metadata.surveyQuestion || (metadata.survey ? '방문 목적' : ''),
+            surveyAnswers: metadata.surveyAnswers || (metadata.survey ? metadata.survey.split(', ') : [])
+        });
     } else if (type === 'CHECKOUT') {
         const isGuest = user.user_group === '게스트' || user.name?.includes('(guest)');
-        const durationText = metadata.duration ? `\n🕑 ${metadata.duration} 이용` : '';
-        const purposeText = metadata.purpose
-            ? `\n▪ ${metadata.purpose.split(', ').join('\n▪ ')}`
-            : '';
-        if (isGuest) {
-            const cleanName = user.name.replace('(guest)', '').trim();
-            message = `[GUEST CHECK-OUT]\n💙 ${cleanName}님이 ${location.name}에서 퇴실했어요 (${timeStr})${durationText}${purposeText}`;
-        } else {
-            message = `[CHECK-OUT]\n💙 ${user.name}님이 ${location.name}에서 퇴실했어요 (${timeStr})${durationText}${purposeText}`;
-        }
+        message = buildVisitNotificationMessage({
+            type: 'CHECKOUT', userName: user.name, schoolName: user.school, isGuest,
+            surveyQuestion: metadata.surveyQuestion || (metadata.purpose ? '이용 소감' : ''),
+            surveyAnswers: metadata.surveyAnswers || (metadata.purpose ? metadata.purpose.split(', ') : [])
+        });
     } else {
+        const timeStr = new Date().toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
         message = `🔔 [이동] ${user.name}님이 ${location.name}에 이동했습니다. (${timeStr})`;
     }
 
@@ -229,6 +219,7 @@ export const useKioskManager = (navigate) => {
     const [pendingCheckinFeedback, setPendingCheckinFeedback] = useState(null);
     const [surveySelections, setSurveySelections] = useState([]);
     const [checkinSurveyConfig, setCheckinSurveyConfig] = useState(null);
+    const [checkoutSurveyConfig, setCheckoutSurveyConfig] = useState(null);
 
     // Scanner Settings
     const [facingMode, setFacingMode] = useState('environment'); // 'environment' (back) or 'user' (front)
@@ -240,18 +231,31 @@ export const useKioskManager = (navigate) => {
     useEffect(() => {
         const fetchLocs = async () => {
             const { data } = await supabase.from('locations').select('*').order('name');
-            if (data) setLocations(data.filter(l => l.is_active !== false));
+            if (data) {
+                const activeLocations = data.filter(l => l.is_active !== false);
+                setLocations(activeLocations);
+
+                const savedLoc = localStorage.getItem('kiosk_location');
+                if (savedLoc) {
+                    try {
+                        const parsed = JSON.parse(savedLoc);
+                        const currentLocation = activeLocations.find(loc => loc.id === parsed?.id)
+                            || activeLocations.find(loc => loc.name === parsed?.name);
+                        if (currentLocation) {
+                            setSelectedLocation(currentLocation);
+                            localStorage.setItem('kiosk_location', JSON.stringify(currentLocation));
+                        } else {
+                            localStorage.removeItem('kiosk_location');
+                            setSelectedLocation(null);
+                        }
+                    } catch (e) {
+                        localStorage.removeItem('kiosk_location');
+                        console.error("Failed to parse saved location", e);
+                    }
+                }
+            }
         };
         fetchLocs();
-
-        const savedLoc = localStorage.getItem('kiosk_location');
-        if (savedLoc) {
-            try {
-                setSelectedLocation(JSON.parse(savedLoc));
-            } catch (e) {
-                console.error("Failed to parse saved location", e);
-            }
-        }
 
         const fetchBadges = async () => {
             try {
@@ -298,6 +302,21 @@ export const useKioskManager = (navigate) => {
         const timer = setInterval(() => setCurrentTime(new Date()), 1000);
         return () => clearInterval(timer);
     }, []);
+
+    useEffect(() => {
+        if (!selectedLocation?.name) return;
+        let cancelled = false;
+        Promise.all([
+            loadAssignedSurvey({ surveyType: 'CHECKIN', locationName: selectedLocation.name }),
+            loadAssignedSurvey({ surveyType: 'CHECKOUT', locationName: selectedLocation.name })
+        ]).then(([checkin, checkout]) => {
+            if (cancelled) return;
+            setCheckinSurveyConfig(checkin?.config ? { ...checkin.config, _surveyId: checkin.id || checkin.config._surveyId || null } : null);
+            setCheckoutSurveyConfig(checkout?.config ? { ...checkout.config, _surveyId: checkout.id || checkout.config._surveyId || null } : null);
+        })
+            .catch(error => console.error('Failed to resolve kiosk survey assignment:', error));
+        return () => { cancelled = true; };
+    }, [selectedLocation?.name]);
 
     const handleSetLocation = (loc) => {
         setSelectedLocation(loc);
@@ -503,7 +522,7 @@ export const useKioskManager = (navigate) => {
             }
 
             // Send real-time notification (Delay for checkin-survey or checkout-purpose)
-            const shouldDelayNotification = nextType === 'CHECKOUT' || (nextType === 'CHECKIN' && isHaifnBranch);
+            const shouldDelayNotification = nextType === 'CHECKOUT' || (nextType === 'CHECKIN' && Boolean(checkinSurveyConfig));
             if (!shouldDelayNotification) {
                 sendRealtimeNotification(user, nextType, selectedLocation);
             }
@@ -544,7 +563,25 @@ export const useKioskManager = (navigate) => {
                     ? '🎉 1시간 이상 체류하여 1 하이픈이 적립되었습니다!'
                     : '';
 
-                // Intercept Checkout to ask for purpose
+                if (!checkoutSurveyConfig) {
+                    sendRealtimeNotification(user, 'CHECKOUT', selectedLocation, {
+                        duration: hours > 0 ? `${hours}시간 ${mins}분` : `${mins}분`,
+                        purpose: ''
+                    });
+                    setResult({
+                        type: 'SUCCESS',
+                        message: `${user.name}님 다음에 또 만나요!`,
+                        subMessage: earnedMsg || '퇴실이 완료되었습니다.',
+                        color: 'bg-indigo-600'
+                    });
+                    setStatus('IDLE');
+                    setPincode('');
+                    setMatchingUsers([]);
+                    setTimeout(() => setResult(null), 3000);
+                    return;
+                }
+
+                // Intercept checkout only when this center has an assignment.
                 setPendingCheckoutUser(user);
                 setCheckoutVisitDate(getKSTDateString(new Date()));
                 setCheckoutHaifnMsg(earnedMsg);
@@ -580,7 +617,7 @@ export const useKioskManager = (navigate) => {
                     sub += earnedCheckinMsg;
                 }
 
-                if (isHaifnBranch) {
+                if (checkinSurveyConfig) {
                     // Intercept CHECKIN to ask survey
                     setPendingKioskUser(user);
                     setPendingCheckinFeedback({
@@ -677,20 +714,28 @@ export const useKioskManager = (navigate) => {
             setStatus('LOADING');
             const purposeString = purposes.join(', ');
 
-            // Attempt to save the visit purpose
-            const { error } = await supabase.from('visit_notes').upsert({
-                user_id: pendingCheckoutUser.id,
-                visit_date: checkoutVisitDate,
-                purpose: purposeString,
-                updated_at: new Date().toISOString()
-            }, { onConflict: 'user_id,visit_date' });
-
-            if (error) throw error;
+            if (checkoutSurveyConfig) {
+                const isText = checkoutSurveyConfig.mode === 'FEEDBACK_QA';
+                const responsePayload = {
+                    user_id: pendingCheckoutUser.id,
+                    location_id: selectedLocation?.id || null,
+                    survey_type: 'CHECKOUT',
+                    mode: checkoutSurveyConfig.mode || 'SURVEY',
+                    selections: isText ? [] : purposes,
+                    text_answer: isText ? (purposes[0] || '') : null,
+                    survey_id: checkoutSurveyConfig._surveyId || null,
+                    survey_snapshot: checkoutSurveyConfig
+                };
+                const { error: surveyError } = await supabase.from('checkin_surveys').insert([responsePayload]);
+                if (surveyError) throw surveyError;
+            }
 
             // Trigger the delayed checkout LINE notification
             sendRealtimeNotification(pendingCheckoutUser, 'CHECKOUT', selectedLocation, {
                 duration: checkoutDuration,
-                purpose: purposeString
+                purpose: purposeString,
+                surveyQuestion: checkoutSurveyConfig?.question || checkoutSurveyConfig?.qaQuestion || '',
+                surveyAnswers: purposes
             });
 
             // 1. Fetch branch name
@@ -864,7 +909,13 @@ export const useKioskManager = (navigate) => {
                     const { error } = await supabase.from('checkin_surveys').insert([{
                         user_id: pendingKioskUser.id,
                         location_id: selectedLocation.id,
-                        selections: selections
+                        survey_type: 'CHECKIN',
+                        mode: checkinSurveyConfig?.mode || 'SURVEY',
+                        selections: selections,
+                        ...(checkinSurveyConfig?._surveyId ? {
+                            survey_id: checkinSurveyConfig._surveyId,
+                            survey_snapshot: checkinSurveyConfig
+                        } : {})
                     }]);
                     if (error) {
                         console.error('Database checkin_surveys insert warning:', error.message);
@@ -888,7 +939,9 @@ export const useKioskManager = (navigate) => {
             }
             const surveyString = surveyLabels.join(', ');
             sendRealtimeNotification(pendingKioskUser, 'CHECKIN', selectedLocation, {
-                survey: surveyString
+                survey: surveyString,
+                surveyQuestion: checkinSurveyConfig?.question || checkinSurveyConfig?.qaQuestion || '',
+                surveyAnswers: surveyLabels
             });
 
             // Load feedback result calculated during processKioskAction
@@ -906,7 +959,12 @@ export const useKioskManager = (navigate) => {
             });
 
             setSurveySelections(selections);
-            setStatus('SHOW_RECOMMENDATIONS');
+            if (checkinSurveyConfig?.recommendationsEnabled !== false) {
+                setStatus('SHOW_RECOMMENDATIONS');
+            } else {
+                setStatus('IDLE');
+                setPendingKioskUser(null);
+            }
             setPincode('');
             setMatchingUsers([]);
 
@@ -1072,7 +1130,7 @@ export const useKioskManager = (navigate) => {
         processKioskAction, handleVerifyNumeric, handleNumberClick, handleQrScan, handleIdentifyUser, resetState,
         handleKioskTermsAgree, handleCheckoutPurpose, handleSurveySubmit,
         // Checkin Survey States
-        checkinSurveyConfig, surveySelections, pendingCheckinFeedback,
+        checkinSurveyConfig, checkoutSurveyConfig, surveySelections, pendingCheckinFeedback,
         // Missing states for checkout purpose
         pendingCheckoutUser, checkoutVisitDate
     };

@@ -4,6 +4,8 @@ import { ClipboardCheck, Check, X, Calendar, MapPin, Trash2, Plus, Edit2, ImageP
 import AdminPageHeader from '../common/AdminPageHeader';
 import { format } from 'date-fns';
 import AdminBookingEditModal from './AdminBookingEditModal';
+import { isAccountAuthEnabled } from '../../../auth/accountAuthRuntime';
+import { cachedAccountProfileId, uploadAccountImage } from '../../../auth/accountMedia';
 
 const getUserAge = (birth) => {
     const normalizedBirth = String(birth || '').replace(/\D/g, '');
@@ -596,6 +598,9 @@ const AdminRentals = () => {
                                         if (!file) return;
                                         setUploadingImage(true);
                                         try {
+                                            if(isAccountAuthEnabled()){
+                                                setSpaceImage(await uploadAccountImage({profileId:cachedAccountProfileId(),kind:'rental',file}));return;
+                                            }
                                             const fileName = `rentals/${Date.now()}_${file.name}`;
                                             const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, file);
                                             if (uploadError) throw uploadError;

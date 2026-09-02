@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '../../../../supabaseClient';
 import { Edit2, ShieldAlert, Image as ImageIcon, Plus, Trash2, Save, X } from 'lucide-react';
 import { compressImage } from '../../../../utils/imageUtils';
+import { isAccountAuthEnabled } from '../../../../auth/accountAuthRuntime';
+import { cachedAccountProfileId, uploadAccountImage } from '../../../../auth/accountMedia';
 
 const compressImageLocal = async (file) => {
     // Fallback if the path above is wrong. Actually, let's just upload directly for simplicity or import the real one.
@@ -92,6 +94,8 @@ const StoreItems = () => {
                 const fileExt = imageFile.name.split('.').pop();
                 const fileName = `store_${Date.now()}_${Math.random()}.${fileExt}`;
 
+                if(isAccountAuthEnabled())finalImageUrl=await uploadAccountImage({profileId:cachedAccountProfileId(),kind:'store',file:compressed});
+                else {
                 const { error: uploadErr } = await supabase.storage
                     .from('notice-images') // Reusing notice-images bucket for simplicity
                     .upload(fileName, compressed);
@@ -103,6 +107,7 @@ const StoreItems = () => {
                     .getPublicUrl(fileName);
                 
                 finalImageUrl = publicUrl;
+                }
             }
 
             const payload = {

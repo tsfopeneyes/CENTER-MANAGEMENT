@@ -1,16 +1,39 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 import { supabase } from '../../supabaseClient';
+import { fetchAllPages } from '../../utils/fetchAllPages';
 
 export const useDashboardCalendar = (user) => {
     const [adminSchedules, setAdminSchedules] = useState([]);
     const [calendarCategories, setCalendarCategories] = useState([]);
 
+    useEffect(() => {
+        let active = true;
+        const refreshColors = async () => {
+            try {
+                const { data, error } = await supabase.from('calendar_categories').select('*');
+                if (active && !error && data) setCalendarCategories(data);
+            } catch { /* Keep the last saved palette on temporary network errors. */ }
+        };
+        const onVisible = () => { if (document.visibilityState === 'visible') refreshColors(); };
+        window.addEventListener('focus', refreshColors);
+        window.addEventListener('calendar-categories-updated', refreshColors);
+        document.addEventListener('visibilitychange', onVisible);
+        const timer = window.setInterval(onVisible, 60000);
+        return () => {
+            active = false;
+            window.removeEventListener('focus', refreshColors);
+            window.removeEventListener('calendar-categories-updated', refreshColors);
+            document.removeEventListener('visibilitychange', onVisible);
+            window.clearInterval(timer);
+        };
+    }, []);
+
     const fetchSchedules = useCallback(async () => {
         try {
             const [catRes, schRes, rentalRes] = await Promise.all([
                 supabase.from('calendar_categories').select('*'),
-                supabase.from('admin_schedules').select('*'),
-                supabase.from('rental_bookings').select('*, rentals(name, schools(region))').eq('status', 'APPROVED')
+                fetchAllPages(() => supabase.from('admin_schedules').select('*').order('id')).then(data => ({ data })),
+                fetchAllPages(() => supabase.from('rental_bookings').select('*, rentals(name, schools(region))').eq('status', 'APPROVED').order('id')).then(data => ({ data }))
             ]);
             if (catRes.data) setCalendarCategories(catRes.data);
             

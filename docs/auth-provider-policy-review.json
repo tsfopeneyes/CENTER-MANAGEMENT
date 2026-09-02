@@ -1,0 +1,22 @@
+{
+  "project": "erecqalsxoxrufggvmcc",
+  "source": "Read-only Supabase dashboard Email provider dialog and upstream Auth source",
+  "dashboardUrl": "https://supabase.com/dashboard/project/erecqalsxoxrufggvmcc/auth/providers",
+  "checkedDateKst": "2026-08-31",
+  "productionMutation": false,
+  "dashboardMinimumLengthHelp": 6,
+  "dashboardMinimumLengthInputValue": "",
+  "explicitProductionNumericSettingVerified": false,
+  "securePasswordChangeEnabled": false,
+  "requireCurrentPasswordEnabled": false,
+  "signupsEnabled": true,
+  "emailConfirmationRequired": false,
+  "anonymousSigninsEnabled": false,
+  "upstreamSource": "https://github.com/supabase/auth/blob/master/internal/conf/configuration.go",
+  "upstreamRule": "Configured password minimum below default minimum is raised to the default minimum",
+  "existingUserExperienceMinimumLength": 4,
+  "existingAdministratorResetLength": 4,
+  "nativeRawPasswordTransitionCompatible": false,
+  "productionPasswordWriteAttempted": false,
+  "resolution": "Unresolved architecture/policy conflict; do not activate native raw-password path or change existing UI policy"
+}

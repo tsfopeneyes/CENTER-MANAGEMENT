@@ -2,6 +2,11 @@
   "hosting": {
     "site": "sci-center-6f265",
     "public": "dist",
+    "predeploy": [
+      "npm run build",
+      "node scripts/check-account-auth-release.mjs",
+      "node --env-file=.env scripts/check-account-auth-readiness.mjs"
+    ],
     "ignore": [
       "firebase.json",
       "**/.*",

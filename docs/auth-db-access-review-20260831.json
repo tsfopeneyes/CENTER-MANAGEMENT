@@ -1,0 +1,159 @@
+{
+  "project": "erecqalsxoxrufggvmcc",
+  "source": "Supabase dashboard SQL editor, BEGIN READ ONLY / ROLLBACK",
+  "productionMutation": false,
+  "grants": [
+    {
+      "role": "anon",
+      "privilege": "INSERT"
+    },
+    {
+      "role": "anon",
+      "privilege": "SELECT"
+    },
+    {
+      "role": "anon",
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "anon",
+      "privilege": "DELETE"
+    },
+    {
+      "role": "anon",
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "anon",
+      "privilege": "REFERENCES"
+    },
+    {
+      "role": "anon",
+      "privilege": "TRIGGER"
+    },
+    {
+      "role": "authenticated",
+      "privilege": "INSERT"
+    },
+    {
+      "role": "authenticated",
+      "privilege": "SELECT"
+    },
+    {
+      "role": "authenticated",
+      "privilege": "UPDATE"
+    },
+    {
+      "role": "authenticated",
+      "privilege": "DELETE"
+    },
+    {
+      "role": "authenticated",
+      "privilege": "TRUNCATE"
+    },
+    {
+      "role": "authenticated",
+      "privilege": "REFERENCES"
+    },
+    {
+      "role": "authenticated",
+      "privilege": "TRIGGER"
+    }
+  ],
+  "policies": [
+    {
+      "cmd": "INSERT",
+      "name": "Anon can insert users",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "using": null
+    },
+    {
+      "cmd": "SELECT",
+      "name": "Anyone can read users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "using": "true"
+    },
+    {
+      "cmd": "ALL",
+      "name": "Enable all access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "using": "true"
+    },
+    {
+      "cmd": "DELETE",
+      "name": "Users can delete own row",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "using": "(auth.uid() = id)"
+    },
+    {
+      "cmd": "UPDATE",
+      "name": "Users can update own row",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "using": "(auth.uid() = id)"
+    },
+    {
+      "cmd": "UPDATE",
+      "name": "본인의 프로필만 수정할 수 있습니다.",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "using": "(auth.uid() = id)"
+    },
+    {
+      "cmd": "ALL",
+      "name": "사용자 정보 관리 허용",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "using": "true"
+    },
+    {
+      "cmd": "SELECT",
+      "name": "인증된 사용자는 사용자 정보를 볼 수 있습니다",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "using": "true"
+    }
+  ],
+  "constraints": [
+    {
+      "name": "users_auth_user_id_key",
+      "definition": "UNIQUE (auth_user_id)"
+    },
+    {
+      "name": "users_pkey",
+      "definition": "PRIMARY KEY (id)"
+    }
+  ],
+  "auth_users_columns": [
+    "id",
+    "email",
+    "raw_app_meta_data",
+    "banned_until",
+    "is_anonymous"
+  ],
+  "auth_sessions_columns": [
+    "id",
+    "user_id",
+    "not_after"
+  ]
+}

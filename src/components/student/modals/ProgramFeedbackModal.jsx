@@ -4,8 +4,10 @@ import { X, Star } from 'lucide-react';
 import { feedbackApi } from '../../../api/feedbackApi';
 import { haifnApi } from '../../../api/haifnApi';
 import { supabase } from '../../../supabaseClient';
+import useModalClose from '../../../hooks/useModalClose';
 
 const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess }) => {
+    useModalClose(!!program, onClose);
     const [submitting, setSubmitting] = useState(false);
     const [currentFeedback, setCurrentFeedback] = useState(existingFeedback || null);
 
@@ -182,7 +184,7 @@ const ProgramFeedbackModal = ({ program, existingFeedback, onClose, onSuccess })
 
             const data = await feedbackApi.upsertFeedback(payload);
 
-            if (!currentFeedback && program.haifn_reward > 0) {
+            if (!currentFeedback && program.is_review_required && program.haifn_reward > 0) {
                 try {
                     await haifnApi.grantProgramReward(
                         user.id, 

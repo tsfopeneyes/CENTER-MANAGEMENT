@@ -4,18 +4,19 @@ import { ko } from 'date-fns/locale';
 import { ChevronLeft, ChevronRight, Plus, Filter, Check, Settings, Palette, Calendar as CalendarIcon } from 'lucide-react';
 import { AnimatePresence } from 'framer-motion';
 import { useAdminCalendar } from './hooks/useAdminCalendar';
-import { COLOR_THEMES } from './calendarConstants';
+import { getColorTheme, getCalendarEventTheme } from '../../../utils/calendarColors';
 
 import EventEditModal from './modals/EventEditModal';
 import CategorySettingsModal from './modals/CategorySettingsModal';
 import MobileDayDetailOverlay from './modals/MobileDayDetailOverlay';
 
 import AdminPageHeader from '../common/AdminPageHeader';
+import DutyRosterEditor from './DutyRosterEditor';
 
 const AdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
     const hookData = useAdminCalendar({ notices, fetchData, setActiveMenu });
     const { 
-        currentDate, dynamicCategories, 
+        currentDate, dynamicCategories, calendarCategories, programCategories,
         showModal, setShowModal,
         showCategoryModal, setShowCategoryModal,
         showDayDetail, setShowDayDetail,
@@ -101,37 +102,16 @@ const AdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
                                 <Filter size={14} className="text-gray-300" />
                             </div>
                             <div className="space-y-1.5">
-                                {/* Program Filters (Pinned) */}
-                                <label className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all cursor-pointer group ${visibleCategories['PROGRAM_CENTER'] ? 'bg-pink-50/50' : 'hover:bg-gray-50'}`}>
-                                    <div className={`relative w-5 h-5 rounded-lg border-2 transition-all flex items-center justify-center ${visibleCategories['PROGRAM_CENTER'] ? 'bg-pink-600 border-pink-600 shadow-lg shadow-pink-200' : 'border-gray-200 group-hover:border-pink-300'}`}>
-                                        <input type="checkbox" checked={visibleCategories['PROGRAM_CENTER']} onChange={() => toggleCategory('PROGRAM_CENTER')} className="hidden" />
-                                        {visibleCategories['PROGRAM_CENTER'] && <Check size={12} className="text-white" strokeWidth={4} />}
-                                    </div>
-                                    <span className={`text-sm font-black transition-colors ${visibleCategories['PROGRAM_CENTER'] ? 'text-pink-700' : 'text-gray-400 group-hover:text-gray-600'}`}>
-                                        센터 프로그램
-                                    </span>
-                                </label>
-
-                                <label className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all cursor-pointer group ${visibleCategories['PROGRAM_SCHOOL'] ? 'bg-purple-50/50' : 'hover:bg-gray-50'}`}>
-                                    <div className={`relative w-5 h-5 rounded-lg border-2 transition-all flex items-center justify-center ${visibleCategories['PROGRAM_SCHOOL'] ? 'bg-purple-600 border-purple-600 shadow-lg shadow-purple-200' : 'border-gray-200 group-hover:border-purple-300'}`}>
-                                        <input type="checkbox" checked={visibleCategories['PROGRAM_SCHOOL']} onChange={() => toggleCategory('PROGRAM_SCHOOL')} className="hidden" />
-                                        {visibleCategories['PROGRAM_SCHOOL'] && <Check size={12} className="text-white" strokeWidth={4} />}
-                                    </div>
-                                    <span className={`text-sm font-black transition-colors ${visibleCategories['PROGRAM_SCHOOL'] ? 'text-purple-700' : 'text-gray-400 group-hover:text-gray-600'}`}>
-                                        스처 프로그램
-                                    </span>
-                                </label>
-
-                                {dynamicCategories.map((cat) => {
-                                    const theme = COLOR_THEMES[cat.color_theme] || COLOR_THEMES.gray;
+                                {[...programCategories, ...dynamicCategories].map((cat) => {
+                                    const theme = getColorTheme(cat.color_theme);
                                     const isActive = visibleCategories[cat.id];
                                     return (
-                                        <label key={cat.id} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all cursor-pointer group ${isActive ? 'bg-blue-50/30' : 'hover:bg-gray-50'}`}>
+                                        <label key={cat.id} className={`flex items-center gap-4 px-4 py-3.5 rounded-2xl transition-all cursor-pointer group ${isActive ? theme.background : 'hover:bg-gray-50'}`}>
                                             <div className={`relative w-5 h-5 rounded-lg border-2 transition-all flex items-center justify-center ${isActive ? theme.dot + ' border-transparent shadow-lg shadow-blue-100' : 'border-gray-200 group-hover:border-gray-300'}`}>
-                                                <input type="checkbox" checked={visibleCategories[cat.id]} onChange={() => toggleCategory(cat.id)} className="hidden" />
+                                                <input type="checkbox" checked={Boolean(visibleCategories[cat.id])} onChange={() => toggleCategory(cat.id)} className="hidden" />
                                                 {isActive && <Check size={12} className="text-white" strokeWidth={4} />}
                                             </div>
-                                            <span className={`text-sm font-black transition-colors ${isActive ? 'text-gray-800' : 'text-gray-400 group-hover:text-gray-600'}`}>
+                                            <span className={`text-sm font-black transition-colors ${isActive ? theme.text : 'text-gray-400 group-hover:text-gray-600'}`}>
                                                 {cat.name}
                                             </span>
                                         </label>
@@ -194,9 +174,7 @@ const AdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
                                                 return new Date(a.start) - new Date(b.start);
                                             })
                                             .slice(0, window.innerWidth < 768 ? 4 : 10).map(event => {
-                                                const theme = event.isPublic 
-                                                    ? (event.category === 'PROGRAM_SCHOOL' ? COLOR_THEMES.purple : COLOR_THEMES.pink) 
-                                                    : (COLOR_THEMES[event.color_theme] || COLOR_THEMES.gray);
+                                                const theme = getCalendarEventTheme(event, calendarCategories);
                                                 const isMobile = window.innerWidth < 768;
                                                 const mobileTextColor = theme.color.split(' ').find(c => c.startsWith('text-')) || 'text-gray-700';
 
@@ -248,7 +226,7 @@ const AdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
 
             {/* Injected Modals */}
             <AnimatePresence>
-                {showModal && <EventEditModal {...hookData} />}
+                {showModal && <EventEditModal {...hookData} onProgramSaved={fetchData} />}
             </AnimatePresence>
 
             <AnimatePresence>
@@ -259,6 +237,8 @@ const AdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
                 {showDayDetail && <MobileDayDetailOverlay {...hookData} />}
             </AnimatePresence>
         </div>
+
+        <DutyRosterEditor month={format(currentDate, 'yyyy-MM')} />
     </div>
     );
 };

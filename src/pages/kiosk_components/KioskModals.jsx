@@ -28,6 +28,7 @@ const KioskModals = ({
     handleCheckoutPurpose,
     resetState,
     checkinSurveyConfig,
+    checkoutSurveyConfig,
     surveySelections,
     handleSurveySubmit,
     pendingKioskUser,
@@ -187,6 +188,7 @@ const KioskModals = ({
                 isOpen={status === 'REQUIRE_PURPOSE'}
                 user={pendingCheckoutUser}
                 onComplete={handleCheckoutPurpose}
+                surveyConfig={checkoutSurveyConfig}
             />
 
             <CheckinSurveyModal

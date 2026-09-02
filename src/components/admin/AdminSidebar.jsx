@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { LayoutDashboard, MessageSquare, Users, BarChart2, FileText, Settings, LogOut, User, Calendar, School, Trophy, Store, ClipboardCheck, UserCheck } from 'lucide-react';
+import { LayoutDashboard, MessageSquare, Users, BarChart2, FileText, Settings, LogOut, User, Calendar, School, Trophy, Store, ClipboardCheck, UserCheck, ClipboardList } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 const AdminSidebar = ({ activeMenu, setActiveMenu, onLogout, isOpen, setIsOpen, isPinned, setIsPinned, notices = [] }) => {
@@ -33,6 +33,7 @@ const AdminSidebar = ({ activeMenu, setActiveMenu, onLogout, isOpen, setIsOpen, 
             items: [
                 { id: 'USERS', label: '이용자 목록', icon: <Users size={20} /> },
                 { id: 'SCHOOLS', label: '학교 관리', icon: <School size={20} /> },
+                { id: 'SURVEYS', label: '설문조사', icon: <ClipboardList size={20} /> },
             ]
         },
         {

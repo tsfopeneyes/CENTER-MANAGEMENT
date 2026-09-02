@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Image as ImageIcon, CheckCircle2 } from 'lucide-react';
+import useModalClose from '../../../hooks/useModalClose';
 
 const CATEGORIES = ['QT', '리더유형 테스트', '백일장', '소감나눔', '기타'];
 
 const VerificationWriteModal = ({ setShowVerificationWrite, handleCreatePost, handleUpdatePost, uploadingGuest, onSuccess, editPost }) => {
+    useModalClose(true, () => setShowVerificationWrite(false));
     const [selectedCategory, setSelectedCategory] = useState(() => {
         if (editPost && editPost.content.startsWith('[')) {
             const match = editPost.content.match(/^\[(.*?)\]/);

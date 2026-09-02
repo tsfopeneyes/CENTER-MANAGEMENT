@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Search, Plus, Trash2, Edit2, Download, Copy, ExternalLink, Calendar, MapPin, CheckCircle, RefreshCw, Eye, MessageCircle, FileText, X, School, Flame, LayoutGrid, LayoutList, CheckCircle2, User, Users, ChevronRight, ChevronLeft, Grid, List, Star, Heart, Columns, Settings, ClipboardList, Save, Clock, Cookie } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient';
+import { mergeUserStats } from '../../../../api/userMergeApi';
 
 const StudentDetailModal = ({ student, onClose, onSave, onMergeComplete, allUsers }) => {
     const [memo, setMemo] = useState(student.memo || '');
@@ -30,41 +31,8 @@ const StudentDetailModal = ({ student, onClose, onSave, onMergeComplete, allUser
 
         setIsMerging(true);
         try {
-            // 1. Update school_logs
-            // We need to fetch all logs where this temp student is a participant
-            const { data: logsData, error: logsError } = await supabase
-                .from('school_logs')
-                .select('*')
-                .contains('participant_ids', [student.id]);
-            
-            if (logsError) throw logsError;
-
-            if (logsData && logsData.length > 0) {
-                // For each log, replace the temp ID with the remote actual user ID
-                const promises = logsData.map(log => {
-                    const updatedParticipants = log.participant_ids.map(id => id === student.id ? targetUser.id : id);
-                    // remove duplicates if target was already there somehow
-                    const uniqueParticipants = [...new Set(updatedParticipants)];
-                    return supabase.from('school_logs').update({ participant_ids: uniqueParticipants }).eq('id', log.id);
-                });
-                await Promise.all(promises);
-            }
-
-            // 2. Update calling_forest_progress
-            const { error: cfError } = await supabase
-                .from('calling_forest_progress')
-                .update({ student_id: targetUser.id })
-                .eq('student_id', student.id);
-            if (cfError) throw cfError;
-
-            // 3. Update target user's school if they don't have one
-            if (!targetUser.school && student.school) {
-                await supabase.from('users').update({ school: student.school }).eq('id', targetUser.id);
-            }
-
-            // 4. Delete temporary user record
-            const { error: delError } = await supabase.from('users').delete().eq('id', student.id);
-            if (delError) throw delError;
+            const result=await mergeUserStats(student.id,targetUser.id);
+            if(!result.success)throw new Error(result.error);
 
             alert('성공적으로 계정 기록이 병합되었습니다.');
             onMergeComplete();

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Settings, X, Check, ClipboardList, LayoutTemplate, Share2, Globe } from 'lucide-react';
+import { Settings, X, Check, ClipboardList, LayoutTemplate, Share2, Globe, ArrowRight } from 'lucide-react';
 import Cropper from 'react-easy-crop';
 
 // Custom Hooks
@@ -13,12 +13,10 @@ import LayoutDesigner from './components/LayoutDesigner';
 import DutyChecklistSettings from './components/DutyChecklistSettings';
 import OperatingHoursSettings from './components/OperatingHoursSettings';
 import StaffPresenceSettings from './components/StaffPresenceSettings';
-import CheckinSurveySettings from './components/CheckinSurveySettings';
-import CheckoutSurveySettings from './components/CheckoutSurveySettings';
 import WebAccessSettings from './components/WebAccessSettings';
 import AdminPageHeader from '../common/AdminPageHeader';
 
-const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, fetchData, users, allLogs, responses = [], schoolLogs = [] }) => {
+const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, fetchData, users, allLogs, responses = [], schoolLogs = [], setActiveMenu }) => {
     const isMaster = currentAdmin?.is_master || currentAdmin?.name === 'Rok' || currentAdmin?.name === 'admin';
 
     const {
@@ -205,16 +203,10 @@ const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, 
                             onSave={handleSaveStaffPresenceConfig}
                             isSaving={staffSaving}
                         />
-                        <CheckinSurveySettings
-                            checkinSurveyConfig={checkinSurveyConfig}
-                            onSave={handleSaveCheckinSurveyConfig}
-                            isSaving={surveySaving}
-                        />
-                        <CheckoutSurveySettings
-                            checkoutSurveyConfig={checkoutSurveyConfig}
-                            onSave={handleSaveCheckoutSurveyConfig}
-                            isSaving={checkoutSurveySaving}
-                        />
+                        <div className="border border-blue-100 bg-blue-50 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                            <div><p className="font-bold text-gray-900">입실·퇴실 설문은 설문조사에서 관리합니다</p><p className="text-sm text-gray-500 mt-1">설문 작성, 적용 설정, 기존 응답 확인을 한곳에서 할 수 있습니다.</p></div>
+                            <button onClick={() => setActiveMenu?.('SURVEYS')} className="px-4 py-2.5 bg-blue-600 text-white text-sm font-bold flex items-center justify-center gap-2">설문조사로 이동 <ArrowRight size={16} /></button>
+                        </div>
                         <DutyChecklistSettings isMaster={isMaster} />
                     </div>
                 )}

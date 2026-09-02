@@ -14,6 +14,11 @@ import { trackUserWebActivity } from '../utils/userActivityUtils';
 import { sendCategoryNotification } from '../utils/integrationUtils';
 import { normalizeSchoolName } from '../utils/userUtils';
 import { buildGuestPrivacyPreferences, classifyGuestIdentityMatch, parseGuestBirthDate } from '../utils/guestBirthUtils';
+import { getRecruitment, getRegistrationBlockReason } from '../utils/programRecruitment';
+import { useCurrentTime } from '../hooks/useCurrentTime';
+import ProgramAvailabilityNotice from '../components/student/components/ProgramAvailabilityNotice';
+import RecruitmentBadge from '../components/student/components/RecruitmentBadge';
+import { readNoticeWithPreview } from '../api/programReadApi';
 import SignUpForm from '../components/auth/SignUpForm';
 
 const isInternalAccount = (user) => {
@@ -65,25 +70,11 @@ const isProgramEnded = (program) => {
 // The public link is long-lived, so it must not rely on the list page having
 // hidden an old program. Keep the same rule for the visible button and the
 // write immediately before a response is created.
-const getProgramRegistrationBlockReason = (program) => {
-    if (!program) return '프로그램 정보를 찾을 수 없습니다.';
-    if (program.category && program.category !== 'PROGRAM') return '프로그램 정보를 찾을 수 없습니다.';
-    if (['COMPLETED', 'CANCELLED'].includes(String(program.program_status || '').toUpperCase())) {
-        return '이미 마감된 프로그램입니다.';
-    }
-    if (program.is_recruiting !== true) return '현재 모집 중이 아닌 프로그램입니다.';
-    if ((program.guest_properties?.is_ended ?? program.is_ended) === true || isProgramEnded(program)) {
-        return '이미 마감된 프로그램입니다.';
-    }
-    if (program.recruitment_deadline) {
-        const deadline = new Date(program.recruitment_deadline);
-        if (!Number.isNaN(deadline.getTime()) && deadline <= new Date()) return '신청 기간이 마감되었습니다.';
-    }
-    return null;
-};
+const getProgramRegistrationBlockReason = getRegistrationBlockReason;
 
 const PublicProgramDetail = () => {
     const { id } = useParams();
+    const recruitmentNow = useCurrentTime();
     const navigate = useNavigate();
     const [notice, setNotice] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -125,12 +116,7 @@ const PublicProgramDetail = () => {
     const isProgramRegistrationOpen = !programRegistrationBlockReason;
 
     const loadOpenProgramForRegistration = async () => {
-        const { data, error } = await supabase
-            .from('notices')
-            .select('id, title, category, is_recruiting, program_status, guest_properties, is_ended, recruitment_deadline, program_date, program_time, program_duration')
-            .eq('id', id)
-            .maybeSingle();
-        if (error) throw error;
+        const data = await readNoticeWithPreview(id);
 
         const reason = getProgramRegistrationBlockReason(data);
         if (reason) throw new Error(reason);
@@ -334,7 +320,7 @@ const PublicProgramDetail = () => {
                             purpose: 'guest_program_application_and_age_analysis',
                         }),
                         user_group: '게스트',
-                        password: '0000',
+                        password: null,
                         role: 'student',
                         status: 'approved',
                         memo: memoText
@@ -348,6 +334,7 @@ const PublicProgramDetail = () => {
             }
  
             // 3. Register to notice_responses
+            await loadOpenProgramForRegistration();
             const { error: regErr } = await supabase
                 .from('notice_responses')
                 .insert({
@@ -423,6 +410,7 @@ const PublicProgramDetail = () => {
                 ? (await countPriorProgramApplications(dbUser.id)) > 0
                 : false;
 
+            await loadOpenProgramForRegistration();
             const { error: regErr } = await supabase
                 .from('notice_responses')
                 .insert({
@@ -591,14 +579,8 @@ const PublicProgramDetail = () => {
 
     const fetchNotice = async () => {
         try {
-            const { data, error } = await supabase
-                .from('notices')
-                .select('*, host:users(id, name, profile_image_url, school, role)')
-                .eq('id', id)
-                .single();
-                
-            if (error) throw error;
-            setNotice(data);
+            const data = await readNoticeWithPreview(id, '*, host:users(id, name, profile_image_url, school, role)');
+            setNotice(data || false);
         } catch (err) {
             console.error(err);
             setNotice(false); // Indicates not found or error
@@ -606,6 +588,24 @@ const PublicProgramDetail = () => {
             setLoading(false);
         }
     };
+
+    useEffect(() => {
+        const refresh = () => fetchNotice();
+        const channel = supabase.channel(`public-program-${id}`)
+            .on('postgres_changes', { event: '*', schema: 'public', table: 'notices', filter: `id=eq.${id}` }, refresh)
+            .subscribe();
+        window.addEventListener('focus', refresh);
+        return () => { window.removeEventListener('focus', refresh); supabase.removeChannel(channel); };
+    }, [id]);
+
+    useEffect(() => {
+        if (!notice?.is_program_preview) return;
+        const start = new Date(notice.recruitment_start_at).getTime();
+        const delay = notice.recruitment_details_ready && Number.isFinite(start)
+            ? Math.min(60000, Math.max(1500, start - Date.now() + 150)) : 60000;
+        const timer = window.setTimeout(fetchNotice, delay);
+        return () => window.clearTimeout(timer);
+    }, [id, notice]);
 
     // Timers
     useEffect(() => {
@@ -741,6 +741,16 @@ const PublicProgramDetail = () => {
         );
     }
 
+    if (!notice) return null;
+    if (!getRecruitment(notice, recruitmentNow).canViewDetails) return (
+        <main className="min-h-screen bg-slate-50 px-5 py-12">
+            <div className="mx-auto max-w-md rounded-3xl bg-white shadow-sm">
+                <button onClick={() => navigate('/')} className="p-4 text-sm font-bold text-blue-600">← 돌아가기</button>
+                <ProgramAvailabilityNotice program={notice} now={recruitmentNow} />
+            </div>
+        </main>
+    );
+
     let allImages = notice.images ? [...notice.images] : [];
     if (allImages.length === 0 && notice.image_url) {
         allImages.push(notice.image_url);
@@ -781,6 +791,7 @@ const PublicProgramDetail = () => {
             <div className="px-6 py-8">
                 <NoticeCarousel allImages={allImages} />
 
+                <div className="mb-3"><RecruitmentBadge program={notice} now={recruitmentNow} /></div>
                 <h1 className="text-2xl font-bold text-gray-900 leading-tight mb-4">{notice.title}</h1>
                 
                 {notice.category === 'PROGRAM' && (

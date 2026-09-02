@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
 import { supabase } from '../supabaseClient';
+import { getAccountAuthClient, isAccountAuthEnabled } from '../auth/accountAuthRuntime';
 import { userApi } from '../api/userApi';
 import { compressImage } from '../utils/imageUtils';
 import { isConsecutiveWorkingDay } from '../utils/analyticsUtils';
@@ -145,6 +146,29 @@ export const useProfile = (initialUser) => {
         }
         setLoading(true);
         try {
+            if (isAccountAuthEnabled()) {
+                const client=getAccountAuthClient(),sessionResult=await supabase.auth.getSession();
+                const accessToken=sessionResult?.data?.session?.access_token;
+                if(sessionResult?.error||!accessToken)throw new Error('로그인 상태를 확인하지 못했습니다.');
+                let imageUrl=user?.profile_image_url||null;
+                if(profileImage){
+                    const compressedFile=await compressImage(profileImage);
+                    imageUrl=await client.upload({profileId:user.id,kind:'profile',file:compressedFile},{accessToken});
+                }
+                const patch={};
+                for(const field of ['school','church','bio'])if(Object.hasOwn(updates,field))patch[field]=updates[field];
+                if(Object.hasOwn(updates,'preferences'))patch.isSchoolChurch=updates.preferences?.is_school_church===true;
+                if(imageUrl!==user?.profile_image_url)patch.profileImageUrl=imageUrl;
+                let saved={};
+                if(Object.keys(patch).length){
+                    const result=await client.profile({action:'update',protocol:1,profileId:user.id,updates:patch},{accessToken});saved=result.profile||{};
+                }
+                const finalUpdates={...updates,...saved,...(imageUrl!==user?.profile_image_url?{profile_image_url:imageUrl}:{})};
+                delete finalUpdates.password;
+                const updatedUser={...user,...finalUpdates};setUser(updatedUser);
+                try{localStorage.setItem('user',JSON.stringify(updatedUser));}catch{console.warn('Profile saved, but the local user cache could not be updated.');}
+                return {success:true,user:updatedUser};
+            }
             let imageUrl = user?.profile_image_url || null;
 
             if (profileImage) {
@@ -170,7 +194,13 @@ export const useProfile = (initialUser) => {
 
             const updatedUser = { ...user, ...finalUpdates };
             setUser(updatedUser);
-            localStorage.setItem('user', JSON.stringify(updatedUser));
+            // The server save already succeeded. A blocked/full browser cache
+            // must not turn it into a reported failure or prompt another write.
+            try {
+                localStorage.setItem('user', JSON.stringify(updatedUser));
+            } catch {
+                console.warn('Profile saved, but the local user cache could not be updated.');
+            }
 
             // Also sync 'admin_user' in localStorage if same user ID
             try {

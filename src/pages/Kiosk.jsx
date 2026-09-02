@@ -24,7 +24,7 @@ const Kiosk = () => {
         handleSetLocation, resetLocation, handleMasterPinSubmit, handleResetLocation,
         processKioskAction, handleIdentifyUser, handleVerifyNumeric, handleNumberClick, handleQrScan, resetState,
         handleKioskTermsAgree, handleCheckoutPurpose, handleSurveySubmit,
-        checkinSurveyConfig, surveySelections
+        checkinSurveyConfig, checkoutSurveyConfig, surveySelections
     } = useKioskManager(navigate);
 
     const [engName, setEngName] = useState('SCI CENTER');
@@ -173,6 +173,7 @@ const Kiosk = () => {
                 handleCheckoutPurpose={handleCheckoutPurpose}
                 resetState={resetState}
                 checkinSurveyConfig={checkinSurveyConfig}
+                checkoutSurveyConfig={checkoutSurveyConfig}
                 surveySelections={surveySelections}
                 handleSurveySubmit={handleSurveySubmit}
                 setStatus={setStatus}

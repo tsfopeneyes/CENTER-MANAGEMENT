@@ -404,7 +404,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                         phone: formattedPhone,
                         phone_back4: back4,
                         user_group: '게스트',
-                        password: '0000',
+                        password: null,
                         role: 'student',
                         status: 'approved',
                         memo: memoText

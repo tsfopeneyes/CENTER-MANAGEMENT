@@ -19,6 +19,8 @@ export const PROGRAM_STATUS = {
 
 export const MAX_IMAGES = 30;
 
+export const MAX_PROGRAM_HAIFN_REWARD = 5;
+
 export const DEFAULT_PROGRAM_TIME = '12:00';
 
 export { CATEGORIES } from '../../../../constants/appConstants';

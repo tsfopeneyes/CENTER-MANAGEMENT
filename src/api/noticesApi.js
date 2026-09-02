@@ -1,13 +1,35 @@
 import { supabase } from '../supabaseClient';
+import { haifnApi } from './haifnApi';
+import { getRegistrationBlockReason } from '../utils/programRecruitment';
+import { fetchAllPages } from '../utils/fetchAllPages';
+import { fetchProgramPreviews, mergeProgramPreviews, readNoticeWithPreview } from './programReadApi';
 
 export const noticesApi = {
+    async loadForStudentRegistration(noticeId) {
+        const data = await readNoticeWithPreview(noticeId);
+        if (!data) throw new Error('프로그램 정보를 찾을 수 없습니다.');
+        if (data.category === 'PROGRAM') {
+            const reason = getRegistrationBlockReason(data);
+            if (reason) throw new Error(reason);
+        } else if (data.recruitment_deadline && Date.now() >= new Date(data.recruitment_deadline).getTime()) {
+            throw new Error('신청 및 취소 기간이 종료되었습니다.');
+        }
+        return data;
+    },
+
+    async upsertStudentResponse(noticeId, userId, status) {
+        await this.loadForStudentRegistration(noticeId);
+        return this.upsertResponse(noticeId, userId, status);
+    },
+
     async fetchAll() {
-        const { data, error } = await supabase
+        const [rows, previews] = await Promise.all([fetchAllPages(() => supabase
             .from('notices')
             .select('*')
             .order('is_sticky', { ascending: false })
-            .order('created_at', { ascending: false });
-        if (error) throw error;
+            .order('created_at', { ascending: false })
+            .order('id')), fetchProgramPreviews()]);
+        const data = mergeProgramPreviews(rows, previews);
 
         const now = new Date();
         now.setHours(0, 0, 0, 0);
@@ -77,11 +99,10 @@ export const noticesApi = {
     },
 
     async fetchAllJoinCounts() {
-        const { data, error } = await supabase
+        const data = await fetchAllPages(() => supabase
             .from('notice_responses')
             .select('notice_id')
-            .eq('status', 'JOIN');
-        if (error) throw error;
+            .eq('status', 'JOIN').order('notice_id').order('user_id'));
 
         const countsMap = {};
         data?.forEach((r) => {
@@ -224,7 +245,8 @@ export const noticesApi = {
             'responses', 'responseDetails', 'comments', 'author', 'is_joined', 
             'has_applied', 'attendedCount', 'attendanceRate', 'users', 
             'notice_responses', 'challenge_mission_statuses',
-            'program_feedback', 'poll_responses', 'my_vote', 'is_attended', 'is_staff', 'user_id'
+            'program_feedback', 'poll_responses', 'my_vote', 'is_attended', 'is_staff', 'user_id',
+            'is_program_preview'
         ];
 
         nonTableKeys.forEach(k => delete payload[k]);
@@ -235,6 +257,7 @@ export const noticesApi = {
             .eq('id', id)
             .select();
         if (error) throw error;
+        if (!data?.length) throw new Error('수정 권한을 확인할 수 없습니다. 관리자 계정으로 다시 로그인해주세요.');
 
         if (shouldSendPush) {
             let noticeObj = (data && data[0]) ? data[0] : updates;
@@ -356,6 +379,25 @@ export const noticesApi = {
 
         const { error: insertError } = await supabase.from('logs').insert(logsToInsert);
         if (insertError) throw insertError;
+
+        // Completing a recruiting program also finalizes attendance. Award the
+        // configured participation points at that point so programs that were
+        // marked complete before the attendance modal was opened are not missed.
+        // Programs that require a review keep their existing reward-on-review flow.
+        if (noticeData.haifn_reward > 0 && !noticeData.is_review_required) {
+            const admin = JSON.parse(localStorage.getItem('admin_user')) || {};
+            const attendees = responses.filter(r => r.is_attended);
+
+            await Promise.all(attendees.map(attendee =>
+                haifnApi.grantProgramReward(
+                    attendee.user_id,
+                    noticeId,
+                    noticeData.haifn_reward,
+                    admin.id || null,
+                    noticeData.title || ''
+                )
+            ));
+        }
 
         // 5. Auto-reward 5H for staff members who attended
         const staffAttendees = responses.filter(r => r.is_attended && r.is_staff);

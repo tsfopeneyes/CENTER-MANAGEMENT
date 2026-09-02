@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Trash2, Trash, Send, Edit2 } from 'lucide-react';
 import UserAvatar from '../../common/UserAvatar';
+import useModalClose from '../../../hooks/useModalClose';
 
 const GuestbookDetailModal = ({ 
     selectedGuestPost, 
@@ -15,6 +16,7 @@ const GuestbookDetailModal = ({
     setSelectedGuestPost,
     onEditPost
 }) => {
+    useModalClose(!!selectedGuestPost, () => setSelectedGuestPost(null));
     const [newGuestComment, setNewGuestComment] = useState('');
 
     const handlePostGuestCommentData = async (e) => {

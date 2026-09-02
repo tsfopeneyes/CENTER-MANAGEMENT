@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { badgesApi } from '../../../../api/badgesApi';
 import { supabase } from '../../../../supabaseClient';
 import { compressImage } from '../../../../utils/imageUtils';
+import { isAccountAuthEnabled } from '../../../../auth/accountAuthRuntime';
+import { cachedAccountProfileId, uploadAccountImage } from '../../../../auth/accountMedia';
 
 export const useAdminBadges = () => {
     const [categories, setCategories] = useState([]);
@@ -124,15 +126,19 @@ export const useAdminBadges = () => {
             const compressedFile = await compressImage(file, 512, 0.9);
             const fileExt = compressedFile.name.split('.').pop();
             const fileName = `${Date.now()}.${fileExt}`;
+            let publicUrl;
+            if(isAccountAuthEnabled())publicUrl=await uploadAccountImage({profileId:cachedAccountProfileId(),kind:'badge',file:compressedFile});
+            else {
             const { error: uploadError } = await supabase.storage
                 .from('notice-images')
                 .upload(`badges/${fileName}`, compressedFile);
 
             if (uploadError) throw uploadError;
 
-            const { data: { publicUrl } } = supabase.storage
+            ({ data: { publicUrl } } = supabase.storage
                 .from('notice-images')
-                .getPublicUrl(`badges/${fileName}`);
+                .getPublicUrl(`badges/${fileName}`));
+            }
 
             setEditingChallenge(prev => ({ ...prev, image_url: publicUrl }));
         } catch (error) {

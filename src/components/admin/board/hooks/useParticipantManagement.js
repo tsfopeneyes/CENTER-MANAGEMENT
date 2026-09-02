@@ -3,6 +3,7 @@ import { supabase } from '../../../../supabaseClient';
 import { noticesApi } from '../../../../api/noticesApi';
 import { haifnApi } from '../../../../api/haifnApi';
 import { startOfDay } from 'date-fns';
+import { MAX_PROGRAM_HAIFN_REWARD } from '../utils/constants';
 
 const useParticipantManagement = (selectedNotice, onRefreshData) => {
     const [participantList, setParticipantList] = useState({ JOIN: [], DECLINE: [], UNDECIDED: [], WAITLIST: [] });
@@ -176,7 +177,7 @@ const useParticipantManagement = (selectedNotice, onRefreshData) => {
                 } else {
                     const admin = JSON.parse(localStorage.getItem('admin_user'));
                     const adminId = admin?.id || null;
-                    await haifnApi.grantOpenProgramReward(userId, selectedNotice.id, selectedNotice.haifn_reward || 30, adminId, selectedNotice.title, dateStr);
+                    await haifnApi.grantOpenProgramReward(userId, selectedNotice.id, Math.min(MAX_PROGRAM_HAIFN_REWARD, Number(selectedNotice.haifn_reward) || 0), adminId, selectedNotice.title, dateStr);
                 }
                 await fetchParticipants(selectedNotice);
             } else {
@@ -307,7 +308,7 @@ const useParticipantManagement = (selectedNotice, onRefreshData) => {
                 const dateStr = selectedDate;
                 const admin = JSON.parse(localStorage.getItem('admin_user'));
                 const adminId = admin?.id || null;
-                await haifnApi.grantOpenProgramReward(user.id, selectedNotice.id, selectedNotice.haifn_reward || 30, adminId, selectedNotice.title, dateStr);
+                await haifnApi.grantOpenProgramReward(user.id, selectedNotice.id, Math.min(MAX_PROGRAM_HAIFN_REWARD, Number(selectedNotice.haifn_reward) || 0), adminId, selectedNotice.title, dateStr);
                 
                 // Optimistic Update & Immediate Feedback
                 const newUser = { ...user, is_attended: true, is_staff: false };
@@ -355,7 +356,7 @@ const useParticipantManagement = (selectedNotice, onRefreshData) => {
                 const adminId = admin?.id || null;
                 for (const user of users) {
                     try {
-                        await haifnApi.grantOpenProgramReward(user.id, selectedNotice.id, selectedNotice.haifn_reward || 30, adminId, selectedNotice.title, dateStr);
+                        await haifnApi.grantOpenProgramReward(user.id, selectedNotice.id, Math.min(MAX_PROGRAM_HAIFN_REWARD, Number(selectedNotice.haifn_reward) || 0), adminId, selectedNotice.title, dateStr);
                     } catch (e) {
                          console.error('Walk-in reward error for user', user.id, e);
                     }

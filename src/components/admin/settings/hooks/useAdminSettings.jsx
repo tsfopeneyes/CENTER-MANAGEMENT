@@ -6,6 +6,7 @@ import { CATEGORIES } from '../../../../constants/appConstants';
 import { uploadSummaryToNotion, performFullSyncToGoogleSheets } from '../../../../utils/integrationUtils';
 import { processAnalyticsData, processUserAnalytics, processProgramAnalytics } from '../../../../utils/analyticsUtils';
 import { aggregateVisitSessions } from '../../../../utils/visitUtils';
+import { getAccountAuthClient, isAccountAuthEnabled } from '../../../../auth/accountAuthRuntime';
 
 const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, users, allLogs, responses, schoolLogs, notices }) => {
     // 1. Profile State
@@ -110,6 +111,7 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
         { id: 'BOARD', label: '공지사항', isVisible: true },
         { id: 'USERS', label: '이용자 관리', isVisible: true },
         { id: 'SCHOOLS', label: '학교 관리', isVisible: true },
+        { id: 'SURVEYS', label: '설문조사', isVisible: true },
         { id: 'BADGES', label: '뱃지 관리', isVisible: true },
         { id: 'STATISTICS', label: '통계', isVisible: true },
         { id: 'LOGS', label: '로그', isVisible: true },
@@ -398,27 +400,41 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
         if (!currentAdmin) return;
         setProfileLoading(true);
         try {
+            const secure=isAccountAuthEnabled(),client=secure?getAccountAuthClient():null;
+            let accessToken=null;
+            if(secure){const sessionResult=await supabase.auth.getSession();accessToken=sessionResult?.data?.session?.access_token;
+                if(sessionResult?.error||!accessToken)throw new Error('로그인 상태를 확인하지 못했습니다.');}
             let imageUrl = currentAdmin.profile_image_url;
             if (profileImage) {
                 const compressedFile = await compressImage(profileImage);
-                const fileExt = compressedFile.name.split('.').pop();
-                const fileName = `admin_${currentAdmin.id}_${Date.now()}.${fileExt}`;
-                const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, compressedFile);
-                if (uploadError) throw uploadError;
-                const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
-                imageUrl = publicUrl;
+                if(secure)imageUrl=await client.upload({profileId:currentAdmin.id,kind:'profile',file:compressedFile},{accessToken});
+                else {
+                    const fileExt = compressedFile.name.split('.').pop();
+                    const fileName = `admin_${currentAdmin.id}_${Date.now()}.${fileExt}`;
+                    const { error: uploadError } = await supabase.storage.from('avatars').upload(fileName, compressedFile);
+                    if (uploadError) throw uploadError;
+                    const { data: { publicUrl } } = supabase.storage.from('avatars').getPublicUrl(fileName);
+                    imageUrl = publicUrl;
+                }
             }
 
             let updates = { profile_image_url: imageUrl };
             if (newAdminPassword) {
-                if (newAdminPassword.length < 4) { alert('비밀번호는 4자리 이상이어야 합니다.'); setProfileLoading(false); return; }
+                if (newAdminPassword.length < 6) { alert('비밀번호는 6자리 이상이어야 합니다.'); setProfileLoading(false); return; }
                 if (newAdminPassword !== confirmAdminPassword) { alert('비밀번호가 일치하지 않습니다.'); setProfileLoading(false); return; }
-                const hashedPassword = await hashPassword(newAdminPassword);
-                updates.password = hashedPassword;
+                if (isAccountAuthEnabled()) await getAccountAuthClient().password({ profileId: currentAdmin.id, newPassword: newAdminPassword });
+                else {
+                    const hashedPassword = await hashPassword(newAdminPassword);
+                    updates.password = hashedPassword;
+                }
             }
 
-            const { error } = await supabase.from('users').update(updates).eq('id', currentAdmin.id);
-            if (error) throw error;
+            if(secure){
+                if(profileImage)await client.profile({action:'update',protocol:1,profileId:currentAdmin.id,updates:{profileImageUrl:imageUrl}},{accessToken});
+            } else {
+                const { error } = await supabase.from('users').update(updates).eq('id', currentAdmin.id);
+                if (error) throw error;
+            }
 
             const updatedAdmin = { ...currentAdmin, ...updates };
             localStorage.setItem('admin_user', JSON.stringify(updatedAdmin));
@@ -499,7 +515,13 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
             return;
         }
         try {
-            const { error } = await supabase.from('locations').insert([{ id: tempLocationName, name: tempLocationName, group_id: selectedGroupIdForLocation }]);
+            // IDs are immutable technical identifiers. The editable space name
+            // must never double as a primary key again.
+            const { error } = await supabase.from('locations').insert([{
+                id: crypto.randomUUID(),
+                name: tempLocationName,
+                group_id: selectedGroupIdForLocation
+            }]);
             if (error) throw error;
             setTempLocationName('');
             fetchData();

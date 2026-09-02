@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import {resolveAuthLink,authLinkStore} from './auth-link.mjs';
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -6,13 +7,13 @@ const corsHeaders = {
 };
 
 const getSecret = (name: string) => Deno.env.get(name)?.trim() || "";
-const isUuid = (value: unknown) => typeof value === "string" &&
+const isUuid = (value: unknown): value is string => typeof value === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 // Some guest profiles created by the legacy kiosk use UUID-shaped values with
 // zeroed version/variant nibbles. PostgreSQL stores those in the UUID column
 // normally, so accept them only where a public.users profile ID is expected.
 // Supabase Auth user IDs continue to use the stricter UUID validator above.
-const isProfileId = (value: unknown) => typeof value === "string" &&
+const isProfileId = (value: unknown): value is string => typeof value === "string" &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 
 const hashPassword = async (value: string) => {
@@ -20,33 +21,31 @@ const hashPassword = async (value: string) => {
   return Array.from(new Uint8Array(digest)).map((byte) => byte.toString(16).padStart(2, "0")).join("");
 };
 
-const getAuthenticatedUserId = async (request: Request): Promise<string> => {
+const getAuthenticatedIdentity = async (request: Request): Promise<{authUserId:string;profileId:string}> => {
   const authorization = request.headers.get("Authorization") || "";
   if (!authorization.startsWith("Bearer ")) throw new Error("A signed-in account is required.");
-  const serviceRoleKey = getSecret("SUPABASE_SERVICE_ROLE_KEY");
+  const publishableKey = getSecret("SUPABASE_ANON_KEY");
   const supabaseUrl = getSecret("SUPABASE_URL");
-  if (!serviceRoleKey || !supabaseUrl) throw new Error("Authentication service is not configured.");
+  if (!publishableKey || !supabaseUrl) throw new Error("Authentication service is not configured.");
 
-  const response = await fetch(`${supabaseUrl}/auth/v1/user`, {
-    headers: { Authorization: authorization, apikey: serviceRoleKey },
+  // Use the single account-auth boundary so every server feature applies the
+  // same provider validation, private mapping and assurance policy.
+  const response = await fetch(`${supabaseUrl}/functions/v1/account-auth/session`, {
+    method:'POST',headers:{Authorization:authorization,apikey:publishableKey,'Content-Type':'application/json'},
+    body:JSON.stringify({action:'session-status',protocol:1}),
   });
   if (!response.ok) throw new Error("Your sign-in has expired. Please sign in again.");
-  const user = await response.json() as { id?: string };
-  if (!isUuid(user.id)) throw new Error("Unable to verify the signed-in account.");
-  return user.id;
+  const identity = await response.json() as {decision?:string;authUserId?:string;profileId?:string};
+  if(identity.decision!=='retain'||!isUuid(identity.authUserId)||!isProfileId(identity.profileId))
+    throw new Error("Unable to verify the signed-in account.");
+  return {authUserId:identity.authUserId,profileId:identity.profileId};
 };
 
+const getAuthenticatedUserId = async (request: Request): Promise<string> =>
+  (await getAuthenticatedIdentity(request)).authUserId;
+
 const getAuthenticatedProfileId = async (request: Request): Promise<string> => {
-  const authUserId = await getAuthenticatedUserId(request);
-  const serviceRoleKey = getSecret("SUPABASE_SERVICE_ROLE_KEY");
-  const supabaseUrl = getSecret("SUPABASE_URL");
-  const response = await fetch(`${supabaseUrl}/rest/v1/users?or=(id.eq.${encodeURIComponent(authUserId)},auth_user_id.eq.${encodeURIComponent(authUserId)})&select=id&limit=1`, {
-    headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
-  });
-  if (!response.ok) throw new Error("Unable to load the signed-in profile.");
-  const [profile] = await response.json() as Array<{ id?: string }>;
-  if (!isProfileId(profile?.id)) throw new Error("Your account is not linked to a profile yet.");
-  return profile.id;
+  return (await getAuthenticatedIdentity(request)).profileId;
 };
 
 const requireStaffAccount = async (request: Request, staffId: string) => {
@@ -114,6 +113,13 @@ serve(async (request) => {
     const payload = await request.json();
     const { action, message, sendLine = false, lineTarget = "enough", sendDiscord = true, sendSlack = false, slackThreadTs, notificationCategory, locationName, sendGoogleSheets = false, googleSheetsPayload } = payload;
 
+    if (Deno.env.get("ACCOUNT_AUTH_READY") === "true" &&
+        (action === "ensure-auth-link" || action === "reset-student-password")) {
+      return new Response(JSON.stringify({ error: "Use the account authentication service." }), {
+        status: 410, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
     // Legacy profiles are linked to Supabase Auth only after their existing
     // password is verified server-side. No raw password is stored or returned.
     if (action === "ensure-auth-link") {
@@ -123,7 +129,7 @@ serve(async (request) => {
       const supabaseUrl = getSecret("SUPABASE_URL");
       if (!serviceRoleKey || !supabaseUrl) throw new Error("Authentication service is not configured.");
 
-      const profileResponse = await fetch(`${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(profileId)}&select=id,phone,password,auth_user_id&limit=1`, {
+      const profileResponse = await fetch(`${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(profileId)}&select=id,phone,password,auth_user_id,user_group,preferences&limit=1`, {
         headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey },
       });
       if (!profileResponse.ok) throw new Error("Profile could not be loaded.");
@@ -131,27 +137,8 @@ serve(async (request) => {
       const passwordHash = await hashPassword(password);
       if (!profile || (profile.password !== password && profile.password !== passwordHash)) throw new Error("Password verification failed.");
 
-      const email = `${String(profile.phone || "").replace(/[^0-9]/g, "")}@youth-access.app`;
-      if (!email || email === "@youth-access.app") throw new Error("An email or phone number is required to secure this account.");
-      let authUserId = profile.auth_user_id || "";
-      if (!authUserId) {
-        const createResponse = await fetch(`${supabaseUrl}/auth/v1/admin/users`, {
-          method: "POST",
-          headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ email, password: passwordHash, email_confirm: true }),
-        });
-        if (!createResponse.ok) throw new Error("This account could not be linked automatically.");
-        const created = await createResponse.json() as { id?: string };
-        if (!isUuid(created.id)) throw new Error("Authentication account creation failed.");
-        authUserId = created.id;
-        const linkResponse = await fetch(`${supabaseUrl}/rest/v1/users?id=eq.${encodeURIComponent(profileId)}`, {
-          method: "PATCH",
-          headers: { Authorization: `Bearer ${serviceRoleKey}`, apikey: serviceRoleKey, "Content-Type": "application/json" },
-          body: JSON.stringify({ auth_user_id: authUserId }),
-        });
-        if (!linkResponse.ok) throw new Error("Account link could not be saved.");
-      }
-      return new Response(JSON.stringify({ success: true, email }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+      const result=await resolveAuthLink(profile,passwordHash,authLinkStore(supabaseUrl,serviceRoleKey));
+      return new Response(JSON.stringify(result), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
     }
 
     if (action === "reset-student-password") {
@@ -160,7 +147,7 @@ serve(async (request) => {
         !isProfileId(profileId) ||
         typeof birth !== "string" || !/^\d{6}(?:\d{2})?$/.test(birth.trim()) ||
         typeof phoneBack4 !== "string" || !/^\d{4}$/.test(phoneBack4.trim()) ||
-        typeof password !== "string" || password.length < 4 || password.length > 128
+        typeof password !== "string" || password.length < 6 || password.length > 128
       ) {
         throw new Error("비밀번호 초기화 요청 정보가 올바르지 않습니다.");
       }
@@ -348,7 +335,7 @@ serve(async (request) => {
       );
       if (!response.ok) throw new Error(`Coffee chat status could not be loaded. (${response.status})`);
       const coffeeChats = await response.json();
-      const studentIds = [...new Set(coffeeChats.map((chat: { student_id?: string }) => chat.student_id).filter(isUuid))];
+      const studentIds = [...new Set<string>(coffeeChats.map((chat: { student_id?: string }) => chat.student_id).filter(isUuid))];
       const namesByStudentId = new Map<string, string>();
       if (studentIds.length > 0) {
         const studentsResponse = await fetch(
@@ -388,7 +375,7 @@ serve(async (request) => {
       );
       if (!response.ok) throw new Error(`Pending coffee chat could not be loaded. (${response.status})`);
       const coffeeChats = await response.json();
-      const studentIds = [...new Set(coffeeChats.map((chat: { student_id?: string }) => chat.student_id).filter(isUuid))];
+      const studentIds = [...new Set<string>(coffeeChats.map((chat: { student_id?: string }) => chat.student_id).filter(isUuid))];
       const profilesByStudentId = new Map<string, { name?: string; school?: string; birth?: string }>();
       if (studentIds.length > 0) {
         const studentsResponse = await fetch(

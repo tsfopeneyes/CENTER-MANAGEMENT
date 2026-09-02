@@ -3,8 +3,10 @@ import { supabase } from '../../../supabaseClient';
 import { X, RefreshCw, Clock } from 'lucide-react';
 import { motion } from 'framer-motion';
 import PurchaseReceiptModal from './PurchaseReceiptModal';
+import useModalClose from '../../../hooks/useModalClose';
 
 const HaifnHistoryModal = ({ user, onClose, storeItems = [] }) => {
+    useModalClose(!!user, onClose);
     const [history, setHistory] = useState([]);
     const [loading, setLoading] = useState(true);
     const [receiptData, setReceiptData] = useState(null);

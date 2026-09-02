@@ -47,6 +47,7 @@ const CheckinSurveyModal = ({
 
     const activeMode = surveyConfig?.mode || 'SURVEY';
     const question = surveyConfig?.question || '오늘 하이픈에서 무엇을 하고 싶나요?';
+    const description = surveyConfig?.description || '';
     const options = surveyConfig?.options || [];
     const qaQuestion = surveyConfig?.qaQuestion || '오늘 센터에서 꼭 해보고 싶은 한 가지는 무엇인가요?';
     const qaPlaceholder = surveyConfig?.qaPlaceholder || '자유롭게 작성해 주세요';
@@ -77,7 +78,7 @@ const CheckinSurveyModal = ({
     const matchedRecommendations = options.filter(o => selections.includes(o.id));
 
     return (
-        <div className="fixed inset-0 bg-slate-900/80 z-[130] flex items-center justify-center p-4 sm:p-6 backdrop-blur-md animate-fade-in">
+        <div className="fixed inset-0 bg-slate-900/80 z-[130] flex items-start sm:items-center justify-center p-4 sm:p-6 backdrop-blur-md animate-fade-in overflow-y-auto">
             <AnimatePresence mode="wait">
                 {status === 'SHOW_SURVEY' ? (
                     <motion.div
@@ -96,11 +97,11 @@ const CheckinSurveyModal = ({
                                  activeMode === 'QUESTION_QA' ? qaQuestion :
                                  question}
                             </h3>
-                            <p className="text-slate-400 text-xs font-bold">
-                                {activeMode === 'CHAT_SHOUTOUT' ? '남겨주신 메시지는 센터 실시간 채팅에 자동 게시됩니다 ✨' :
-                                 activeMode === 'QUESTION_QA' ? '오늘의 생각을 자유롭게 글자로 적어주세요.' :
-                                 '원하는 활동을 자유롭게 선택해 주세요. (중복 선택 가능)'}
-                            </p>
+                            {description && (
+                                <p className="text-slate-400 text-xs font-bold leading-relaxed whitespace-pre-line">
+                                    {description}
+                                </p>
+                            )}
                         </div>
 
                         {/* Mode 2: 주관식 오늘의 질문 / Mode 3: 라이브 채팅 한마디 */}

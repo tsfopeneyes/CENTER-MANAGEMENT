@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {PGlite} from '@electric-sql/pglite';
+import {deliverRecruitmentAlerts,recruitmentMessage} from '../supabase/functions/send-recruitment-alerts/worker.mjs';
+const db=new PGlite();
+const a='00000000-0000-0000-0000-000000000001', b='00000000-0000-0000-0000-000000000002';
+try {
+ await db.exec(`CREATE ROLE anon;CREATE ROLE authenticated;CREATE ROLE service_role BYPASSRLS;
+ CREATE SCHEMA auth;CREATE TABLE auth.users(id uuid PRIMARY KEY,is_anonymous boolean DEFAULT false,banned_until timestamptz);
+ INSERT INTO auth.users(id) VALUES('${a}'),('${b}');
+ CREATE FUNCTION auth.uid() RETURNS uuid LANGUAGE sql AS $$SELECT nullif(current_setting('request.jwt.claim.sub',true),'')::uuid$$;
+ CREATE FUNCTION auth.role() RETURNS text LANGUAGE sql AS $$SELECT current_setting('request.jwt.claim.role',true)$$;
+ CREATE FUNCTION auth.jwt() RETURNS jsonb LANGUAGE sql AS $$SELECT '{}'::jsonb$$;
+ GRANT USAGE ON SCHEMA auth TO authenticated,service_role;
+ CREATE TABLE notices(id bigint PRIMARY KEY,title text,category text,is_recruiting boolean,is_private boolean,
+ recruitment_start_at timestamptz,recruitment_deadline timestamptz,program_status text,guest_properties jsonb,
+ recruitment_details_ready boolean,is_challenge boolean,program_end_date date,program_date timestamptz);
+ INSERT INTO notices VALUES(1,'Test','PROGRAM',true,false,now()+interval '1 day',now()+interval '2 days','ACTIVE','{}',true,false,null,now()+interval '3 days');`);
+ await db.exec(readFileSync(new URL('../supabase/migrations/20260831010400_program_recruitment_interests.sql',import.meta.url),'utf8'));
+ await db.exec(`SET ROLE authenticated;SELECT set_config('request.jwt.claim.role','authenticated',false);SELECT set_config('request.jwt.claim.sub','${a}',false);`);
+ await db.exec(`INSERT INTO program_recruitment_interests(notice_id,auth_user_id,fcm_token) VALUES(1,'${a}','abcdefghijklmnopqrstuv');`);
+ await assert.rejects(db.exec(`INSERT INTO program_recruitment_interests(notice_id,auth_user_id,fcm_token) VALUES(1,'${b}','abcdefghijklmnopqrstuv')`));
+ await assert.rejects(db.exec("UPDATE program_recruitment_interests SET delivery_state='sent'"));
+ await assert.rejects(db.query('SELECT * FROM program_recruitment_alert_due'));
+ await db.exec(`SELECT set_config('request.jwt.claim.sub','${b}',false)`);
+ assert.equal((await db.query('SELECT * FROM program_recruitment_interests')).rows.length,0);
+ await db.exec(`SELECT set_config('request.jwt.claim.sub','${a}',false);UPDATE program_recruitment_interests SET enabled=false;UPDATE program_recruitment_interests SET enabled=true;RESET ROLE;`);
+ assert.equal((await db.query('SELECT * FROM program_recruitment_alert_due')).rows.length,0);
+ await db.exec("UPDATE notices SET recruitment_start_at=now()-interval '1 minute'");
+ assert.equal((await db.query('SELECT * FROM program_recruitment_alert_due')).rows.length,1);
+ await db.exec('UPDATE notices SET is_private=true');
+ assert.equal((await db.query('SELECT * FROM program_recruitment_alert_due')).rows.length,0);
+ await db.exec('UPDATE notices SET is_private=false,recruitment_details_ready=false');
+ assert.equal((await db.query('SELECT * FROM program_recruitment_alert_due')).rows.length,0);
+ await db.exec('UPDATE notices SET recruitment_details_ready=true');
+ await db.exec(`SET ROLE authenticated;UPDATE program_recruitment_interests SET enabled=false;`);
+ await assert.rejects(db.exec('UPDATE program_recruitment_interests SET enabled=true'));
+ await db.exec('RESET ROLE');
+ assert.equal((await db.query('SELECT * FROM program_recruitment_alert_due')).rows.length,0);
+} finally {await db.close();}
+
+const row={id:a,revision:b,notice_id:1,title:'관심 프로그램',fcm_token:'only-this-token',attempts:0,recruitment_deadline:new Date(Date.now()+100000).toISOString()};
+const message=recruitmentMessage(row,'https://example.com');
+assert.equal(message.message.token,'only-this-token');
+assert.equal(message.message.webpush.fcm_options.link,'https://example.com/p/1');
+assert.throws(()=>recruitmentMessage(row,'http://example.com'));
+let sent=0,claimed=false,patch;
+const store={list:async()=>[row],claim:async()=>{if(claimed)return false;claimed=true;return true;},current:async()=>({...row,attempts:1}),notify:async()=>{},release:async()=>{},finish:async(_r,_a,p)=>{patch=p;}};
+const send=async()=>{sent++;return {state:'sent'};};
+await Promise.all([deliverRecruitmentAlerts({store,send}),deliverRecruitmentAlerts({store,send})]);
+assert.equal(sent,1);assert.equal(patch.delivery_state,'sent');
+claimed=false;
+await deliverRecruitmentAlerts({store,send:async()=>{throw new Error('timeout');}});
+assert.equal(patch.delivery_state,'uncertain');
+claimed=false;
+await deliverRecruitmentAlerts({store,send:async()=>({state:'retry',code:'fcm_503'})});
+assert.equal(patch.delivery_state,'retry');assert.ok(patch.next_attempt_at);
+claimed=false;store.current=async()=>null;
+await deliverRecruitmentAlerts({store,send});assert.equal(sent,1);
+store.list=async()=>[];
+await deliverRecruitmentAlerts({store,send});assert.equal(sent,1);
+console.log('Recruitment alerts: owner isolation, protected state, due gates, cancellation, claim race, retry, unknown delivery and no broadcast passed.');

@@ -1,6 +1,8 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { supabase } from '../../../../supabaseClient';
 import { hashPassword } from '../../../../utils/hashUtils';
+import { getAccountAuthClient, isAccountAuthEnabled } from '../../../../auth/accountAuthRuntime';
+import { listPendingGuestLinks } from '../../../../api/userMergeApi';
 
 const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
     // 1. Search & Filter State
@@ -20,6 +22,11 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
     const [isMergeModalOpen, setIsMergeModalOpen] = useState(false);
     const [notificationModalOpen, setNotificationModalOpen] = useState(false);
     const [viewerImage, setViewerImage] = useState(null);
+    const [linkReviews,setLinkReviews]=useState(new Map());
+    useEffect(()=>{let active=true;if(!isAccountAuthEnabled()){setLinkReviews(new Map());return()=>{active=false;};}
+        listPendingGuestLinks().then(reviews=>{if(!active)return;const mapped=new Map();for(const review of reviews){
+            mapped.set(review.newProfileId,review);for(const candidate of review.candidates||[])mapped.set(candidate.profileId,review);}setLinkReviews(mapped);
+        }).catch(()=>{if(active)setLinkReviews(new Map());});return()=>{active=false;};},[users]);
 
     // Filter Logic
     const filteredUsers = useMemo(() => {
@@ -128,13 +135,14 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
 
             return {
                 ...user,
+                needsLinkReview:linkReviews.has(user.id),linkReview:linkReviews.get(user.id)||null,
                 isNew3M: checkIsNew3M(user),
                 lastActiveAt: lastActiveTime ? lastActiveTime.toISOString() : null,
                 lastActiveFormatted: formatted,
                 hasWebRecord
             };
         });
-    }, [users, searchTerm, filterGroup, excludeLeaders, showOnlyNonSchoolChurch, showOnlyNew3Months, allLogs]);
+    }, [users, searchTerm, filterGroup, excludeLeaders, showOnlyNonSchoolChurch, showOnlyNew3Months, allLogs,linkReviews]);
 
     // Selection Logic
     const toggleSelectAll = () => {
@@ -214,6 +222,11 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
         if (!confirm(`'${targetUser.name}' 회원의 비밀번호를 휴대폰 뒷 4자리(${phoneBack4})로 초기화하시겠습니까?`)) return;
 
         try {
+            if (isAccountAuthEnabled()) {
+                await getAccountAuthClient().adminReset({ profileId: targetUser.id });
+                alert('비밀번호가 초기화되었습니다. 회원은 임시 비밀번호로 로그인한 뒤 새 비밀번호를 설정할 수 있습니다.');
+                return;
+            }
             const hashedPassword = await hashPassword(phoneBack4);
             const { error } = await supabase.from('users').update({
                 password: hashedPassword
@@ -233,6 +246,12 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
         const action = newRole === 'admin' ? '부여' : '해제';
         if (!confirm(`${user.name}님에게 관리자 권한을 ${action}하시겠습니까?`)) return;
         try {
+            if (isAccountAuthEnabled()) {
+                await getAccountAuthClient().members.setRole({profileId:user.id,admin:newRole==='admin'});
+                alert(`관리자 권한이 ${action}되었습니다.`);
+                fetchData();
+                return;
+            }
             const { error } = await supabase.from('users').update({ role: newRole }).eq('id', user.id);
             if (error) throw error;
             alert(`관리자 권한이 ${action}되었습니다.`);

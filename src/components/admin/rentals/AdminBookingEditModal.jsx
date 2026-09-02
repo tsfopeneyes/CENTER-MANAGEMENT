@@ -2,8 +2,10 @@ import React, { useState } from 'react';
 import { supabase } from '../../../supabaseClient';
 import { X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import useModalClose from '../../../hooks/useModalClose';
 
 const AdminBookingEditModal = ({ booking, onClose, onSuccess }) => {
+    useModalClose(!!booking, onClose);
     const endParts = booking.end_time.split('|');
     
     const [bookingDate, setBookingDate] = useState(booking.booking_date);

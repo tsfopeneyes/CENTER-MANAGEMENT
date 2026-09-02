@@ -1,6 +1,8 @@
 import React from 'react';
 import { Share2, Database, ShieldAlert } from 'lucide-react';
-import { isHaifnRotatingQrEnabled } from '../../../../utils/kioskQr';
+import { QRCodeSVG } from 'qrcode.react';
+
+const STUDENT_APP_URL = 'https://app.schoolchurchimpact.org';
 
 const IntegrationConfig = ({
     gsWebhookUrl,
@@ -32,7 +34,55 @@ const IntegrationConfig = ({
     handleSaveIntegrations,
     handleGoogleSheetsBackup
 }) => {
-    const rotatingHaifnQrEnabled = isHaifnRotatingQrEnabled();
+    const downloadStudentAppQr = () => {
+        const svg = document.getElementById('student-app-qr');
+        if (!svg) return;
+
+        const source = new XMLSerializer().serializeToString(svg);
+        const blob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+        const objectUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = objectUrl;
+        link.download = 'student-webapp-qr.svg';
+        link.click();
+        URL.revokeObjectURL(objectUrl);
+    };
+
+    const downloadStudentAppQrPng = () => {
+        const svg = document.getElementById('student-app-qr');
+        if (!svg) return;
+
+        const source = new XMLSerializer().serializeToString(svg);
+        const svgBlob = new Blob([source], { type: 'image/svg+xml;charset=utf-8' });
+        const objectUrl = URL.createObjectURL(svgBlob);
+        const image = new Image();
+        image.onload = () => {
+            const canvas = document.createElement('canvas');
+            canvas.width = 1200;
+            canvas.height = 1200;
+            const context = canvas.getContext('2d');
+            if (!context) {
+                URL.revokeObjectURL(objectUrl);
+                return;
+            }
+            context.fillStyle = '#ffffff';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            context.imageSmoothingEnabled = false;
+            context.drawImage(image, 0, 0, canvas.width, canvas.height);
+            URL.revokeObjectURL(objectUrl);
+
+            canvas.toBlob((pngBlob) => {
+                if (!pngBlob) return;
+                const pngUrl = URL.createObjectURL(pngBlob);
+                const link = document.createElement('a');
+                link.href = pngUrl;
+                link.download = 'student-webapp-qr.png';
+                link.click();
+                URL.revokeObjectURL(pngUrl);
+            }, 'image/png');
+        };
+        image.src = objectUrl;
+    };
     const Toggle = ({ enabled, onChange, label }) => (
         <button
             type="button"
@@ -217,102 +267,55 @@ const IntegrationConfig = ({
                 </div>
             </div>
 
-            {/* Center Specific Check-in QR Code Card */}
+            {/* Student web app QR for printed materials */}
             <div className="bg-white rounded-[24px] border border-[#f2f4f6] p-6 shadow-sm space-y-6">
                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-2 border-b border-gray-100 pb-4">
                     <div>
                         <h4 className="text-base font-bold text-[#191f28] flex items-center gap-2">
-                            <span>📱</span> 센터별 현장 체크인 QR 코드
+                            <span>📱</span> 학생용 웹앱 QR 코드
                         </h4>
                         <p className="text-xs text-gray-400 mt-1">
-                            {rotatingHaifnQrEnabled
-                                ? '하이픈은 키오스크에서 자동 변경되는 QR을 사용하고, 이높플레이스는 기존 고정 QR을 사용합니다.'
-                                : '전환 준비 중에는 하이픈과 이높플레이스 모두 기존 고정 QR을 계속 사용할 수 있습니다.'}
+                            명함이나 안내물에 넣어 학생용 페이지로 바로 연결할 수 있습니다.
                         </p>
                     </div>
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    {/* 1. 하이픈 (강동 센터) */}
-                    <div className="p-5 bg-[#f8f9fa] rounded-2xl border border-gray-100 space-y-4 flex flex-col justify-between">
-                        <div className="flex items-center justify-between">
-                            <span className="px-3 py-1 bg-red-50 text-[#E63946] border border-red-100 text-xs font-extrabold rounded-full">
-                                📍 하이픈 (강동 센터)
-                            </span>
-                            <span className={`text-xs font-bold ${rotatingHaifnQrEnabled ? 'text-emerald-600' : 'text-gray-400 font-mono'}`}>
-                                {rotatingHaifnQrEnabled ? '60초 자동 변경' : 'loc=HAIFN'}
-                            </span>
+                <div className="p-5 bg-[#f8f9fa] rounded-2xl border border-gray-100">
+                    <div className="flex flex-col sm:flex-row items-center gap-6 bg-white p-5 rounded-2xl border border-gray-200/80 shadow-xs">
+                        <div className="bg-white p-2 rounded-xl border border-gray-100 shrink-0">
+                            <QRCodeSVG
+                                id="student-app-qr"
+                                value={STUDENT_APP_URL}
+                                size={180}
+                                level="H"
+                                marginSize={2}
+                                title="학생용 웹앱 QR 코드"
+                            />
                         </div>
-
-                        {rotatingHaifnQrEnabled ? <div className="bg-white p-5 rounded-2xl border border-emerald-100 shadow-xs">
-                            <div className="w-14 h-14 rounded-2xl bg-emerald-50 flex items-center justify-center text-2xl mb-4">🔐</div>
-                            <div className="text-sm font-extrabold text-gray-800 mb-2">하이픈 키오스크 화면에서만 발급됩니다</div>
-                            <p className="text-xs text-gray-500 font-medium leading-relaxed">
-                                저장하거나 출력할 수 있는 고정 주소는 폐기되었습니다. 키오스크에 표시되는 최신 QR을 현장에서 스캔해야 체크인과 체크아웃이 가능합니다.
-                            </p>
-                        </div> : <>
-                            <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
-                                <img
-                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=HAIFN')}`}
-                                    alt="HAIFN Checkin QR"
-                                    className="w-36 h-36 object-contain rounded-lg shrink-0"
-                                />
-                                <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
-                                    <div className="text-[11px] font-bold text-gray-400">전환 전 사용 주소</div>
-                                    <div className="text-xs font-extrabold text-blue-600 font-mono break-all bg-blue-50/50 p-2 rounded-lg border border-blue-100/60">
-                                        https://app.schoolchurchimpact.org/checkin?loc=HAIFN
-                                    </div>
-                                </div>
+                        <div className="space-y-3 text-center sm:text-left flex-1 min-w-0">
+                            <div>
+                                <div className="text-sm font-extrabold text-gray-800">학생용 페이지 바로가기</div>
+                                <p className="text-xs text-gray-500 font-medium mt-1">센터 체크인이 아닌 일반 웹앱 로그인 화면으로 연결됩니다.</p>
                             </div>
-                            <a
-                                href={`https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=HAIFN')}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                download="haifn_checkin_qr.png"
-                                className="px-3.5 py-2.5 bg-[#191f28] text-white text-xs font-bold rounded-xl hover:bg-black transition shadow-sm inline-flex items-center justify-center"
-                            >
-                                📥 기존 QR 원본 다운로드
-                            </a>
-                        </>}
-
-                        {rotatingHaifnQrEnabled && <div className="text-[11px] font-bold text-gray-400">최초 사용 시 키오스크에서 관리자 PIN으로 기기를 활성화해야 합니다.</div>}
-                    </div>
-
-                    {/* 2. 이높플레이스 (강서 센터) */}
-                    <div className="p-5 bg-[#f8f9fa] rounded-2xl border border-gray-100 space-y-4 flex flex-col justify-between">
-                        <div className="flex items-center justify-between">
-                            <span className="px-3 py-1 bg-indigo-50 text-indigo-600 border border-indigo-100 text-xs font-extrabold rounded-full">
-                                📍 이높플레이스 (강서 센터)
-                            </span>
-                            <span className="text-xs font-bold text-gray-400 font-mono">loc=ENOUGH_PLACE</span>
-                        </div>
-
-                        <div className="flex flex-col sm:flex-row items-center gap-4 bg-white p-4 rounded-2xl border border-gray-200/80 shadow-xs">
-                            <div className="flex flex-col items-center shrink-0">
-                                <img
-                                    src={`https://api.qrserver.com/v1/create-qr-code/?size=300x300&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=ENOUGH_PLACE')}`}
-                                    alt="ENOUGH PLACE Checkin QR"
-                                    className="w-36 h-36 object-contain rounded-lg"
-                                />
+                            <div className="text-xs font-extrabold text-blue-600 font-mono break-all bg-blue-50/50 p-3 rounded-lg border border-blue-100/60">
+                                {STUDENT_APP_URL}
                             </div>
-                            <div className="space-y-2 text-center sm:text-left flex-1 min-w-0">
-                                <div className="text-[11px] font-bold text-gray-400">QR 연결 전용 주소</div>
-                                <div className="text-xs font-extrabold text-blue-600 font-mono break-all bg-blue-50/50 p-2 rounded-lg border border-blue-100/60">
-                                    https://app.schoolchurchimpact.org/checkin?loc=ENOUGH_PLACE
-                                </div>
+                            <div className="flex flex-col sm:flex-row gap-2">
+                                <button
+                                    type="button"
+                                    onClick={downloadStudentAppQrPng}
+                                    className="w-full sm:w-auto px-4 py-2.5 bg-[#191f28] text-white text-xs font-bold rounded-xl hover:bg-black transition shadow-sm inline-flex items-center justify-center"
+                                >
+                                    📥 PNG 다운로드
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={downloadStudentAppQr}
+                                    className="w-full sm:w-auto px-4 py-2.5 bg-white text-[#191f28] border border-gray-200 text-xs font-bold rounded-xl hover:bg-gray-50 transition shadow-sm inline-flex items-center justify-center"
+                                >
+                                    SVG 다운로드
+                                </button>
                             </div>
-                        </div>
-
-                        <div className="pt-1">
-                            <a
-                                href={`https://api.qrserver.com/v1/create-qr-code/?size=600x600&data=${encodeURIComponent('https://app.schoolchurchimpact.org/checkin?loc=ENOUGH_PLACE')}`}
-                                target="_blank"
-                                rel="noreferrer"
-                                download="enough_place_checkin_qr.png"
-                                className="flex-1 min-w-[140px] px-3.5 py-2.5 bg-[#191f28] text-white text-xs font-bold rounded-xl hover:bg-black transition shadow-sm inline-flex items-center justify-center gap-1.5"
-                            >
-                                <span>📥 QR 원본 다운로드</span>
-                            </a>
                         </div>
                     </div>
                 </div>

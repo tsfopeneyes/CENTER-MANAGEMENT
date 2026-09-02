@@ -3,6 +3,8 @@ import { supabase } from '../../../supabaseClient';
 import { TERMS_VERSION } from '../../../constants/appConstants';
 import { hashPassword } from '../../../utils/hashUtils';
 import { normalizeSchoolName } from '../../../utils/userUtils';
+import { isVisitorOrTemporary } from '../../../utils/memberAccountType';
+import { getAccountAuthClient, isAccountAuthEnabled } from '../../../auth/accountAuthRuntime';
 
 export const useSignUp = (onSuccess, guestUserId = null) => {
     const [formData, setFormData] = useState({
@@ -75,6 +77,23 @@ export const useSignUp = (onSuccess, guestUserId = null) => {
                 setLoading(false); return;
             }
 
+            if (isAccountAuthEnabled()) {
+                await getAccountAuthClient().registration.submit({
+                    password: formData.password,
+                    details: {
+                        formData,
+                        agreements,
+                        termsVersion: TERMS_VERSION,
+                        ...(guestUserId ? { guestUserId } : {})
+                    }
+                });
+
+                if (under14) alert('만 14세 미만 회원은 임시 가입되었습니다. 관리자가 보호자 동의 확인 후 정식 회원으로 승인됩니다.');
+                else alert('가입이 완료되었습니다! 로그인해 주세요.');
+                if (onSuccess) onSuccess();
+                return;
+            }
+
             let targetUserId = guestUserId;
             let isAutoMerge = !!guestUserId;
             let existingMemo = null;
@@ -110,15 +129,7 @@ export const useSignUp = (onSuccess, guestUserId = null) => {
 
                 if (existing) {
                     existingMemo = existing.memo;
-                    // Check if they have a valid auth record in the database
-                    const { data: candidates } = await supabase
-                        .rpc('get_login_candidates', { p_name: existing.name });
-                    const hasAuthRecord = candidates?.some(c => c.id === existing.id && c.email !== null);
-
-                    const isTemporary = existing.user_group === '게스트' || 
-                                        existing.user_group === '미가입' || 
-                                        existing.preferences?.is_temporary === true ||
-                                        !hasAuthRecord;
+                    const isTemporary = isVisitorOrTemporary(existing);
 
                     if (isTemporary) {
                         targetUserId = existing.id;

@@ -44,8 +44,7 @@ export const useNotices = (userId) => {
 
     const handleResponse = async (noticeId, status) => {
         try {
-            const notice = notices.find(n => n.id === noticeId);
-            if (!notice) return;
+            const notice = await noticesApi.loadForStudentRegistration(noticeId);
 
             // 1. Strict Deadline Check
             if (notice.recruitment_deadline) {
@@ -80,6 +79,7 @@ export const useNotices = (userId) => {
             // 3. Toggle/Cancel Logic
             if (status === 'CANCEL' || status === oldStatus || (status === RESPONSE_STATUS.JOIN && oldStatus === RESPONSE_STATUS.WAITLIST)) {
                 if (window.confirm('신청을 취소하시겠습니까?')) {
+                    await noticesApi.loadForStudentRegistration(noticeId);
                     await noticesApi.deleteResponse(noticeId, userId);
                     setResponses(prev => {
                         const next = { ...prev };
@@ -99,7 +99,7 @@ export const useNotices = (userId) => {
                 return;
             }
 
-            await noticesApi.upsertResponse(noticeId, userId, finalStatus);
+            await noticesApi.upsertStudentResponse(noticeId, userId, finalStatus);
             setResponses(prev => ({ ...prev, [noticeId]: finalStatus }));
             await trackUserWebActivity({ id: userId });
 
@@ -134,10 +134,29 @@ export const useNotices = (userId) => {
             })
             .subscribe();
 
+        const refreshVisible = () => { if (document.visibilityState === 'visible') fetchNotices(); };
+        // Hidden rows do not emit readable Realtime changes to students.
+        const interval = window.setInterval(refreshVisible, 60000);
+        window.addEventListener('focus', refreshVisible);
+        document.addEventListener('visibilitychange', refreshVisible);
+
         return () => {
+            window.clearInterval(interval);
+            window.removeEventListener('focus', refreshVisible);
+            document.removeEventListener('visibilitychange', refreshVisible);
             supabase.removeChannel(channel);
         };
     }, [fetchNotices]);
+
+    useEffect(() => {
+        const now = Date.now();
+        const starts = notices.filter(item => item.is_program_preview && item.recruitment_details_ready)
+            .map(item => new Date(item.recruitment_start_at).getTime()).filter(Number.isFinite);
+        if (!starts.length) return;
+        const delay = Math.min(2147483647, Math.max(1500, Math.min(...starts) - now + 150));
+        const timer = window.setTimeout(fetchNotices, delay);
+        return () => window.clearTimeout(timer);
+    }, [notices, fetchNotices]);
 
     return {
         notices,

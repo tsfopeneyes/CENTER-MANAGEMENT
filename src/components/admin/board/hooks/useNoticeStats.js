@@ -1,10 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { supabase } from '../../../../supabaseClient';
 import { RESPONSE_STATUS } from '../../../../constants/appConstants';
+import { useProgramInterestCounts } from './useProgramInterestCounts';
 
 const useNoticeStats = (filteredNotices, mode) => {
     const [noticeStats, setNoticeStats] = useState({});
     const [isLoading, setIsLoading] = useState(false);
+    const interest = useProgramInterestCounts(filteredNotices);
 
     useEffect(() => {
         const fetchStats = async () => {
@@ -117,7 +119,16 @@ const useNoticeStats = (filteredNotices, mode) => {
         fetchStats();
     }, [filteredNotices, mode]);
 
-    return { noticeStats, isLoading };
+    const combinedStats = useMemo(() => {
+        const combined = {...noticeStats};
+        for (const notice of filteredNotices || []) {
+            if (notice.category !== 'PROGRAM') continue;
+            combined[notice.id] = {...combined[notice.id], interestCount:interest.counts[notice.id],
+                interestLoading:interest.loading, interestError:interest.error};
+        }
+        return combined;
+    },[noticeStats,filteredNotices,interest.counts,interest.loading,interest.error]);
+    return { noticeStats:combinedStats, isLoading };
 };
 
 export default useNoticeStats;

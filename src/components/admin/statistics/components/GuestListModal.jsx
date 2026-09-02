@@ -1,8 +1,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Users, X } from 'lucide-react';
+import useModalClose from '../../../../hooks/useModalClose';
 
 const GuestListModal = ({ isOpen, onClose, spaceName, guests }) => {
+    useModalClose(isOpen, onClose);
     if (!isOpen) return null;
 
     return (

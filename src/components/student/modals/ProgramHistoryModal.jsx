@@ -1,8 +1,10 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { X, CheckCircle } from 'lucide-react';
+import useModalClose from '../../../hooks/useModalClose';
 
 const ProgramHistoryModal = ({ attendedProgramsList, setShowProgramHistory }) => {
+    useModalClose(true, () => setShowProgramHistory(false));
     return (
                     <motion.div
                         initial={{ opacity: 0 }}

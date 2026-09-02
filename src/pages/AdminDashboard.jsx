@@ -31,6 +31,7 @@ import AdminRentals from '../components/admin/rentals/AdminRentals';
 import AdminContents from '../components/admin/contents/AdminContents';
 import AdminDuty from '../components/admin/duty/AdminDuty';
 import StaffPresenceToggleCard from '../components/admin/dashboard/components/StaffPresenceToggleCard';
+import AdminSurveys from '../components/admin/surveys/AdminSurveys';
 import { Menu, X as CloseIcon } from 'lucide-react';
 import { subscribeToPush } from '../utils/pushUtils';
 
@@ -725,6 +726,9 @@ const AdminDashboard = () => {
                     {activeMenu === 'SCHOOLS' && (
                         <AdminSchool users={users} fetchData={fetchData} />
                     )}
+                    {activeMenu === 'SURVEYS' && (
+                        <AdminSurveys notices={notices} responses={checkinSurveys} visitNotes={visitNotes} users={users} locations={locations} logs={allLogs} fetchData={fetchData} />
+                    )}
                     {activeMenu === 'RENTALS' && (
                         <AdminRentals notices={notices} />
                     )}
@@ -759,7 +763,7 @@ const AdminDashboard = () => {
                         <AdminBadges />
                     )}
                     {activeMenu === 'SETTINGS' && (
-                        <AdminSettings currentAdmin={currentAdmin} locations={locations} locationGroups={locationGroups} notices={notices} fetchData={fetchData} users={users} allLogs={allLogs} responses={responses} schoolLogs={schoolLogs} />
+                        <AdminSettings currentAdmin={currentAdmin} locations={locations} locationGroups={locationGroups} notices={notices} fetchData={fetchData} users={users} allLogs={allLogs} responses={responses} schoolLogs={schoolLogs} setActiveMenu={setActiveMenu} />
                     )}
                 </main>
             </div>

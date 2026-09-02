@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, Clock, BookOpen, AlertCircle, Map } from 'lucide-react';
+import useModalClose from '../../../../hooks/useModalClose';
 
 const standardCheckinOptions = [
     '🍽️ 당 충전하며 쉬고 싶어요',
@@ -18,6 +19,7 @@ const standardCheckoutOptions = [
 ];
 
 const VisitLogEditModal = ({ isOpen, onClose, sessionLog, onSave, visitNotes, locations = [] }) => {
+    useModalClose(isOpen, onClose);
     const [date, setDate] = useState('');
     const [startTime, setStartTime] = useState('');
     const [endTime, setEndTime] = useState('');

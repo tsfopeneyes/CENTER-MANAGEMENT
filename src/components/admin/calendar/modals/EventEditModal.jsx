@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { X, Calendar as CalendarIcon, Clock, MapPin, Users, Trash2, Tag, Info } from 'lucide-react';
+import { X, Calendar as CalendarIcon, MapPin, Users, Trash2, Tag, Info } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import ModernEditor from '../../../common/ModernEditor';
+import DatePicker from '../../../common/DatePicker';
+import TimePicker from '../../../common/TimePicker';
+import WriteForm from '../../board/components/forms/WriteForm';
+import { getCalendarEventTheme, getProgramCalendarTheme } from '../../../../utils/calendarColors';
+import useModalClose from '../../../../hooks/useModalClose';
 
 const HAIFN_DETAILS = [
     'B1F STAGE',
@@ -19,12 +24,14 @@ const EventEditModal = ({
     setFormData, 
     selectedEvent, 
     setSelectedEvent, 
-    dynamicCategories, 
+    dynamicCategories, calendarCategories,
     handleSaveEvent, 
     handleDelete, 
     setShowModal,
-    setActiveMenu
+    setActiveMenu,
+    onProgramSaved
 }) => {
+    useModalClose(true, () => setShowModal(false));
     const [localMain, setLocalMain] = useState('');
     const [selectedDetail, setSelectedDetail] = useState('');
     const [customVal, setCustomVal] = useState('');
@@ -183,6 +190,16 @@ const EventEditModal = ({
         programEndTime = getEndTimeFromDuration(formData.start_time, selectedEvent.raw.duration);
     }
 
+    if (formData.type === 'PROGRAM' && !isReadOnly) return (
+        <motion.div className="fixed inset-0 z-[200] bg-black/40 p-3 sm:p-6 overflow-y-auto" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+            <div className="mx-auto max-w-4xl rounded-3xl bg-white p-4 sm:p-6">
+                <div className="flex items-center justify-between mb-4"><h2 className="text-lg font-bold">프로그램 등록</h2><button type="button" aria-label="닫기" onClick={() => setShowModal(false)}><X size={22} /></button></div>
+                <button type="button" className="text-xs font-bold text-blue-600 mb-4" onClick={() => setFormData(previous => ({ ...previous, type: 'SCHEDULE' }))}>← 일반 일정으로 돌아가기</button>
+                <WriteForm mode="PROGRAM" initialProgramDate={formData.start_date + 'T' + (formData.start_time || '12:00')} onSave={() => { onProgramSaved?.(); setShowModal(false); }} onCancel={() => setShowModal(false)} flat />
+            </div>
+        </motion.div>
+    );
+
     return (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowModal(false)} className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" />
@@ -193,11 +210,11 @@ const EventEditModal = ({
                         {/* Category Badge Line */}
                         <div className="mb-2">
                             {isProgram ? (
-                                <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase tracking-wider ${formData.program_type === 'SCHOOL_CHURCH' ? 'bg-purple-100 text-purple-700' : 'bg-pink-100 text-pink-700'}`}>
+                                <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase tracking-wider ${getProgramCalendarTheme(formData, calendarCategories).color}`}>
                                     {formData.program_type === 'SCHOOL_CHURCH' ? '스처 프로그램' : '센터 프로그램'}
                                 </span>
                             ) : isRental ? (
-                                <span className="px-3 py-1 bg-purple-100 text-purple-700 text-[10px] font-black rounded-full uppercase tracking-wider">
+                                <span className={`px-3 py-1 text-[10px] font-black rounded-full uppercase tracking-wider ${getCalendarEventTheme(selectedEvent, calendarCategories).color}`}>
                                     공간 대여
                                 </span>
                             ) : (
@@ -365,23 +382,11 @@ const EventEditModal = ({
                             <div className="grid grid-cols-2 gap-3">
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">시작 날짜</label>
-                                    <div className="relative">
-                                        <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
-                                        <input type="date" value={formData.start_date} onChange={e => setFormData(prev => ({ ...prev, start_date: e.target.value }))} className="w-full pl-9 p-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:bg-white focus:border-blue-500 text-xs font-bold shadow-inner" />
-                                    </div>
+                                    <DatePicker label="시작 날짜" value={formData.start_date} onChange={date => setFormData(prev => ({ ...prev, start_date: date }))} />
                                 </div>
                                 <div className="space-y-1.5">
                                     <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">시간</label>
-                                    <div className="relative">
-                                        <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
-                                        <input
-                                            type="time"
-                                            step="300"
-                                            value={formData.start_time}
-                                            onChange={e => setFormData(prev => ({ ...prev, start_time: e.target.value }))}
-                                            className="w-full pl-9 p-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:bg-white focus:border-blue-500 text-xs font-bold shadow-inner"
-                                        />
-                                    </div>
+                                    <TimePicker label="시작 시간" value={formData.start_time} onChange={time => setFormData(prev => ({ ...prev, start_time: time }))} clearable />
                                 </div>
                             </div>
 
@@ -397,23 +402,11 @@ const EventEditModal = ({
                                     <div className="grid grid-cols-2 gap-3">
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">종료 날짜</label>
-                                            <div className="relative">
-                                                <CalendarIcon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
-                                                <input type="date" value={formData.end_date} onChange={e => setFormData(prev => ({ ...prev, end_date: e.target.value }))} className="w-full pl-9 p-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:bg-white focus:border-blue-500 text-xs font-bold shadow-inner" />
-                                            </div>
+                                            <DatePicker label="종료 날짜" value={formData.end_date} onChange={date => setFormData(prev => ({ ...prev, end_date: date }))} />
                                         </div>
                                         <div className="space-y-1.5">
                                             <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1">시간</label>
-                                            <div className="relative">
-                                                <Clock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300" size={14} />
-                                                <input
-                                                    type="time"
-                                                    step="300"
-                                                    value={formData.end_time}
-                                                    onChange={e => setFormData(prev => ({ ...prev, end_time: e.target.value }))}
-                                                    className="w-full pl-9 p-2.5 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:bg-white focus:border-blue-500 text-xs font-bold shadow-inner"
-                                                />
-                                            </div>
+                                            <TimePicker label="종료 시간" value={formData.end_time} onChange={time => setFormData(prev => ({ ...prev, end_time: time }))} clearable />
                                         </div>
                                     </div>
                                     <div className="space-y-1.5">
@@ -470,11 +463,10 @@ const EventEditModal = ({
                                                     </div>
                                                     <div>
                                                         <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest ml-1 mb-1 block">반복 종료일</label>
-                                                        <input
-                                                            type="date"
+                                                        <DatePicker
+                                                            label="반복 종료일"
                                                             value={formData.recurringEndDate}
-                                                            onChange={e => setFormData(prev => ({ ...prev, recurringEndDate: e.target.value }))}
-                                                            className="w-full p-2.5 bg-white border border-blue-100 rounded-lg outline-none text-xs font-bold"
+                                                            onChange={date => setFormData(prev => ({ ...prev, recurringEndDate: date }))}
                                                         />
                                                     </div>
                                                 </div>

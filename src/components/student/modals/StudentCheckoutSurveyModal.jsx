@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { LogOut, Check, X, Sparkles, HeartHandshake } from 'lucide-react';
 import { requestSupabaseRest } from '../../../utils/supabaseRest';
+import useModalClose from '../../../hooks/useModalClose';
+import { loadAssignedSurvey } from '../../../utils/surveyAssignments';
 
 const DEFAULT_CHECKOUT_OPTIONS = [
     { id: '1', emoji: '😊', label: '교제 및 휴식', recommendTitle: '휴식 세션 완료', recommendText: '편안한 휴식이 되었기를 바랍니다!' },
@@ -11,12 +13,14 @@ const DEFAULT_CHECKOUT_OPTIONS = [
 ];
 
 const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySkipped, user, locationName }) => {
+    useModalClose(isOpen, onClose);
     const [mode, setMode] = useState('SURVEY'); // 'SURVEY' | 'FEEDBACK_QA' | 'CHAT_SHOUTOUT' | 'HYBRID'
     const [questionText, setQuestionText] = useState('오늘 센터에서의 시간은 어떠셨나요?');
     const [qaQuestionText, setQaQuestionText] = useState('오늘 센터 이용 소감이나 하고 싶은 말을 남겨주세요!');
     const [qaPlaceholderText, setQaPlaceholderText] = useState('자유롭게 작성해 주세요 (예: 보드게임이 재밌었어요, 공간이 깨끗해요)');
     const [chatPromptText, setChatPromptText] = useState('퇴실하면서 친구들에게 작별 인사를 남겨보세요!');
     const [chatPlaceholderText, setChatPlaceholderText] = useState('예: 먼저 가볼게! 다들 재미있게 놀아~');
+    const [surveyId, setSurveyId] = useState(null);
 
     const [optionsList, setOptionsList] = useState(DEFAULT_CHECKOUT_OPTIONS);
     const [selectedLabels, setSelectedLabels] = useState([DEFAULT_CHECKOUT_OPTIONS[0].label]);
@@ -32,13 +36,15 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
         setChatShoutoutText('');
         const fetchConfig = async () => {
             try {
-                const configs = await requestSupabaseRest(
-                    'notices?select=content&category=eq.SYSTEM&title=eq.CHECKOUT_SURVEY_CONFIG&limit=1'
-                );
-                const data = configs?.[0];
-
-                if (data?.content) {
-                    const parsed = JSON.parse(data.content);
+                const assigned = await loadAssignedSurvey({ surveyType: 'CHECKOUT', locationName });
+                if (!assigned) {
+                    await onSurveySkipped?.();
+                    onClose();
+                    return;
+                }
+                if (assigned?.config) {
+                    const parsed = assigned.config;
+                    setSurveyId(assigned.id || null);
                     if (parsed.mode) setMode(parsed.mode);
                     if (parsed.question) setQuestionText(parsed.question);
                     if (parsed.qaQuestion) setQaQuestionText(parsed.qaQuestion);
@@ -55,7 +61,7 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
             }
         };
         fetchConfig();
-    }, [isOpen]);
+    }, [isOpen, locationName]);
 
     if (!isOpen) return null;
 
@@ -104,6 +110,10 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
                 selections: finalSelections,
                 text_answer: textAns,
                 mode: mode,
+                ...(surveyId ? {
+                    survey_id: surveyId,
+                    survey_snapshot: { question: questionText, qaQuestion: qaQuestionText, options: optionsList }
+                } : {}),
                 created_at: new Date().toISOString()
                 })
             });
@@ -137,7 +147,11 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
                 });
             }
 
-            await onSurveySaved?.(surveySummaryText);
+            await onSurveySaved?.({
+                feedbackText: surveySummaryText,
+                surveyQuestion: mode === 'FEEDBACK_QA' ? qaQuestionText : questionText,
+                surveyAnswers: textAns && mode === 'FEEDBACK_QA' ? [textAns] : finalSelections
+            });
         } catch (err) {
             console.error('Checkout survey save error:', err);
             // The visitor has already checked out. If the optional survey fails,

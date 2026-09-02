@@ -3,6 +3,8 @@ import { supabase } from '../supabaseClient';
 import { guestbookApi } from '../api/guestbookApi';
 import { haifnApi } from '../api/haifnApi';
 import { compressImage } from '../utils/imageUtils';
+import { isAccountAuthEnabled } from '../auth/accountAuthRuntime';
+import { uploadAccountImage } from '../auth/accountMedia';
 
 export const useGuestbook = (userId, defaultCategory = null) => {
     const [guestPosts, setGuestPosts] = useState([]);
@@ -32,6 +34,9 @@ export const useGuestbook = (userId, defaultCategory = null) => {
                 const compressedFile = await compressImage(file);
                 const fileExt = compressedFile.name.split('.').pop();
                 const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+                if(isAccountAuthEnabled()){
+                    imageUrls.push(await uploadAccountImage({profileId:userId,kind:'guestbook',file:compressedFile}));continue;
+                }
                 const { error: uploadError } = await supabase.storage
                     .from('notice-images')
                     .upload(`guest/${fileName}`, compressedFile);
@@ -98,6 +103,9 @@ export const useGuestbook = (userId, defaultCategory = null) => {
                 const compressedFile = await compressImage(file);
                 const fileExt = compressedFile.name.split('.').pop();
                 const fileName = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}.${fileExt}`;
+                if(isAccountAuthEnabled()){
+                    imageUrls.push(await uploadAccountImage({profileId:userId,kind:'guestbook',file:compressedFile}));continue;
+                }
                 const { error: uploadError } = await supabase.storage
                     .from('notice-images')
                     .upload(`guest/${fileName}`, compressedFile);

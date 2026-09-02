@@ -1,5 +1,6 @@
 import { extractProgramInfo } from '../../../../utils/textUtils';
 import { formatToLocalISO } from '../../../../utils/dateUtils';
+import { toKstInput, getRecruitmentStart } from '../../../../utils/programRecruitment';
 
 export const splitDateTime = (dateTimeStr) => {
     if (!dateTimeStr) return { date: '', time: '12:00' };
@@ -89,7 +90,7 @@ export const generateProgramInfoHtml = ({
 export const prepareNoticeForEdit = (notice) => {
     const { duration, location, cleanContent } = extractProgramInfo(notice.content);
 
-    const localProgramDate = notice.program_date ? formatToLocalISO(notice.program_date) : '';
+    const localProgramDate = notice.program_date ? toKstInput(notice.program_date) : '';
     const pDateFull = localProgramDate ? localProgramDate.split('T') : ['', '12:00'];
     const pTime = pDateFull[1] ? pDateFull[1].substring(0, 5) : '12:00';
 
@@ -101,8 +102,10 @@ export const prepareNoticeForEdit = (notice) => {
         is_sticky: notice.is_sticky || false,
         send_push: false,
         category: notice.category,
-        recruitment_deadline: notice.recruitment_deadline ? formatToLocalISO(notice.recruitment_deadline) : '',
-        max_capacity: notice.max_capacity || '',
+        recruitment_deadline: toKstInput(notice.recruitment_deadline),
+        recruitment_start_at: toKstInput(getRecruitmentStart(notice)),
+        _legacy_recruitment: !getRecruitmentStart(notice),
+        max_capacity: notice.max_capacity ?? 0,
         program_date: localProgramDate,
         program_time: pTime,
         program_duration: duration || notice.program_duration || '',

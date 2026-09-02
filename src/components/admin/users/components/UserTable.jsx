@@ -42,6 +42,7 @@ const UserTable = ({
                                                 return '-';
                                             })()}세)</span>
                                             {user.preferences?.is_temporary && <span className="ml-1 px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded-md text-[9px] font-black leading-none flex items-center shrink-0">미가입</span>}
+                                            {user.needsLinkReview && <span className="ml-1 px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded-md text-[9px] font-black leading-none flex items-center shrink-0">연결 확인 필요</span>}
                                             {user.is_leader && <span title="리더" className="flex items-center"><svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="#FACC15" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg></span>}
                                             {user.memo && <div className="w-2 h-2 rounded-full bg-yellow-400 shrink-0" title="메모 있음" />}
                                         </div>
@@ -97,6 +98,7 @@ const UserTable = ({
                                     <span className="font-bold text-gray-800 text-sm truncate">{user.name}</span>
                                     <span className="text-[10px] text-gray-400 flex-shrink-0">({user.gender || '-'})</span>
                                     {user.preferences?.is_temporary && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-600 rounded-md text-[9px] font-black shrink-0">미가입</span>}
+                                    {user.needsLinkReview && <span className="px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded-md text-[9px] font-black shrink-0">연결 확인 필요</span>}
                                     {user.is_leader && <span title="리더"><svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="#FACC15" stroke="#FACC15" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg></span>}
                                     {(() => {
                                         if (user.birth && user.birth.length === 6) {

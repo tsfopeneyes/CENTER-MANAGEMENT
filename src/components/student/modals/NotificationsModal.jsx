@@ -50,7 +50,8 @@ const NotificationsModal = ({ notifications, setShowNotificationsModal, markNoti
                                             >
                                                 <div className="flex justify-between items-start mb-2">
                                                     <span className="text-[10px] uppercase font-black tracking-widest text-blue-500 bg-blue-50 px-2 py-0.5 rounded-md">
-                                                        {notif.notification_type === 'NOTICE' || notif.target_group === '전체' || notif.target_group?.startsWith('REGION_') ? '공지' :
+                                                        {['RECRUITMENT','RECRUITMENT_SAVED'].includes(notif.notification_type) ? '관심 프로그램' :
+                                                         notif.notification_type === 'NOTICE' || notif.target_group === '전체' || notif.target_group?.startsWith('REGION_') ? '공지' :
                                                          notif.target_group?.startsWith('USER_') ? '알림' : 
                                                          notif.target_group}
                                                     </span>

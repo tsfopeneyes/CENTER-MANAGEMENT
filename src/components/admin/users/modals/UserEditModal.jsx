@@ -1,44 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { RefreshCw, Trash2, X, Save, School, ShieldAlert, KeyRound, Shield, MessageSquare, Star } from 'lucide-react';
-import CryptoJS from 'crypto-js';
 import { supabase } from '../../../../supabaseClient';
 import { feedbackApi } from '../../../../api/feedbackApi';
 import { extractProgramInfo } from '../../../../utils/textUtils';
 import UserAvatar from '../../../common/UserAvatar';
 import { aggregateVisitSessions } from '../../../../utils/visitUtils';
 import { normalizeSchoolName } from '../../../../utils/userUtils';
-
-const getRevealedPassword = (user) => {
-    if (!user || !user.password) return '미등록';
-    
-    const candidates = [];
-    
-    if (user.phone) {
-        const cleaned = user.phone.replace(/[^0-9]/g, '');
-        if (cleaned.length >= 4) {
-            candidates.push(cleaned.slice(-4));
-        }
-        candidates.push(cleaned);
-    }
-    if (user.phone_back4) {
-        candidates.push(user.phone_back4);
-    }
-    
-    // Check all possible 4 digit numbers
-    for (let i = 0; i <= 9999; i++) {
-        candidates.push(String(i).padStart(4, '0'));
-    }
-
-    const hashHex = user.password;
-    for (const cand of candidates) {
-        const hash = CryptoJS.SHA256(cand).toString(CryptoJS.enc.Hex);
-        if (hash === hashHex) {
-            return cand;
-        }
-    }
-    
-    return '사용자 지정 비밀번호';
-};
+import useModalClose from '../../../../hooks/useModalClose';
 
 const isAdministrator = (user) => (
     user?.is_master || user?.role === 'admin' || user?.user_group === '관리자'
@@ -49,6 +17,7 @@ const UserEditModal = ({
     handleDeleteUser, handleResetPassword, handleToggleAdminRole, handleApproveUser,
     userStats, fetchData, setIsMergeModalOpen, setViewerImage, locations
 }) => {
+    useModalClose(!!editingUser, () => setEditingUser(null));
     const [editFormData, setEditFormData] = useState({
         name: '', school: '', church: '', phone: '', user_group: '재학생', memo: '',
         status: 'approved', guardian_name: '', guardian_phone: '', guardian_relation: '',
@@ -554,7 +523,7 @@ const UserEditModal = ({
                                 onClick={() => setIsMergeModalOpen(true)}
                                 className="w-full py-3 bg-amber-50 text-amber-600 border border-amber-200 rounded-xl font-bold hover:bg-amber-100 transition flex items-center justify-center gap-2 shadow-sm mb-3"
                             >
-                                <RefreshCw size={18} /> 정식 계정으로 데이터 병합
+                                <RefreshCw size={18} /> 계정 연결 확인 안내
                             </button>
                         )}
                         {editingUser.user_group === 'STAFF' && (adminUser?.is_master || adminUser?.name === 'Rok') && (

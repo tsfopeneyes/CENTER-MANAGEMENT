@@ -3,6 +3,10 @@ display_information:
   description: Notion과 TSF 웹앱 현황을 찾아 답하는 더작은재단 AI 비서
   background_color: "#1F2937"
 features:
+  app_home:
+    home_tab_enabled: true
+    messages_tab_enabled: true
+    messages_tab_read_only_enabled: false
   bot_user:
     display_name: TSF
     always_online: false
@@ -17,7 +21,9 @@ oauth_config:
     bot:
       - app_mentions:read
       - chat:write
+      - channels:read
       - channels:history
+      - groups:read
       - groups:history
       - im:history
       - mpim:history
@@ -30,6 +36,7 @@ settings:
     request_url: https://erecqalsxoxrufggvmcc.supabase.co/functions/v1/slack-tsf
     bot_events:
       - app_mention
+      - message.im
   org_deploy_enabled: false
   socket_mode_enabled: false
   token_rotation_enabled: false

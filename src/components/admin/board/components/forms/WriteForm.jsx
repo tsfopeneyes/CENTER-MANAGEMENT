@@ -2,9 +2,12 @@ import React, { useState, useEffect, useCallback } from 'react';
 import PropTypes from 'prop-types';
 import { supabase } from '../../../../../supabaseClient';
 import { noticesApi } from '../../../../../api/noticesApi';
-import { CATEGORIES, MAX_IMAGES } from '../../utils/constants';
+import { CATEGORIES, MAX_IMAGES, MAX_PROGRAM_HAIFN_REWARD } from '../../utils/constants';
 import { generateProgramInfoHtml, prepareNoticeForEdit, joinDateTime } from '../../utils/noticeHelpers';
 import { compressImage } from '../../../../../utils/imageUtils';
+import { fromKstInput, getMissingProgramDetails } from '../../../../../utils/programRecruitment';
+import { isAccountAuthEnabled } from '../../../../../auth/accountAuthRuntime';
+import { cachedAccountProfileId, uploadAccountImage } from '../../../../../auth/accountMedia';
 
 // Hooks
 import useNoticeForm from '../../hooks/useNoticeForm';
@@ -21,7 +24,7 @@ import ImageUploader from '../images/ImageUploader';
 import ImagePreviewList from '../images/ImagePreviewList';
 import ImageCropModal from '../images/ImageCropModal';
 
-const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat = false }) => {
+const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat = false, initialProgramDate }) => {
     const [isSaving, setIsSaving] = useState(false);
 
     const {
@@ -31,6 +34,10 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
         resetForm,
         validateForm
     } = useNoticeForm(mode);
+
+    useEffect(() => {
+        if (!editNoticeId && initialProgramDate) setFormData(previous => ({ ...previous, program_date: previous.program_date || initialProgramDate }));
+    }, [editNoticeId, initialProgramDate, setFormData]);
 
     const {
         selectedFiles,
@@ -103,15 +110,19 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                     const fileExt = file.name.split('.').pop();
                     const fileName = `${Math.random()}.${fileExt}`;
 
+                    let publicUrl;
+                    if(isAccountAuthEnabled())publicUrl=await uploadAccountImage({profileId:cachedAccountProfileId(),kind:'notice',file:compressedFile});
+                    else {
                     const { error: uploadError } = await supabase.storage
                         .from('notice-images')
                         .upload(fileName, compressedFile);
 
                     if (uploadError) throw uploadError;
 
-                    const { data: { publicUrl } } = supabase.storage
+                    ({ data: { publicUrl } } = supabase.storage
                         .from('notice-images')
-                        .getPublicUrl(fileName);
+                        .getPublicUrl(fileName));
+                    }
 
                     uploadedUrls.push(publicUrl);
                 }
@@ -129,6 +140,8 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                         const fileExt = opt.imageFile.name.split('.').pop();
                         const fileName = `poll_${Date.now()}_${Math.random()}.${fileExt}`;
 
+                        if(isAccountAuthEnabled())finalUrl=await uploadAccountImage({profileId:cachedAccountProfileId(),kind:'notice',file:compressedFile});
+                        else {
                         const { error: uploadError } = await supabase.storage
                             .from('notice-images')
                             .upload(fileName, compressedFile);
@@ -140,6 +153,7 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                             .getPublicUrl(fileName);
                         
                         finalUrl = publicUrl;
+                        }
                     }
 
                     processedPollOptions.push({
@@ -162,7 +176,7 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 image_url: uploadedUrls.length > 0 ? uploadedUrls[0] : null,
                 is_recruiting: formData.is_recruiting,
                 recruitment_deadline: (formData.is_recruiting && formData.recruitment_deadline) 
-                    ? new Date(formData.recruitment_deadline).toISOString() 
+                    ? fromKstInput(formData.recruitment_deadline)
                     : null,
                 target_regions: formData.target_regions,
                 is_poll: formData.is_poll,
@@ -182,10 +196,12 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 if (pVal && pVal !== '') {
                     const parsedDate = new Date(pVal);
                     if (!isNaN(parsedDate.getTime())) {
-                        finalProgramDate = parsedDate.toISOString();
+                        finalProgramDate = fromKstInput(pVal);
                     }
                 }
                 noticeData.program_date = finalProgramDate;
+                noticeData.recruitment_start_at = formData.is_recruiting ? fromKstInput(formData.recruitment_start_at) : null;
+                noticeData.recruitment_details_ready = getMissingProgramDetails(formData).length === 0;
                 noticeData.program_duration = (formData.is_challenge && !challengeHasTime)
                     ? ''
                     : (formData.program_duration || '');
@@ -204,7 +220,11 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
 
                 noticeData.max_capacity = formData.max_capacity ? parseInt(formData.max_capacity) : null;
                 noticeData.is_leader_only = formData.is_leader_only;
-                noticeData.haifn_reward = formData.haifn_reward ? parseInt(formData.haifn_reward, 10) : 0;
+                const requestedHaifnReward = parseInt(formData.haifn_reward, 10) || 0;
+                noticeData.haifn_reward = Math.min(
+                    MAX_PROGRAM_HAIFN_REWARD,
+                    Math.max(0, requestedHaifnReward)
+                );
                 noticeData.is_review_required = formData.is_review_required || false;
                                 noticeData.is_private = formData.is_private || false;
                 noticeData.is_challenge = formData.is_challenge || false;
@@ -269,6 +289,10 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
 
         } catch (error) {
             console.error('Save error:', error);
+            if (['PGRST204', '42703'].includes(error.code) && /recruitment_(start_at|details_ready)/.test(error.message || '')) {
+                alert('모집 기간 저장을 위한 DB 변경안이 아직 적용되지 않았습니다. 운영 DB 적용 후 다시 저장해주세요. 입력 내용은 유지됩니다.');
+                return;
+            }
             alert('저장 중 오류가 발생했습니다: ' + (error.message || error.details || JSON.stringify(error)));
         } finally {
             setIsSaving(false);

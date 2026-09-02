@@ -402,6 +402,12 @@ import_map = "./functions/send-push/deno.json"
 # Uncomment to specify a custom file path to the entrypoint.
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/send-push/index.ts"
+
+[functions.send-recruitment-alerts]
+enabled = true
+# Only the dedicated cron secret is accepted by this handler; user JWTs are not.
+verify_jwt = false
+entrypoint = "./functions/send-recruitment-alerts/index.ts"
 # Specifies static files to be bundled with the function. Supports glob patterns.
 # For example, if you want to serve static HTML pages in your function:
 # static_files = [ "./functions/send-push/*.html" ]
@@ -425,3 +431,10 @@ enabled = true
 # authenticated with the kiosk credential or a short-lived signed QR token.
 verify_jwt = false
 import_map = "./functions/kiosk-qr/deno.json"
+
+[functions.account-auth]
+enabled = true
+# Login and temporary-password replacement begin without a JWT. Each protected
+# action performs its own live token, account, role and assurance checks.
+verify_jwt = false
+entrypoint = "./functions/account-auth/index.ts"

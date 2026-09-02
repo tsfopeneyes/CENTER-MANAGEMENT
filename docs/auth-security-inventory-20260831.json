@@ -1,0 +1,2438 @@
+{
+  "source": "Supabase dashboard; BEGIN READ ONLY; SET LOCAL statement_timeout=15s; ROLLBACK",
+  "project": "erecqalsxoxrufggvmcc",
+  "productionMutation": false,
+  "views": [
+    {
+      "name": "program_recruitment_alert_due",
+      "options": [
+        "security_barrier=true"
+      ],
+      "anon_select": false
+    },
+    {
+      "name": "program_calendar_previews",
+      "options": [
+        "security_barrier=true"
+      ],
+      "anon_select": true
+    },
+    {
+      "name": "admin_program_interest_counts",
+      "options": [
+        "security_barrier=true"
+      ],
+      "anon_select": false
+    }
+  ],
+  "tables": [
+    {
+      "rls": true,
+      "table": "admin_schedules",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "admin_templates",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "app_notifications",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "badge_categories",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "badges",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "buckets",
+      "schema": "storage",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "buckets_analytics",
+      "schema": "storage",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "buckets_vectors",
+      "schema": "storage",
+      "anon_delete": false,
+      "anon_insert": false,
+      "anon_select": true,
+      "anon_update": false,
+      "authenticated_select": true,
+      "authenticated_update": false
+    },
+    {
+      "rls": true,
+      "table": "calendar_categories",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "calling_forest_progress",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "center_daily_chats",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "center_duty_assignments",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "checkin_surveys",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "coffee_chats",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "comments",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "community_comments",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "community_likes",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "community_posts",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "contents",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": false,
+      "table": "duty_checklist_settings",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": false,
+      "table": "duty_logs",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "fit_test_results",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": false,
+      "table": "global_settings",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "guest_comments",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "guest_post_reactions",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "guest_posts",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": false,
+      "table": "haifn_items",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": false,
+      "table": "haifn_transactions",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "kiosk_activation_attempts",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "kiosk_devices",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "location_groups",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "locations",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "logs",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "messages",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "migrations",
+      "schema": "storage",
+      "anon_delete": false,
+      "anon_insert": false,
+      "anon_select": false,
+      "anon_update": false,
+      "authenticated_select": false,
+      "authenticated_update": false
+    },
+    {
+      "rls": true,
+      "table": "notice_likes",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "notice_poll_responses",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "notice_reactions",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "notice_responses",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "notices",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "objects",
+      "schema": "storage",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "program_attendance",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "program_feedback",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "program_recruitment_interests",
+      "schema": "public",
+      "anon_delete": false,
+      "anon_insert": false,
+      "anon_select": false,
+      "anon_update": false,
+      "authenticated_select": true,
+      "authenticated_update": false
+    },
+    {
+      "rls": true,
+      "table": "program_sessions",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "push_subscriptions",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "rental_bookings",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "rentals",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "s3_multipart_uploads",
+      "schema": "storage",
+      "anon_delete": false,
+      "anon_insert": false,
+      "anon_select": true,
+      "anon_update": false,
+      "authenticated_select": true,
+      "authenticated_update": false
+    },
+    {
+      "rls": true,
+      "table": "s3_multipart_uploads_parts",
+      "schema": "storage",
+      "anon_delete": false,
+      "anon_insert": false,
+      "anon_select": true,
+      "anon_update": false,
+      "authenticated_select": true,
+      "authenticated_update": false
+    },
+    {
+      "rls": true,
+      "table": "school_logs",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "schools",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "store_orders",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "tsf_notion_index",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "tsf_pending_actions",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "user_badges",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "user_notification_reads",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "users",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "vector_indexes",
+      "schema": "storage",
+      "anon_delete": false,
+      "anon_insert": false,
+      "anon_select": true,
+      "anon_update": false,
+      "authenticated_select": true,
+      "authenticated_update": false
+    },
+    {
+      "rls": true,
+      "table": "visit_notes",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    },
+    {
+      "rls": true,
+      "table": "weekly_questions",
+      "schema": "public",
+      "anon_delete": true,
+      "anon_insert": true,
+      "anon_select": true,
+      "anon_update": true,
+      "authenticated_select": true,
+      "authenticated_update": true
+    }
+  ],
+  "policies": [
+    {
+      "name": "Enable all for admin_schedules",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "admin_schedules",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all operations for templates",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "admin_templates",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Anyone can insert app_notifications",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "app_notifications",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Anyone can select app_notifications",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "app_notifications",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Categories are manageable by admins",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "badge_categories",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Categories are viewable by everyone",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "badge_categories",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Challenges are manageable by admins",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "badges",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Challenges are viewable by everyone",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "badges",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all for calendar_categories",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "calendar_categories",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all for calling_forest_progress",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "calling_forest_progress",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow delete for center_daily_chats",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "center_daily_chats",
+      "using": "true",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow insert for center_daily_chats",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "center_daily_chats",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow select for center_daily_chats",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "center_daily_chats",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow update for center_daily_chats",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "center_daily_chats",
+      "using": "true",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "calendar_duty_insert",
+      "check": "calendar_is_admin()",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "center_duty_assignments",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "calendar_duty_read",
+      "check": null,
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "table": "center_duty_assignments",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "calendar_duty_update",
+      "check": "calendar_is_admin()",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "center_duty_assignments",
+      "using": "calendar_is_admin()",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow anyone to insert checkin surveys",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "checkin_surveys",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow authenticated users to read checkin surveys",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "checkin_surveys",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public insert to checkin_surveys",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "checkin_surveys",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public select on checkin_surveys",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "checkin_surveys",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow full access for staff/admin",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "coffee_chats",
+      "using": "(EXISTS ( SELECT 1\n FROM users\n WHERE ((users.id = auth.uid()) AND ((users.role = 'ADMIN'::text) OR (users.role = 'STAFF'::text)))))",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow select for self",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "coffee_chats",
+      "using": "((auth.uid() = student_id) OR (auth.uid() = staff_id))",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow student insert",
+      "check": "(auth.uid() = student_id)",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "coffee_chats",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "스탭과 관리자는 모든 커피챗 데이터 조회 및 ",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "coffee_chats",
+      "using": "(EXISTS ( SELECT 1\n FROM users\n WHERE ((users.id = auth.uid()) AND ((users.role = 'admin'::text) OR (users.user_group = 'STAFF'::text) OR (users.user_group = '관리자'::text)))))",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "학생은 자신의 커피챗 데이터만 추가 및 조회 ",
+      "check": "(auth.uid() = student_id)",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "coffee_chats",
+      "using": "(auth.uid() = student_id)",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "게시판 댓글 자유 이용",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "comments",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable delete access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_comments",
+      "using": "true",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable insert access for all users",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "community_comments",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable read access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_comments",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable update access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_comments",
+      "using": "true",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable delete access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_likes",
+      "using": "true",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable insert access for all users",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "community_likes",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable read access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_likes",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable update access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_likes",
+      "using": "true",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Anyone can view community posts",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_posts",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Authenticated users can create community posts",
+      "check": "(auth.uid() = author_id)",
+      "roles": [
+        "public"
+      ],
+      "table": "community_posts",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable delete access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_posts",
+      "using": "true",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable insert access for all users",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "community_posts",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable read access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_posts",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable update access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "community_posts",
+      "using": "true",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow admin write access on contents",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "contents",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public read access on contents",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "contents",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public insert",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "fit_test_results",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public read",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "fit_test_results",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all for global_settings",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "global_settings",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "관리자만 global_settings 수정 가능",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "global_settings",
+      "using": "(EXISTS ( SELECT 1\n FROM users\n WHERE ((users.id = auth.uid()) AND ((users.role = 'admin'::text) OR (users.user_group = 'STAFF'::text) OR (users.user_group = '관리자'::text)))))",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "모든 사용자가 global_settings 조회 가능",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "global_settings",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable insert for all",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "guest_comments",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable read access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "guest_comments",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "댓글 작성은 인증된 사용자만 가능합니다.",
+      "check": "(auth.uid() = user_id)",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "guest_comments",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "방명록 댓글 자유 이용",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "guest_comments",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Anyone can view guest likes",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "guest_post_reactions",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Users can manage their own likes",
+      "check": "(auth.uid() = user_id)",
+      "roles": [
+        "public"
+      ],
+      "table": "guest_post_reactions",
+      "using": "(auth.uid() = user_id)",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "방명록 반응 자유 이용",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "guest_post_reactions",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable delete for owners",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "guest_posts",
+      "using": "(auth.uid() = user_id)",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable insert for all",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "guest_posts",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable insert for authenticated users",
+      "check": "((auth.uid() = user_id) OR (EXISTS ( SELECT 1\n FROM users\n WHERE (users.id = auth.uid()))))",
+      "roles": [
+        "public"
+      ],
+      "table": "guest_posts",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable read access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "guest_posts",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "방명록 자유 이용",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "guest_posts",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "방명록 작성은 인증된 사용자만 가능합니다.",
+      "check": "(auth.uid() = user_id)",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "guest_posts",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow manage for admin only",
+      "check": "(auth.uid() IN ( SELECT users.id\n FROM users\n WHERE (users.role = 'admin'::text)))",
+      "roles": [
+        "public"
+      ],
+      "table": "haifn_items",
+      "using": "(auth.uid() IN ( SELECT users.id\n FROM users\n WHERE (users.role = 'admin'::text)))",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public select for hyphen_items",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "haifn_items",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow delete for admin only",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "haifn_transactions",
+      "using": "(auth.uid() IN ( SELECT users.id\n FROM users\n WHERE (users.role = 'admin'::text)))",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public insert for transactions",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "haifn_transactions",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow select for self and admin",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "haifn_transactions",
+      "using": "((auth.uid() = user_id) OR (auth.uid() IN ( SELECT users.id\n FROM users\n WHERE (users.role = 'admin'::text))))",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all for hyphen_transactions",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "haifn_transactions",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all for location_groups",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "location_groups",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "locations",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "logs",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Admins can insert messages",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "messages",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Admins can view all messages",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "messages",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Users can insert own messages",
+      "check": "(auth.uid() = sender_id)",
+      "roles": [
+        "public"
+      ],
+      "table": "messages",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Users can update own messages",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "messages",
+      "using": "(auth.uid() = receiver_id)",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Users can update their own received messages",
+      "check": "(auth.uid() = receiver_id)",
+      "roles": [
+        "public"
+      ],
+      "table": "messages",
+      "using": "(auth.uid() = receiver_id)",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Users can view own messages",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "messages",
+      "using": "((auth.uid() = receiver_id) OR (auth.uid() = sender_id))",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "메시지 전송은 인증된 사용자만 가능합니다.",
+      "check": "(auth.uid() = sender_id)",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "messages",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "본인과 관련된 메시지만 볼 수 있습니다.",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "messages",
+      "using": "((auth.uid() = receiver_id) OR (auth.uid() = sender_id))",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow individual delete notice_likes",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "notice_likes",
+      "using": "true",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow individual insert notice_likes",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "notice_likes",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public read notice_likes",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "notice_likes",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all for notice_poll_responses",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "notice_poll_responses",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow authenticated delete on notice_reactions",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "notice_reactions",
+      "using": "((auth.uid() = user_id) OR (user_id IS NOT NULL))",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow authenticated insert on notice_reactions",
+      "check": "((auth.uid() = user_id) OR (user_id IS NOT NULL))",
+      "roles": [
+        "public"
+      ],
+      "table": "notice_reactions",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public select on notice_reactions",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "notice_reactions",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "본인의 참여 내역만 볼 수 있습니다.",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "notice_responses",
+      "using": "(auth.uid() = user_id)",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "본인의 참여 신청만 수정/취소 가능합니다.",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "notice_responses",
+      "using": "(auth.uid() = user_id)",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "참여 신청은 인증된 사용자만 가능합니다.",
+      "check": "(auth.uid() = user_id)",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "notice_responses",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "참여 정보 관리 허용",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "notice_responses",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "calendar_program_body_read",
+      "check": null,
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "table": "notices",
+      "using": "(calendar_is_admin() OR (category IS DISTINCT FROM 'PROGRAM'::text) OR (is_recruiting IS DISTINCT FROM true) OR (recruitment_start_at IS NULL) OR ((recruitment_start_at <= statement_timestamp()) AND (recruitment_details_ready IS TRUE)))",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "RESTRICTIVE"
+    },
+    {
+      "name": "calendar_program_write_delete",
+      "check": null,
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "table": "notices",
+      "using": "((recruitment_start_at IS NULL) OR calendar_is_admin())",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "RESTRICTIVE"
+    },
+    {
+      "name": "calendar_program_write_insert",
+      "check": "((recruitment_start_at IS NULL) OR calendar_is_admin())",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "table": "notices",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "RESTRICTIVE"
+    },
+    {
+      "name": "calendar_program_write_update",
+      "check": "((recruitment_start_at IS NULL) OR calendar_is_admin())",
+      "roles": [
+        "anon",
+        "authenticated"
+      ],
+      "table": "notices",
+      "using": "((recruitment_start_at IS NULL) OR calendar_is_admin())",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "RESTRICTIVE"
+    },
+    {
+      "name": "공지사항 관리 허용",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "notices",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "공지사항 관리는 인증된 사용자만 가능합니다.",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "notices",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "누구나 공지사항 읽기 가능",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "notices",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow Public Select",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "objects",
+      "using": "(bucket_id = 'notice-images'::text)",
+      "schema": "storage",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow Public Uploads",
+      "check": "(bucket_id = 'notice-images'::text)",
+      "roles": [
+        "public"
+      ],
+      "table": "objects",
+      "using": null,
+      "schema": "storage",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Anyone can delete their own avatar.",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "objects",
+      "using": "(bucket_id = 'avatars'::text)",
+      "schema": "storage",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Anyone can update their own avatar.",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "objects",
+      "using": "(bucket_id = 'avatars'::text)",
+      "schema": "storage",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Anyone can upload an avatar.",
+      "check": "(bucket_id = 'avatars'::text)",
+      "roles": [
+        "public"
+      ],
+      "table": "objects",
+      "using": null,
+      "schema": "storage",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Avatar images are publicly accessible.",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "objects",
+      "using": "(bucket_id = 'avatars'::text)",
+      "schema": "storage",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "feedback_delete_all",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "program_feedback",
+      "using": "true",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "feedback_insert_all",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "program_feedback",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "feedback_select_all",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "program_feedback",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "feedback_update_all",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "program_feedback",
+      "using": "true",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "recruitment_interest_owner_insert",
+      "check": "((auth_user_id = auth.uid()) AND (COALESCE((auth.jwt() ->> 'is_anonymous'::text), 'false'::text) = 'false'::text))",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "program_recruitment_interests",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "recruitment_interest_owner_read",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "program_recruitment_interests",
+      "using": "((auth_user_id = auth.uid()) AND (COALESCE((auth.jwt() ->> 'is_anonymous'::text), 'false'::text) = 'false'::text))",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "recruitment_interest_owner_update",
+      "check": "((auth_user_id = auth.uid()) AND (COALESCE((auth.jwt() ->> 'is_anonymous'::text), 'false'::text) = 'false'::text))",
+      "roles": [
+        "authenticated"
+      ],
+      "table": "program_recruitment_interests",
+      "using": "((auth_user_id = auth.uid()) AND (COALESCE((auth.jwt() ->> 'is_anonymous'::text), 'false'::text) = 'false'::text))",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public read access on rental_bookings",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "rental_bookings",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow user insert access on rental_bookings",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "rental_bookings",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow users/admins modification access on rental_bookings",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "rental_bookings",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow admin write access on rentals",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "rentals",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public read access on rentals",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "rentals",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow all access to school_logs",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "school_logs",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow all access to schools",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "schools",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow insert for authenticated users",
+      "check": "(auth.uid() IS NOT NULL)",
+      "roles": [
+        "public"
+      ],
+      "table": "store_orders",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow manage for admin only",
+      "check": "(auth.uid() IN ( SELECT users.id\n FROM users\n WHERE (users.role = 'admin'::text)))",
+      "roles": [
+        "public"
+      ],
+      "table": "store_orders",
+      "using": "(auth.uid() IN ( SELECT users.id\n FROM users\n WHERE (users.role = 'admin'::text)))",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow select for self and admin",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "store_orders",
+      "using": "((auth.uid() = user_id) OR (auth.uid() IN ( SELECT users.id\n FROM users\n WHERE (users.role = 'admin'::text))))",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public delete for user_challenges",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "user_badges",
+      "using": "true",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public insert for user_challenges",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "user_badges",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public select for user_challenges",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "user_badges",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Users can manage their own reads",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "user_notification_reads",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Anon can insert users",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "users",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Anyone can read users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "users",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "users",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Users can delete own row",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "users",
+      "using": "(auth.uid() = id)",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Users can update own row",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "users",
+      "using": "(auth.uid() = id)",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "본인의 프로필만 수정할 수 있습니다.",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "users",
+      "using": "(auth.uid() = id)",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "사용자 정보 관리 허용",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "users",
+      "using": "true",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "인증된 사용자는 사용자 정보를 볼 수 있습니다",
+      "check": null,
+      "roles": [
+        "authenticated"
+      ],
+      "table": "users",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow delete for admin only",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "visit_notes",
+      "using": "(auth.uid() IN ( SELECT users.id\n FROM users\n WHERE (users.role = 'admin'::text)))",
+      "schema": "public",
+      "command": "DELETE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public insert for visit_notes",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "visit_notes",
+      "using": null,
+      "schema": "public",
+      "command": "INSERT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public read for visit_notes",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "visit_notes",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Allow public update for visit_notes",
+      "check": "true",
+      "roles": [
+        "public"
+      ],
+      "table": "visit_notes",
+      "using": "true",
+      "schema": "public",
+      "command": "UPDATE",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable all access for admins",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "weekly_questions",
+      "using": "(auth.uid() IN ( SELECT users.id\n FROM users\n WHERE (users.role = 'admin'::text)))",
+      "schema": "public",
+      "command": "ALL",
+      "permissive": "PERMISSIVE"
+    },
+    {
+      "name": "Enable read access for all users",
+      "check": null,
+      "roles": [
+        "public"
+      ],
+      "table": "weekly_questions",
+      "using": "true",
+      "schema": "public",
+      "command": "SELECT",
+      "permissive": "PERMISSIVE"
+    }
+  ],
+  "functions": [
+    {
+      "name": "auto_checkout_all_active_users",
+      "definer": true,
+      "signature": "",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "calendar_is_admin",
+      "definer": true,
+      "signature": "",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "create_application_state_notification",
+      "definer": true,
+      "signature": "",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "get_login_candidates",
+      "definer": true,
+      "signature": "p_name text",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "guard_program_recruitment_response",
+      "definer": true,
+      "signature": "",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "guard_recruitment_interest",
+      "definer": true,
+      "signature": "",
+      "anon_execute": false,
+      "authenticated_execute": false
+    },
+    {
+      "name": "increment_notice_views",
+      "definer": true,
+      "signature": "p_notice_id bigint",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "legacy_login_sync",
+      "definer": true,
+      "signature": "p_name text, p_hashed_pw text",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "merge_duplicate_users",
+      "definer": true,
+      "signature": "p_source_id uuid, p_target_id uuid",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "merge_guest_to_member",
+      "definer": true,
+      "signature": "p_old_id uuid, p_new_id uuid, p_user_data jsonb",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "prevent_unauthorized_admin_role",
+      "definer": true,
+      "signature": "",
+      "anon_execute": true,
+      "authenticated_execute": true
+    },
+    {
+      "name": "upgrade_guest_account",
+      "definer": true,
+      "signature": "p_user_id uuid, p_user_data jsonb, p_hashed_password text",
+      "anon_execute": true,
+      "authenticated_execute": true
+    }
+  ]
+}

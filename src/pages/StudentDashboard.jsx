@@ -2338,7 +2338,7 @@ const StudentDashboard = () => {
             {activeTab === TAB_NAMES.CALENDAR && (
                 <StudentCalendarTab
                     adminSchedules={adminSchedules}
-                    notices={filteredPrograms}
+                    notices={allPrograms}
                     calendarCategories={calendarCategories}
                     openNoticeDetail={openNoticeDetailForStudent}
                     studentRegion={effectiveRegion}

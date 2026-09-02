@@ -142,7 +142,7 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
 
     const messagesContainerRef = useRef(null);
 
-    // Fetch ALL registered center users from users and guest_posts tables
+    // Fetch all registered center users for mention suggestions.
     useEffect(() => {
         const fetchCenterUsers = async () => {
             try {
@@ -165,13 +165,6 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                     .limit(1000);
                 if (uErr) console.warn('users table fetch error:', uErr);
 
-                // 2. Fetch from guest_posts table
-                const { data: guestData, error: gErr } = await supabase
-                    .from('guest_posts')
-                    .select('user_id, user_name, user_avatar')
-                    .limit(500);
-                if (gErr) console.warn('guest_posts fetch error:', gErr);
-
                 const list = [];
                 const nameSet = new Set();
 
@@ -188,24 +181,6 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
                                 school: u.school || '',
                                 region: u.region || '',
                                 profile_image_url: u.profile_image_url || null
-                            });
-                        }
-                    });
-                }
-
-                if (guestData && Array.isArray(guestData)) {
-                    guestData.forEach(g => {
-                        const trimmedName = g?.user_name?.trim();
-                        if (trimmedName && !nameSet.has(trimmedName)) {
-                            nameSet.add(trimmedName);
-                            list.push({
-                                id: g.user_id || trimmedName,
-                                name: trimmedName,
-                                role: '학생',
-                                user_group: '',
-                                school: '',
-                                region: '',
-                                profile_image_url: g.user_avatar || null
                             });
                         }
                     });
@@ -228,19 +203,12 @@ const LiveCenterChat = ({ currentUser, studentRegion, initialCenter, isStandalon
 
         const fetchRpcCandidates = async () => {
             try {
-                let candidates = [];
-                const { data: rpcData, error: rpcError } = await supabase.rpc('get_login_candidates', { p_name: mentionSearchQuery.trim() });
-                if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
-                    candidates = rpcData;
-                } else {
-                    // Fallback to direct query on users table
-                    const { data: fallbackData } = await supabase
-                        .from('users')
-                        .select('id, name, school, role')
-                        .ilike('name', `%${mentionSearchQuery.trim()}%`)
-                        .limit(10);
-                    candidates = fallbackData || [];
-                }
+                // Mentions need only public display fields, never login RPCs.
+                const { data, error } = await supabase.from('users')
+                    .select('id, name, school, role')
+                    .ilike('name', `%${mentionSearchQuery.trim()}%`).limit(10);
+                if (error) throw error;
+                const candidates = data || [];
 
                 if (candidates && Array.isArray(candidates)) {
                     setRpcCandidates(candidates.map(r => ({

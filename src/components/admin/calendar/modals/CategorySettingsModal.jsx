@@ -1,65 +1,70 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
-import { Edit2, Trash2, X } from 'lucide-react';
-import { COLOR_THEMES } from '../calendarConstants';
+import { Check, Edit2, Trash2, X } from 'lucide-react';
+import { COLOR_THEMES, getColorTheme } from '../../../../utils/calendarColors';
+import useModalClose from '../../../../hooks/useModalClose';
 
 const CategorySettingsModal = ({
-    showCategoryModal, setShowCategoryModal,
-    dynamicCategories,
-    categoryForm, setCategoryForm,
-    editCategory, setEditCategory,
-    handleSaveCategory, handleDeleteCategory
+    setShowCategoryModal, dynamicCategories, programCategories,
+    categoryForm, setCategoryForm, editCategory, setEditCategory,
+    handleSaveCategory, handleDeleteCategory, categorySaving, categoryMessage, setCategoryMessage, fetchAllData,
 }) => {
-    return (
-                
-                    <div className="fixed inset-0 z-[200] flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setShowCategoryModal(false)} className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" />
-                        <motion.div initial={{ scale: 0.9, opacity: 0, y: 20 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 20 }} className="bg-white w-full max-w-xl rounded-[2.5rem] shadow-[0_30px_100px_rgba(0,0,0,0.25)] overflow-hidden relative z-10 border border-gray-100 flex flex-col max-h-[90vh]">
-                            <div className="p-8 pb-4 flex justify-between items-start">
-                                <div><span className="px-3 py-1 bg-blue-100 text-blue-600 rounded-full text-[10px] font-black uppercase tracking-widest mb-3 inline-block shadow-sm">Category Settings</span><h3 className="text-2xl font-black text-gray-800 tracking-tighter">필터 및 카테고리 관리</h3></div>
-                                <button onClick={() => setShowCategoryModal(false)} className="p-2 text-gray-300 hover:text-gray-500 hover:bg-gray-50 rounded-2xl transition-all"><X size={24} /></button>
-                            </div>
-                            <div className="px-8 flex-1 overflow-y-auto custom-scrollbar pb-8">
-                                <form onSubmit={handleSaveCategory} className="mb-8 p-6 bg-gray-50 rounded-3xl border border-gray-100 space-y-4">
-                                    <h4 className="text-sm font-black text-gray-800">{editCategory ? '카테고리 수정' : '새 카테고리 추가'}</h4>
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <input type="text" placeholder="카테고리 이름 (예: 외부 미팅)" value={categoryForm.name} onChange={e => setCategoryForm(prev => ({ ...prev, name: e.target.value }))} className="p-3.5 bg-white border border-gray-100 rounded-2xl outline-none focus:border-blue-500 font-bold text-sm shadow-inner" required />
-                                        <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
-                                            {Object.keys(COLOR_THEMES).map(theme => (
-                                                <button
-                                                    key={theme}
-                                                    type="button"
-                                                    onClick={() => setCategoryForm(prev => ({ ...prev, color_theme: theme }))}
-                                                    className={`w-8 h-8 rounded-full border-4 transition-all ${COLOR_THEMES[theme].dot} ${categoryForm.color_theme === theme ? 'border-white ring-2 ring-blue-500 scale-110' : 'border-transparent opacity-50 hover:opacity-100'}`}
-                                                />
-                                            ))}
-                                        </div>
-                                    </div>
-                                    <div className="flex gap-2">
-                                        <button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-black text-xs shadow-lg shadow-blue-100 hover:bg-blue-700 transition-all">{editCategory ? '수정 완료' : '추가하기'}</button>
-                                        {editCategory && <button type="button" onClick={() => { setEditCategory(null); setCategoryForm({ name: '', color_theme: 'blue' }) }} className="px-4 py-3 bg-gray-200 text-gray-500 rounded-xl font-black text-xs">취소</button>}
-                                    </div>
-                                </form>
-
-                                <div className="space-y-2">
-                                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1 mb-3">Existing Categories</h4>
-                                    {dynamicCategories.map(cat => (
-                                        <div key={cat.id} className="flex items-center justify-between p-4 bg-white border border-gray-50 rounded-2xl shadow-sm hover:shadow-md transition-all group">
-                                            <div className="flex items-center gap-3">
-                                                <div className={`w-3 h-3 rounded-full ${COLOR_THEMES[cat.color_theme]?.dot || 'bg-gray-500'}`} />
-                                                <span className="font-bold text-gray-700">{cat.name}</span>
-                                            </div>
-                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
-                                                <button onClick={() => { setEditCategory(cat); setCategoryForm({ name: cat.name, color_theme: cat.color_theme }) }} className="p-2 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 size={16} /></button>
-                                                {!cat.is_system && <button onClick={() => handleDeleteCategory(cat.id)} className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={16} /></button>}
-                                            </div>
-                                        </div>
-                                    ))}
-                                </div>
-                            </div>
-                        </motion.div>
-                    </div>
-                
-    );
+    useModalClose(true, () => {
+        if (!categorySaving) setShowCategoryModal(false);
+    });
+    const formRef = useRef(null);
+    const theme = getColorTheme(categoryForm.color_theme);
+    const reset = () => { setEditCategory(null); setCategoryForm({ name: '', color_theme: 'blue' }); setCategoryMessage(''); };
+    const startEdit = (category) => {
+        setEditCategory(category);
+        setCategoryForm({ name: category.name, color_theme: category.color_theme });
+        setCategoryMessage('');
+        formRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    };
+    const row = (category) => <div key={category.id} className="flex items-center justify-between gap-2 p-3 sm:p-4 bg-white border border-gray-100 rounded-2xl">
+        <div className="flex min-w-0 items-center gap-3">
+            <span className={`w-3 h-3 shrink-0 rounded-full ${getColorTheme(category.color_theme).dot}`} />
+            <span className="font-bold text-sm text-gray-800">{category.name}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-1">
+            <button type="button" disabled={categorySaving} aria-label={`${category.name} 수정`} onClick={() => startEdit(category)} className="p-2 text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded-lg"><Edit2 size={17} /></button>
+            {!category.is_system && <button type="button" disabled={categorySaving} aria-label={`${category.name} 삭제`} onClick={() => handleDeleteCategory(category.id)} className="p-2 text-gray-500 hover:text-red-500 hover:bg-red-50 rounded-lg"><Trash2 size={17} /></button>}
+        </div>
+    </div>;
+    return <div className="fixed inset-0 z-[200] flex items-center justify-center p-3 sm:p-4">
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => !categorySaving && setShowCategoryModal(false)} className="absolute inset-0 bg-gray-900/60 backdrop-blur-sm" />
+        <motion.div role="dialog" aria-modal="true" aria-labelledby="calendar-colors-title" initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ opacity: 0 }} className="relative z-10 bg-white w-full max-w-xl rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-5 sm:p-7 pb-4 flex justify-between items-start gap-2">
+                <div><h3 id="calendar-colors-title" className="text-xl font-bold text-gray-900">필터 및 카테고리 관리</h3><p className="mt-2 text-xs leading-relaxed text-gray-500">프로그램과 일정의 색상을 선택하세요.<br />관리자·학생 캘린더에 함께 적용됩니다.</p></div>
+                <button type="button" aria-label="색상 설정 닫기" disabled={categorySaving} onClick={() => setShowCategoryModal(false)} className="p-2 text-gray-500 rounded-xl hover:bg-gray-50"><X size={22} /></button>
+            </div>
+            <div className="px-5 sm:px-7 flex-1 overflow-y-auto pb-6">
+                <div className="space-y-2 mb-5"><h4 className="text-xs font-bold text-gray-500 mb-3">기본 프로그램</h4>{programCategories.map(row)}</div>
+                <div className="space-y-2 mb-5"><h4 className="text-xs font-bold text-gray-500 mb-3">일정 카테고리</h4>{dynamicCategories.map(row)}</div>
+                <form ref={formRef} onSubmit={handleSaveCategory} className="mb-6 p-4 sm:p-5 bg-gray-50 rounded-2xl border border-gray-100 space-y-4">
+                    <h4 className="text-sm font-bold text-gray-800">{editCategory ? `${editCategory.name} 수정` : '새 카테고리 추가'}</h4>
+                    <fieldset disabled={categorySaving} className="min-w-0 space-y-4">
+                        <label className="block text-xs font-semibold text-gray-600">카테고리 이름
+                            <input type="text" value={categoryForm.name} readOnly={Boolean(editCategory?.is_program || editCategory?.is_system)} onChange={event => setCategoryForm(previous => ({ ...previous, name: event.target.value }))} placeholder="예: 외부 미팅" className="block w-full mt-2 p-3 bg-white border border-gray-200 rounded-xl text-sm outline-none focus:border-blue-500 read-only:bg-gray-100" required maxLength={80} />
+                        </label>
+                        {(editCategory?.is_program || editCategory?.is_system) && <p className="text-xs text-gray-500">기본 항목은 이름을 유지하고 색상만 변경합니다.</p>}
+                        <div role="group" aria-label="일정 색상" className="grid grid-cols-5 gap-2">
+                            {Object.entries(COLOR_THEMES).map(([key, option]) => <button key={key} type="button" aria-label={`${option.label} 색상`} aria-pressed={categoryForm.color_theme === key} onClick={() => setCategoryForm(previous => ({ ...previous, color_theme: key }))} className={`flex flex-col items-center gap-1.5 rounded-xl py-2 border transition-colors ${categoryForm.color_theme === key ? 'border-blue-500 bg-white ring-1 ring-blue-500' : 'border-transparent hover:bg-white'}`}>
+                                <span className={`flex h-7 w-7 items-center justify-center rounded-full ${option.dot}`}>{categoryForm.color_theme === key && <Check size={17} className="text-white drop-shadow" strokeWidth={3} />}</span>
+                                <span className="text-[10px] font-semibold text-gray-600">{option.label}</span>
+                            </button>)}
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-gray-500"><span>미리보기</span><span className={`rounded-md border px-3 py-1.5 font-bold ${theme.color}`}>{categoryForm.name || '일정 이름'}</span></div>
+                        <div className="flex gap-2">
+                            <button type="submit" className="flex-1 py-3 bg-blue-600 text-white rounded-xl font-bold text-sm disabled:opacity-50">{categorySaving ? '저장 중…' : editCategory ? '수정 완료' : '추가하기'}</button>
+                            {editCategory && <button type="button" onClick={reset} className="px-4 py-3 bg-gray-200 text-gray-700 rounded-xl font-bold text-xs">취소</button>}
+                        </div>
+                    </fieldset>
+                    {categoryMessage && <p role="status" className="text-xs leading-relaxed text-gray-700">{categoryMessage}</p>}
+                </form>
+                <button type="button" disabled={categorySaving} onClick={() => { reset(); fetchAllData(); }} className="mt-5 text-xs font-semibold text-gray-500 underline underline-offset-4">목록 새로 불러오기</button>
+            </div>
+        </motion.div>
+    </div>;
 };
 export default CategorySettingsModal;

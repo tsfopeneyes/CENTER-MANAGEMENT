@@ -1,7 +1,9 @@
 import React from 'react';
 import { X, CheckCircle2 } from 'lucide-react';
+import useModalClose from '../../../hooks/useModalClose';
 
 const PurchaseReceiptModal = ({ transaction, onClose }) => {
+    useModalClose(!!transaction, onClose);
     if (!transaction) return null;
 
     // Remove prefix like "[스토어 교환] " if it exists

@@ -1,5 +1,6 @@
 import { useState, useCallback } from 'react';
-import { CATEGORIES, PROGRAM_TYPES } from '../utils/constants';
+import { CATEGORIES, PROGRAM_TYPES, MAX_PROGRAM_HAIFN_REWARD } from '../utils/constants';
+import { fromKstInput, validateRecruitmentForm } from '../../../../utils/programRecruitment';
 
 const INITIAL_NOTICE_STATE = {
     title: '',
@@ -16,6 +17,7 @@ const INITIAL_NOTICE_STATE = {
     challenge_success_message: '',
     challenge_show_haifn_btn: false,
     recruitment_deadline: '',
+    recruitment_start_at: '',
     max_capacity: '',
     program_date: '',
     program_time: '12:00',
@@ -72,7 +74,7 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
         category: mode,
         is_recruiting: mode === CATEGORIES.PROGRAM,
         max_capacity: mode === CATEGORIES.PROGRAM ? 0 : '',
-        haifn_reward: mode === CATEGORIES.PROGRAM ? 30 : 5 // Default to 30 for challenges / program rewards
+        haifn_reward: mode === CATEGORIES.PROGRAM ? MAX_PROGRAM_HAIFN_REWARD : 5
     });
 
     const updateField = useCallback((field, value) => {
@@ -85,7 +87,7 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
             category: targetMode,
             is_recruiting: targetMode === CATEGORIES.PROGRAM,
             max_capacity: targetMode === CATEGORIES.PROGRAM ? 0 : '',
-            haifn_reward: targetMode === CATEGORIES.PROGRAM ? 30 : 5
+            haifn_reward: targetMode === CATEGORIES.PROGRAM ? MAX_PROGRAM_HAIFN_REWARD : 5
         });
     }, []);
 
@@ -95,6 +97,9 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
         }
         
         if (mode === CATEGORIES.PROGRAM) {
+            const recruitmentError = validateRecruitmentForm(formData);
+            if (recruitmentError) return { isValid: false, message: recruitmentError };
+            const scheduled = formData.is_recruiting && new Date(fromKstInput(formData.recruitment_start_at)).getTime() > Date.now();
             if (formData.is_challenge) {
                 // 챌린지 프로그램은 모집 여부와 관계없이 시작일/종료일을 사용합니다.
                 const startDate = formData.program_start_date || formData.program_date;
@@ -110,7 +115,7 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
                     if (!formData.program_date) {
                         return { isValid: false, message: '챌린지 시작 시간을 선택해주세요.' };
                     }
-                    if (!formData.program_duration?.trim()) {
+                    if (!scheduled && !formData.program_duration?.trim()) {
                         return { isValid: false, message: '챌린지 소요 시간을 입력해주세요.' };
                     }
                 }
@@ -135,10 +140,10 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
                 }
             }
 
-            if (!formData.is_challenge && !formData.program_duration?.trim()) {
+            if (!scheduled && !formData.is_challenge && !formData.program_duration?.trim()) {
                 return { isValid: false, message: '소요 시간을 입력해주세요.' };
             }
-            if (!formData.program_location?.trim()) {
+            if (!scheduled && !formData.program_location?.trim()) {
                 return { isValid: false, message: '장소를 입력해주세요.' };
             }
         }

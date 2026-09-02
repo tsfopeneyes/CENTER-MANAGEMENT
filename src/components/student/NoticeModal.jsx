@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { ZoomIn, X, Calendar as CalendarIcon, User, Trash2, MapPin, Users, Upload, Clock, CheckCircle, Check, Sparkles, XCircle, ExternalLink, Dices, RefreshCw, MessageSquare, Eye, FileText } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { supabase } from '../../supabaseClient';
+import { isAccountAuthEnabled } from '../../auth/accountAuthRuntime';
+import { uploadAccountImage } from '../../auth/accountMedia';
 import { noticesApi } from '../../api/noticesApi';
 import ModernEditor from '../common/ModernEditor';
 import UserAvatar from '../common/UserAvatar';
@@ -42,10 +44,15 @@ const seededShuffle = (array, seed) => {
 
 import ProgramFeedbackModal from './modals/ProgramFeedbackModal';
 import AdminFeedbackListModal from '../admin/board/components/modals/AdminFeedbackListModal';
+import { getRecruitment } from '../../utils/programRecruitment';
+import { useCurrentTime } from '../../hooks/useCurrentTime';
+import ProgramAvailabilityNotice from './components/ProgramAvailabilityNotice';
 
-const NoticeModal = ({
+const NoticeModalContent = ({
     notice, context, onClose, user, fromAdmin = false, isImpersonating = false, responses, responseDetails = {}, onResponse, onRefresh, comments, newComment, setNewComment, onPostComment, onDeleteComment, onUpdate, onDelete, onViewParticipants, onRegisterRegularUser, tutorialMode = false, tutorialStep = '', tutorialOpenCardsTotal = 0, tutorialOpenCardIndex = 0, tutorialChallengeCardsTotal = 0, tutorialChallengeCardIndex = 0, onTutorialAction, onTutorialReaction, onTutorialComment
 }) => {
+    const recruitmentNow = useCurrentTime();
+    const recruitment = getRecruitment(notice, recruitmentNow);
     const [isEditing, setIsEditing] = useState(false);
     const [editedNotice, setEditedNotice] = useState({ ...notice });
     const [zoomedImage, setZoomedImage] = useState(null);
@@ -215,15 +222,13 @@ const NoticeModal = ({
             const fileExt = file.name.split('.').pop();
             const fileName = `mission_${notice.id}_${user.id}_${missionId}_${Date.now()}.${fileExt}`;
 
-            const { error: uploadError } = await supabase.storage
-                .from('notice-images')
-                .upload(fileName, compressedFile);
-
-            if (uploadError) throw uploadError;
-
-            const { data: { publicUrl } } = supabase.storage
-                .from('notice-images')
-                .getPublicUrl(fileName);
+            let publicUrl;
+            if(isAccountAuthEnabled())publicUrl=await uploadAccountImage({profileId:user.id,kind:'mission',file:compressedFile});
+            else {
+                const { error: uploadError } = await supabase.storage.from('notice-images').upload(fileName, compressedFile);
+                if (uploadError) throw uploadError;
+                ({ data: { publicUrl } } = supabase.storage.from('notice-images').getPublicUrl(fileName));
+            }
 
             const myResponse = responseDetails[notice.id] || {};
             const currentStatuses = { ...(myResponse.challenge_mission_statuses || {}) };
@@ -1097,7 +1102,7 @@ const NoticeModal = ({
                                              </div>
                                          ) : (
                                              <button
-                                                 disabled={(notice.recruitment_deadline && new Date(notice.recruitment_deadline) < new Date()) || (!responses[notice.id] && notice.is_leader_only && !user?.is_leader)}
+                                                 disabled={(notice.category === 'PROGRAM' ? !recruitment.canApply : (notice.recruitment_deadline && new Date(notice.recruitment_deadline) <= new Date())) || (!responses[notice.id] && notice.is_leader_only && !user?.is_leader)}
                                                  onClick={() => {
                                                      if (responses[notice.id]) {
                                                          onResponse(notice.id, 'CANCEL');
@@ -1339,6 +1344,7 @@ const NoticeModal = ({
                                     <button
                                         data-tour={tutorialMode ? 'tutorial-program-response' : undefined}
                                         onClick={() => onResponse(notice.id, 'CANCEL')}
+                                        disabled={!recruitment.canApply}
                                         className="flex-1 py-3.5 rounded-toss-xl font-bold text-base bg-red-50 text-tossError border border-red-200 hover:bg-red-100 flex items-center justify-center gap-1.5 transition transform active:scale-[0.98] cursor-pointer"
                                     >
                                         <XCircle size={18} />
@@ -1349,7 +1355,7 @@ const NoticeModal = ({
                         ) : (
                             /* 3. 미신청 학생: 실제 마감시간(recruitment_deadline 또는 프로그램 시작시간) 전까지는 항상 '신청하기' 버튼 노출 */
                             <div className="p-4 flex gap-3">
-                                {((notice.recruitment_deadline && new Date(notice.recruitment_deadline) < new Date()) || isProgramStartTimeReached) ? (
+                                {((notice.category === 'PROGRAM' ? !recruitment.canApply : (notice.recruitment_deadline && new Date(notice.recruitment_deadline) <= new Date())) || isProgramStartTimeReached) ? (
                                     <button
                                         disabled={true}
                                         className="flex-1 py-3.5 rounded-toss-xl font-bold text-base bg-tossGrey100 text-tossGrey400 cursor-not-allowed text-center"
@@ -1763,4 +1769,16 @@ const NoticeModal = ({
     );
 };
 
-export default NoticeModal;
+export default function NoticeModal(props) {
+    const now = useCurrentTime();
+    const state = getRecruitment(props.notice, now);
+    if (!props.fromAdmin && !props.tutorialMode && !state.canViewDetails) return (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center bg-black/40 p-5" role="dialog" aria-modal="true" aria-label={props.notice.title}>
+            <div className="relative w-full max-w-md rounded-3xl bg-white shadow-xl">
+                <button type="button" aria-label="닫기" onClick={props.onClose} className="absolute right-3 top-3 p-2 text-slate-500"><X size={20} /></button>
+                <ProgramAvailabilityNotice program={props.notice} now={now} />
+            </div>
+        </div>
+    );
+    return <NoticeModalContent {...props} />;
+}

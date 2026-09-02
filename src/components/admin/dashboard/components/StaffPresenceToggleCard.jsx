@@ -223,6 +223,8 @@ const StaffPresenceToggleCard = ({ users }) => {
     };
 
     const handleSetDutyStaff = async (spaceKey, userId) => {
+        // HAIFN is edited only through the shared date-specific roster below.
+        if (spaceKey !== '이높플레이스') return;
         const nextDuty = {
             ...dutyStaff,
             [spaceKey]: userId
@@ -337,10 +339,6 @@ const StaffPresenceToggleCard = ({ users }) => {
     const enough_placeStaff = staffMembers.filter(member => staffConfig["이높플레이스"]?.includes(member.id));
 
     // Duty candidates: only admin users, excluding those configured as staff in the other space
-    const haifnDutyCandidates = users
-        .filter(u => u.role === 'admin' && !staffConfig["이높플레이스"]?.includes(u.id))
-        .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
-
     const enough_placeDutyCandidates = users
         .filter(u => u.role === 'admin' && !staffConfig["하이픈"]?.includes(u.id))
         .sort((a, b) => a.name.localeCompare(b.name, 'ko'));
@@ -428,19 +426,6 @@ const StaffPresenceToggleCard = ({ users }) => {
                                     <span className="w-1.5 h-3.5 bg-blue-500 rounded-full"></span>
                                     하이픈 공간 스탭 ({haifnStaff.length}명)
                                 </h4>
-                                <div className="flex items-center gap-2">
-                                    <span className="text-xs font-bold text-slate-500">오늘의 당직:</span>
-                                    <select 
-                                        value={dutyStaff["하이픈"] || ''} 
-                                        onChange={(e) => handleSetDutyStaff("하이픈", e.target.value)}
-                                        className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700 outline-none focus:border-blue-500 transition-colors"
-                                    >
-                                        <option value="">선택 없음</option>
-                                        {haifnDutyCandidates.map(member => (
-                                            <option key={member.id} value={member.id}>{member.name}</option>
-                                        ))}
-                                    </select>
-                                </div>
                             </div>
                             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                 {haifnStaff.map(member => renderStaffCard(member))}

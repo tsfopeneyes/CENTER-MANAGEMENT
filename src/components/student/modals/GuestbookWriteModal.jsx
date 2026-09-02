@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { X, Image as ImageIcon } from 'lucide-react';
+import useModalClose from '../../../hooks/useModalClose';
 
 const GuestbookWriteModal = ({ setShowGuestWrite, handleCreatePost, uploadingGuest }) => {
+    useModalClose(true, () => setShowGuestWrite(false));
     const [newGuestPost, setNewGuestPost] = useState({ content: '', images: [], previews: [] });
 
     const handleCreateGuestPost = async () => {

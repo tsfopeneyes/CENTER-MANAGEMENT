@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { BellRing, X, Send } from 'lucide-react';
 import { supabase } from '../../../../supabaseClient';
+import useModalClose from '../../../../hooks/useModalClose';
 
 const NotificationModal = ({ notificationModalOpen, setNotificationModalOpen }) => {
+    useModalClose(notificationModalOpen, () => setNotificationModalOpen(false));
     const [notificationContent, setNotificationContent] = useState('');
     const [notificationGroup, setNotificationGroup] = useState('전체');
     const [sending, setSending] = useState(false);

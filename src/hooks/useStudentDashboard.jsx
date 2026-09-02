@@ -10,6 +10,7 @@ import SunEditor from 'suneditor-react';
 import 'suneditor/dist/css/suneditor.min.css';
 import Cropper from 'react-easy-crop';
 import confetti from 'canvas-confetti';
+import { getAccountAuthClient, isAccountAuthEnabled } from '../auth/accountAuthRuntime';
 
 
 
@@ -32,6 +33,7 @@ import { hashPassword } from '../utils/hashUtils';
 
 import { useMessaging } from '../hooks/useMessaging';
 import { useNotices } from '../hooks/useNotices';
+import { getRecruitment } from '../utils/programRecruitment';
 import { useGuestbook } from '../hooks/useGuestbook';
 import { useProfile } from '../hooks/useProfile';
 import { badgesApi } from '../api/badgesApi';
@@ -405,6 +407,15 @@ export const useStudentDashboard = () => {
         } catch (err) { console.error(err); }
     };
 
+    // Keep an open detail in sync when an administrator finishes a scheduled
+    // program or changes its recruitment period on another device.
+    useEffect(() => {
+        setSelectedNotice(previous => {
+            if (!previous || previous.tutorial_mode) return previous;
+            return notices.find(item => item.id === previous.id) || previous;
+        });
+    }, [notices]);
+
     const handleCreateGuestPost = async () => {
         const success = await handleCreatePost(newGuestPost.content, newGuestPost.images);
         if (success) {
@@ -532,6 +543,9 @@ export const useStudentDashboard = () => {
 
     const filteredPrograms = allPrograms.filter(n => {
         if (n.program_status === 'CANCELLED') return false;
+        // Safe calendar previews must also appear in the program tab before
+        // recruitment opens, without requiring unpublished detail fields.
+        if (getRecruitment(n).status === 'SCHEDULED') return true;
 
         // 종료됐더라도 일정이 오늘이면 당일 자정까지 학생 화면에 유지한다.
         const isScheduledToday = isProgramScheduledToday(n);
@@ -600,20 +614,33 @@ export const useStudentDashboard = () => {
 
     const handleSaveProfile = async () => {
         const updates = {};
+        let passwordSaved = false;
         if (newPassword) {
-            if (newPassword.length < 4) {
-                alert('비밀번호는 4자리 이상이어야 합니다.');
+            if (newPassword.length < 6) {
+                alert('비밀번호는 6자리 이상이어야 합니다.');
                 return;
             }
             if (newPassword !== confirmPassword) {
                 alert('비밀번호 확인이 일치하지 않습니다.');
                 return;
             }
-            const hashedPassword = await hashPassword(newPassword);
-            updates.password = hashedPassword;
+            if (isAccountAuthEnabled()) {
+                try {
+                    await getAccountAuthClient().password({ profileId: user.id, newPassword });
+                    passwordSaved = true;
+                } catch (error) {
+                    alert('비밀번호 변경 실패: ' + (error.message || '잠시 후 다시 시도해주세요.'));
+                    return;
+                }
+            } else {
+                const hashedPassword = await hashPassword(newPassword);
+                updates.password = hashedPassword;
+            }
         }
 
-        const result = await updateProfile(updates, profileImage);
+        const result = passwordSaved && !profileImage && Object.keys(updates).length === 0
+            ? { success: true }
+            : await updateProfile(updates, profileImage);
 
         if (result.success) {
             alert('프로필이 업데이트되었습니다.');

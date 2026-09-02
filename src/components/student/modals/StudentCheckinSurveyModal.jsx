@@ -4,6 +4,8 @@ import { Sparkles, Check, X, ChevronRight, CheckCircle, MapPin } from 'lucide-re
 import { supabase } from '../../../supabaseClient';
 import { sendCheckinNotification } from '../../../utils/integrationUtils';
 import { resolveSchoolRegion } from '../../../utils/schoolRegionUtils';
+import useModalClose from '../../../hooks/useModalClose';
+import { loadAssignedSurvey } from '../../../utils/surveyAssignments';
 
 const DEFAULT_SURVEY_OPTIONS = [
     { id: '1', emoji: '🍽️', label: '당 충전하며 쉬고 싶어요', recommendTitle: '2F SQUARE, 3F ROUND 빈백존', recommendText: '2층 냉장고에서 간식 먹고, 3층 빈백에서 뒹굴뒹굴' },
@@ -15,12 +17,16 @@ const DEFAULT_SURVEY_OPTIONS = [
 ];
 
 const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
+    useModalClose(isOpen, () => onClose(false));
     const [mode, setMode] = useState('SURVEY'); // 'SURVEY' | 'QUESTION_QA' | 'CHAT_SHOUTOUT' | 'HYBRID'
     const [questionText, setQuestionText] = useState('오늘 센터에서 무엇을 하고 싶나요?');
+    const [descriptionText, setDescriptionText] = useState('');
     const [qaQuestionText, setQaQuestionText] = useState('오늘 센터에서 꼭 해보고 싶은 한 가지는 무엇인가요?');
     const [qaPlaceholderText, setQaPlaceholderText] = useState('자유롭게 입력해주세요');
     const [chatPromptText, setChatPromptText] = useState('센터에 있는 친구들에게 반가운 한마디 인사를 남겨보세요!');
     const [chatPlaceholderText, setChatPlaceholderText] = useState('예: 3층 빈백존 입성! 보드게임 할 사람 덤벼라~');
+    const [surveyId, setSurveyId] = useState(null);
+    const [recommendationsEnabled, setRecommendationsEnabled] = useState(true);
 
     const [optionsList, setOptionsList] = useState(DEFAULT_SURVEY_OPTIONS);
     const [selectedLabels, setSelectedLabels] = useState([DEFAULT_SURVEY_OPTIONS[0].label]);
@@ -37,17 +43,18 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
         setChatShoutoutText('');
         const fetchConfig = async () => {
             try {
-                const { data } = await supabase
-                    .from('notices')
-                    .select('content')
-                    .eq('category', 'SYSTEM')
-                    .eq('title', 'CHECKIN_SURVEY_CONFIG')
-                    .maybeSingle();
-
-                if (data?.content) {
-                    const parsed = JSON.parse(data.content);
+                const assigned = await loadAssignedSurvey({ surveyType: 'CHECKIN', locationName });
+                if (!assigned) {
+                    onClose(false);
+                    return;
+                }
+                if (assigned?.config) {
+                    const parsed = assigned.config;
+                    setSurveyId(assigned.id || null);
+                    setRecommendationsEnabled(parsed.recommendationsEnabled !== false);
                     if (parsed.mode) setMode(parsed.mode);
                     if (parsed.question) setQuestionText(parsed.question);
+                    setDescriptionText(parsed.description || '');
                     if (parsed.qaQuestion) setQaQuestionText(parsed.qaQuestion);
                     if (parsed.qaPlaceholder) setQaPlaceholderText(parsed.qaPlaceholder);
                     if (parsed.chatPrompt) setChatPromptText(parsed.chatPrompt);
@@ -62,7 +69,7 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
             }
         };
         fetchConfig();
-    }, [isOpen]);
+    }, [isOpen, locationName]);
 
     if (!isOpen) return null;
 
@@ -114,14 +121,19 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                 ? userAnswerText.trim()
                 : (mode === 'CHAT_SHOUTOUT' || mode === 'HYBRID' ? chatShoutoutText.trim() : null);
 
-            await supabase.from('checkin_surveys').insert([{
+            const surveyPayload = {
                 user_id: user.id,
                 survey_type: 'CHECKIN',
                 mode: mode,
                 selections: (mode === 'SURVEY' || mode === 'HYBRID') ? selectedLabels : null,
                 text_answer: textAnswer,
                 created_at: new Date().toISOString()
-            }]);
+            };
+            if (surveyId) {
+                surveyPayload.survey_id = surveyId;
+                surveyPayload.survey_snapshot = { question: questionText, description: descriptionText, qaQuestion: qaQuestionText, options: optionsList };
+            }
+            await supabase.from('checkin_surveys').insert([surveyPayload]);
 
             // 2. If Live Chat Shoutout is present, post to center_daily_chats
             const shoutoutText = chatShoutoutText.trim();
@@ -175,14 +187,16 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                 schoolName: user.school,
                 locationName: locationName || '하이픈',
                 isGuest: false,
-                purposes: notifPurposes
+                purposes: notifPurposes,
+                surveyQuestion: mode === 'QUESTION_QA' ? qaQuestionText : questionText,
+                surveyAnswers: mode === 'QUESTION_QA' ? [userAnswerText.trim()] : selectedLabels
             }).catch(e => console.error('Failed to send checkin notification:', e));
 
             sessionStorage.removeItem('pending_checkin_notif');
             sessionStorage.removeItem('pending_checkin_survey');
             sessionStorage.removeItem('require_checkin_survey');
             
-            if (mode === 'SURVEY' || mode === 'HYBRID') {
+            if ((mode === 'SURVEY' || mode === 'HYBRID') && recommendationsEnabled) {
                 setStep('RESULT');
             } else {
                 onClose(true);
@@ -224,11 +238,11 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                                         ? qaQuestionText
                                         : (mode === 'CHAT_SHOUTOUT' ? chatPromptText : questionText)}
                                 </h3>
-                                <p className="text-xs text-[#4E5968] font-medium">
-                                    {mode === 'QUESTION_QA'
-                                        ? '자유롭게 생각이나 답변을 적어주세요!'
-                                        : (mode === 'CHAT_SHOUTOUT' ? '체크인 소식과 함께 라이브 채팅에 게시됩니다.' : '원하시는 방문 목적을 선택해 주세요.')}
-                                </p>
+                                {descriptionText && (
+                                    <p className="text-xs leading-relaxed text-[#4E5968] font-medium whitespace-pre-line">
+                                        {descriptionText}
+                                    </p>
+                                )}
                             </div>
                             <button
                                 onClick={handleCloseWithoutSubmitting}

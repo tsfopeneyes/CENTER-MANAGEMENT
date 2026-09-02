@@ -3,9 +3,19 @@ import { stripHtml } from '../../utils/textUtils';
 import { parseISO, isWithinInterval, startOfDay, endOfDay } from 'date-fns';
 import { MapPin, Calendar, Clock, ChevronRight, Users, CheckCircle2 } from 'lucide-react';
 import { parseDurationToMinutes, formatKoreanTimeRange } from '../../utils/dateUtils';
+import { getRecruitment, getRecruitmentStart, formatRecruitmentStart } from '../../utils/programRecruitment';
+import { useCurrentTime } from '../../hooks/useCurrentTime';
+import RecruitmentBadge from './components/RecruitmentBadge';
+import RecruitmentInterestButton from './components/RecruitmentInterestButton';
 
 const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel }) => {
-    const thumb = program.image_url || (program.images?.length > 0 ? program.images[0] : null);
+    const now = useCurrentTime();
+    const recruitment = getRecruitment(program, now);
+    // Card metadata is public before recruitment; body/form access stays gated.
+    const thumb = program.image_url || program.images?.[0] || null;
+    const description = program.short_description;
+    const isScheduled = recruitment.status === 'SCHEDULED';
+    const scheduledLabel = isScheduled ? formatRecruitmentStart(getRecruitmentStart(program), '모집 예정') : '';
 
     // Check for "Closing Soon" (within 24 hours of recruitment_deadline)
     const isClosingSoon = (() => {
@@ -52,32 +62,29 @@ const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel 
         <div
             data-tour={tourTarget}
             data-tour-label={tourLabel}
-            onClick={() => onClick(program)}
-            className={`group bg-white overflow-hidden shadow-toss-standard hover:shadow-toss-elevated transition-all duration-300 active:scale-[0.98] cursor-pointer flex flex-col h-full border-none ${compact ? 'rounded-toss-lg' : 'rounded-toss-xl'}`}
+            onClick={isScheduled ? undefined : () => onClick(program)}
+            className={`group bg-white overflow-hidden shadow-toss-standard transition-all duration-300 flex flex-col border-none ${isScheduled ? 'cursor-default' : 'hover:shadow-toss-elevated active:scale-[0.98] cursor-pointer'} ${thumb ? 'h-full' : 'self-start'} ${compact ? 'rounded-toss-lg' : 'rounded-toss-xl'}`}
         >
             {/* Thumbnail Section */}
-            <div className={`relative aspect-square overflow-hidden bg-tossGrey50 border-b border-tossGrey100/50 ${compact ? 'rounded-t-toss-lg' : 'rounded-t-toss-xl'}`}>
+            <div className={thumb ? `relative aspect-square overflow-hidden bg-tossGrey50 border-b border-tossGrey100/50 ${compact ? 'rounded-t-toss-lg' : 'rounded-t-toss-xl'}` : `${compact ? 'px-4 pt-4' : 'px-6 pt-6'}`}>
                 {thumb ? (
                     <img
                         src={thumb}
                         alt={program.title}
-                        className="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-110"
+                        className={`absolute inset-0 w-full h-full object-cover transition-transform duration-500 ${isScheduled ? '' : 'group-hover:scale-110'}`}
                     />
-                ) : (
-                    <div className="w-full h-full flex items-center justify-center bg-tossBlueLight text-tossBlue/30">
-                        <Calendar size={compact ? 32 : 48} />
-                    </div>
-                )}
+                ) : null}
 
                 {/* Status Badges Overlaid */}
-                <div className={`absolute flex flex-col items-start ${compact ? 'top-2.5 left-2.5 gap-1.5' : 'top-4 left-4 gap-2'}`}>
+                <div className={`flex flex-wrap items-start gap-2 ${thumb ? `absolute flex-col ${compact ? 'top-2.5 left-2.5' : 'top-4 left-4'}` : ''}`}>
+                    <RecruitmentBadge program={program} now={now} />
 
-                    {program.is_recruiting && isClosingSoon && !isPast && (
+                    {recruitment.canApply && isClosingSoon && !isPast && (
                         <div className={`flex items-center bg-tossError text-white font-bold shadow-toss-subtle ${compact ? 'gap-1 px-2 py-0.5 rounded-toss-md text-[10px]' : 'gap-1.5 px-2.5 py-1 rounded-toss-md text-[11px]'}`}>
                             <CheckCircle2 size={compact ? 10 : 12} strokeWidth={2.5} /> 마감임박
                         </div>
                     )}
-                    {program.is_leader_only && (
+                    {recruitment.canViewDetails && program.is_leader_only && (
                         <div className={`flex items-center bg-tossCaution text-tossGrey800 font-bold shadow-toss-subtle border border-tossCaution/20 w-fit ${compact ? 'gap-1 px-2 py-0.5 rounded-toss-md text-[10px]' : 'gap-1.5 px-2.5 py-1 rounded-toss-md text-[11px]'}`}>
                             <svg xmlns="http://www.w3.org/2000/svg" width={compact ? "10" : "12"} height={compact ? "10" : "12"} viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-star"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" /></svg>
                             리더전용
@@ -88,13 +95,13 @@ const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel 
 
             {/* Content Section */}
             <div className={compact ? "p-4 flex flex-col flex-1" : "p-6 pb-4"}>
-                <h3 className={`font-bold text-tossGrey900 line-clamp-2 ${compact ? 'text-sm leading-snug ' + (program.short_description ? 'mb-1' : 'mb-3') : 'text-xl leading-tight ' + (program.short_description ? 'mb-2' : 'mb-4')}`}>
+                <h3 className={`font-bold text-tossGrey900 line-clamp-2 ${compact ? 'text-sm leading-snug ' + (description ? 'mb-1' : 'mb-3') : 'text-xl leading-tight ' + (description ? 'mb-2' : 'mb-4')}`}>
                     {program.title}
                 </h3>
                 
-                {program.short_description && (
+                {description && (
                     <p className={`text-tossGrey600 font-medium break-keep whitespace-normal ${compact ? 'text-[11px] mb-3 leading-snug' : 'text-[15px] mb-6 leading-relaxed'}`}>
-                        {program.short_description}
+                        {description}
                     </p>
                 )}
 
@@ -141,7 +148,7 @@ const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel 
                                 <Calendar size={compact ? 14 : 18} className="shrink-0 text-tossGrey400" />
                                 <span className={`font-medium text-tossGrey700 ${compact ? 'text-[11px] line-clamp-1' : 'text-sm'}`}>{formatDate(program.program_date)}</span>
                             </div>
-                            {program.program_duration && !compact && (
+                            {recruitment.canViewDetails && program.program_duration && !compact && (
                                 <div className={`flex items-center text-tossGrey400 ${compact ? 'gap-2 mt-1' : 'gap-3'}`}>
                                     <Clock size={compact ? 14 : 18} className="shrink-0 text-tossGrey400" />
                                     <span className={`font-medium text-tossGrey700 ${compact ? 'text-[11px] line-clamp-1' : 'text-sm'}`}>소요시간: {program.program_duration}</span>
@@ -155,7 +162,7 @@ const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel 
                             <span className={`font-medium text-tossGrey700 ${compact ? 'text-[11px] line-clamp-1' : 'text-sm'}`}>{program.program_location}</span>
                         </div>
                     )}
-                    {program.is_recruiting && (
+                    {program.is_recruiting && (recruitment.canViewDetails || program.max_capacity != null) && (
                         <div className={`flex items-center text-tossGrey400 ${compact ? 'gap-2 mt-1' : 'gap-3'}`}>
                             <Users size={compact ? 14 : 18} className="shrink-0 text-tossGrey400" />
                             <span className={`font-medium text-tossGrey700 ${compact ? 'text-[11px] line-clamp-1' : 'text-sm'}`}>
@@ -170,20 +177,17 @@ const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel 
                         신청 없이 참여할 수 있어요!
                     </button>
                 ) : (
-                    <button className={`w-full font-bold transition-colors active:scale-95 shadow-toss-subtle border border-transparent ${compact ? 'py-2 rounded-toss-md text-xs mt-auto' : 'py-3.5 rounded-toss-xl text-sm mt-auto'} ${program.responseStatus === 'JOIN' ? 'bg-tossGrey100 text-tossGrey500 pointer-events-none shadow-none' : (program.responseStatus === 'WAITLIST' ? 'bg-tossWarning/10 text-[#fe9800] pointer-events-none shadow-none' : 'bg-tossBlue text-white hover:bg-tossBlueHover')}`}>
-                        {program.responseStatus === 'JOIN' ? '신청 완료' : (program.responseStatus === 'WAITLIST' ? '대기명단' : '신청하기')}
+                    <div className="flex items-stretch gap-2 mt-auto">
+                    <button type="button" disabled={isScheduled} className={`w-full min-w-0 px-2 font-bold leading-relaxed transition-colors active:scale-95 shadow-toss-subtle border border-transparent ${compact ? 'py-2 rounded-toss-md text-xs' : 'py-3.5 rounded-toss-xl text-sm'} ${isScheduled ? 'bg-tossBlue text-white cursor-default' : program.responseStatus === 'JOIN' ? 'bg-tossGrey100 text-tossGrey500 pointer-events-none shadow-none' : (program.responseStatus === 'WAITLIST' ? 'bg-tossWarning/10 text-[#fe9800] pointer-events-none shadow-none' : 'bg-tossBlue text-white hover:bg-tossBlueHover')}`}>
+                        {isScheduled ? scheduledLabel : !recruitment.canViewDetails ? recruitment.message : !recruitment.canApply ? '상세 보기' : program.responseStatus === 'JOIN' ? '신청 완료' : (program.responseStatus === 'WAITLIST' ? '대기명단' : '신청하기')}
                     </button>
+                    {isScheduled && <RecruitmentInterestButton noticeId={program.id}/>}
+                    </div>
                 )}
             </div>
         </div>
     );
 };
 
-export default React.memo(ProgramCard, (prevProps, nextProps) => {
-    if (prevProps.program.tutorial_mode || nextProps.program.tutorial_mode) return false;
-    return prevProps.program.id === nextProps.program.id &&
-        prevProps.program.responseStatus === nextProps.program.responseStatus &&
-        prevProps.program.current_applicants === nextProps.program.current_applicants &&
-        prevProps.tourTarget === nextProps.tourTarget &&
-        prevProps.tourLabel === nextProps.tourLabel;
-});
+// Recruitment dates, readiness and details may change while this card is open.
+export default React.memo(ProgramCard);

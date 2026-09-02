@@ -1,5 +1,6 @@
 import React from 'react';
 import { X, RefreshCw } from 'lucide-react';
+import useModalClose from '../../../../hooks/useModalClose';
 
 const ManualEntryModal = ({ hookData, users, locations }) => {
     const {
@@ -10,14 +11,7 @@ const ManualEntryModal = ({ hookData, users, locations }) => {
         handleManualSubmit
     } = hookData;
 
-    React.useEffect(() => {
-        if (!isManualModalOpen) return;
-        const handleKeyDown = (e) => {
-            if (e.key === 'Escape') setIsManualModalOpen(false);
-        };
-        window.addEventListener('keydown', handleKeyDown);
-        return () => window.removeEventListener('keydown', handleKeyDown);
-    }, [isManualModalOpen, setIsManualModalOpen]);
+    useModalClose(isManualModalOpen, () => setIsManualModalOpen(false));
 
     if (!isManualModalOpen) return null;
 

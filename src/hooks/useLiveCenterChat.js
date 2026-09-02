@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { supabase } from '../supabaseClient';
 import { filterProfanity } from '../utils/profanityFilter';
 import { compressImage } from '../utils/imageUtils';
+import { isAccountAuthEnabled } from '../auth/accountAuthRuntime';
+import { uploadAccountImage } from '../auth/accountMedia';
 
 export const useLiveCenterChat = (centerCode, currentUser) => {
     const [messages, setMessages] = useState([]);
@@ -29,6 +31,7 @@ export const useLiveCenterChat = (centerCode, currentUser) => {
             const fileExt = compressedFile.name?.split('.').pop() || 'jpg';
             const fileName = `chat/${centerCode}/${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${fileExt}`;
 
+            if(isAccountAuthEnabled())return await uploadAccountImage({profileId:currentUser.id,kind:'chat',file:compressedFile});
             const { error: uploadErr } = await supabase.storage.from('avatars').upload(fileName, compressedFile, {
                 cacheControl: '3600',
                 upsert: true

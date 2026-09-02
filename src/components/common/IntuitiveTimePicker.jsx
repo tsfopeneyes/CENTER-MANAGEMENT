@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-const IntuitiveTimePicker = ({ value, onChange }) => {
+const IntuitiveTimePicker = ({ value, onChange, label = '시간', minuteStep = 5 }) => {
     // value format: "HH:mm" (24h)
     const [period, setPeriod] = useState('오전');
     const [hour, setHour] = useState(1);
@@ -53,6 +53,8 @@ const IntuitiveTimePicker = ({ value, onChange }) => {
                     <button
                         key={p}
                         type="button"
+                        aria-label={`${label} ${p}`}
+                        aria-pressed={period === p}
                         onClick={() => handlePeriodChange(p)}
                         className={`px-1.5 py-0.5 rounded-md text-[10px] font-bold transition-all ${period === p ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
                     >
@@ -64,6 +66,7 @@ const IntuitiveTimePicker = ({ value, onChange }) => {
             {/* Time Selectors */}
             <div className="flex items-center gap-1 px-1 flex-1 justify-center">
                 <select
+                    aria-label={`${label} 시`}
                     value={hour}
                     onChange={(e) => handleHourChange(e.target.value)}
                     className="bg-transparent text-xs font-bold text-slate-800 outline-none scrollbar-hide appearance-none cursor-pointer hover:text-blue-600 transition-colors w-5 text-center"
@@ -76,11 +79,12 @@ const IntuitiveTimePicker = ({ value, onChange }) => {
                 <span className="text-gray-300 font-bold text-xs">:</span>
 
                 <select
-                    value={minute - (minute % 5)}
+                    aria-label={`${label} 분`}
+                    value={minute}
                     onChange={(e) => handleMinuteChange(parseInt(e.target.value))}
                     className="bg-transparent text-xs font-bold text-slate-800 outline-none scrollbar-hide appearance-none cursor-pointer hover:text-blue-600 transition-colors w-6 text-center"
                 >
-                    {Array.from({ length: 12 }, (_, i) => i * 5).map(m => (
+                    {Array.from(new Set([...Array.from({ length: Math.ceil(60 / minuteStep) }, (_, i) => i * minuteStep), minute])).sort((a, b) => a - b).map(m => (
                         <option key={m} value={m}>{m.toString().padStart(2, '0')}</option>
                     ))}
                 </select>

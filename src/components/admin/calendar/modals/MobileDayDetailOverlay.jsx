@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { ChevronLeft, ChevronDown, Filter, MoreVertical, Calendar as CalendarIcon, Edit2 } from 'lucide-react';
 import { format, parseISO, isToday } from 'date-fns';
 import { ko } from 'date-fns/locale';
-import { COLOR_THEMES } from '../calendarConstants';
+import { getCalendarEventTheme } from '../../../../utils/calendarColors';
 import { stripHtml } from '../../../../utils/textUtils';
 
 const MobileDayDetailOverlay = ({
@@ -13,7 +13,7 @@ const MobileDayDetailOverlay = ({
     handleEventClick,
     formData, setFormData, 
     setSelectedEvent, setShowModal,
-    dynamicCategories
+    dynamicCategories, calendarCategories
 }) => {
     return (
                 
@@ -63,7 +63,7 @@ const MobileDayDetailOverlay = ({
                             ) : (
                                 <div className="divide-y divide-gray-50">
                                     {allEvents.filter(e => isEventOnDay(e, selectedDate)).map(event => {
-                                        const theme = event.isPublic ? COLOR_THEMES.pink : (COLOR_THEMES[event.color_theme] || COLOR_THEMES.gray);
+                                        const theme = getCalendarEventTheme(event, calendarCategories);
                                         const startTime = event.raw.start_time;
                                         const endTime = event.raw.end_time;
 

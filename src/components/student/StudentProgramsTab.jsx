@@ -78,7 +78,7 @@ const StudentProgramsTab = ({
                         onClick={() => setSubTab('AVAILABLE')}
                         className={`flex-1 relative z-10 py-2.5 text-sm font-bold transition-colors ${subTab === 'AVAILABLE' ? 'text-tossGrey900' : 'text-tossGrey500'}`}
                     >
-                        진행 중인 프로그램
+                        진행·모집 예정
                     </button>
                     <button
                         onClick={() => setSubTab('HISTORY')}
@@ -99,7 +99,7 @@ const StudentProgramsTab = ({
                                 className="space-y-6"
                             >
                                 {filteredPrograms.length === 0 && !tutorialMode ? (
-                                    <div className="text-center py-20 text-tossGrey400 font-bold">진행 중인 프로그램이 없습니다.</div>
+                                    <div className="text-center py-20 text-tossGrey400 font-bold">진행 중이거나 모집 예정인 프로그램이 없습니다.</div>
                                 ) : tutorialMode ? (
                                     <div className="space-y-7">
                                         <section data-tour="tutorial-application-programs" className="rounded-toss-xl overflow-hidden">

@@ -5,8 +5,14 @@ import { supabase } from '../../../supabaseClient';
 import { requestSupabaseFunction } from '../../../utils/supabaseRest';
 import UserAvatar from '../../common/UserAvatar';
 import { startOfDay, addDays, startOfWeek } from 'date-fns';
+import { useDutyRoster } from '../../../hooks/useDutyRoster';
+import { useSeoulDate } from '../../../hooks/useSeoulDate';
 
 const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCategories = [], onStaffClick, tutorialMode = false, tutorialStep = null }) => {
+    const todayDate = useSeoulDate();
+    const { roster } = useDutyRoster(todayDate.slice(0, 7), studentRegion !== '강서');
+    const haifnAssignment = roster[todayDate];
+    const haifnDutyId = haifnAssignment?.duty_status === 'ASSIGNED' ? haifnAssignment.staff_id || '' : '';
     const [operatingHours, setOperatingHours] = useState(null);
     const [staffConfig, setStaffConfig] = useState({ "하이픈": [], "이높플레이스": [] });
     const [presenceStatus, setPresenceStatus] = useState({});
@@ -177,7 +183,7 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
             }
 
             const currentSpaceKey = studentRegion === '강서' ? '이높플레이스' : '하이픈';
-            const currentDutyId = dutyStaff[currentSpaceKey];
+            const currentDutyId = currentSpaceKey === '하이픈' ? haifnDutyId : dutyStaff[currentSpaceKey];
             
             let fetchIds = [...filteredIds];
             if (currentDutyId && !fetchIds.includes(currentDutyId)) {
@@ -255,7 +261,7 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
         return () => {
             supabase.removeChannel(channel);
         };
-    }, [staffConfig, studentRegion, dutyStaff]);
+    }, [staffConfig, studentRegion, dutyStaff, haifnDutyId]);
 
     if (loading) return null;
 
@@ -305,15 +311,20 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
     const isAfter6PM = currentHour >= 18;
     const isDutyTime = currentHour >= 14 && currentHour < 22; // 오후 2시 ~ 오후 10시
 
-    const dutyStaffId = dutyStaff[currentSpaceKey];
+    // Undated legacy HAIFN settings are no longer a second duty source: an
+    // unassigned day stays empty and OFF never falls back to yesterday's staff.
+    const dutyStaffId = currentSpaceKey === '하이픈' ? haifnDutyId : dutyStaff[currentSpaceKey];
 
-    // Duty staff member:
-    // - If toggled present (근무 중): show immediately (before 6 PM)
-    // - If NOT toggled present: show only during duty hours (2 PM ~ 10 PM)
+    // A dated HAIFN assignment is the source of truth for today's duty and is
+    // shown for the whole date. Presence remains a separate, live signal.
     const dutyMember = (() => {
-        if (!dutyStaffId) return null;
-        const member = staffList.find(u => u.id === dutyStaffId);
+        const member = currentSpaceKey === '하이픈'
+            ? haifnAssignment?.duty_status === 'ASSIGNED'
+                ? staffList.find(u => u.id === dutyStaffId) || { ...haifnAssignment.staff, id: null, name: haifnAssignment.staff_name }
+                : null
+            : staffList.find(u => u.id === dutyStaffId);
         if (!member) return null;
+        if (currentSpaceKey === '하이픈') return member;
         const isToggledPresent = !isAfter6PM && !!presenceStatus[dutyStaffId];
         if (isToggledPresent || isDutyTime) return member;
         return null;
@@ -505,7 +516,7 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
             {hasAnyone && (
                 <div data-tour={tutorialMode ? 'home-coffee-chat' : undefined} className="-mx-5 px-5 w-[calc(100%+2.5rem)] flex flex-col gap-3 mt-5 pt-5 border-t border-tossGrey100 rounded-xl overflow-hidden animate-fade-in">
                     <div className="flex flex-wrap items-center gap-1">
-                        <span className="text-[11px] font-bold text-tossGrey500 tracking-tight">지금 센터에서 만나요!</span>
+                        <span className="text-[11px] font-bold text-tossGrey500 tracking-tight">{hasPresent ? '지금 센터에서 만나요!' : '오늘의 당직이에요'}</span>
                         <span className="text-[11px] font-bold text-tossBlue tracking-tight shrink-0">(스처쌤을 클릭하면 대화를 신청할 수 있어요)</span>
                     </div>
                     <div className={`flex items-center ${containerGap} pl-0.5`}>
@@ -514,6 +525,7 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
                             <div className="flex flex-col items-center justify-center text-center gap-1.5 min-w-[40px] animate-scale-in">
                                 <div 
                                     onClick={() => {
+                                        if (!effectiveDutyMember.id) return;
                                         if (effectiveDutyMember.isBusy) {
                                             setBusyStaffNotice(effectiveDutyMember.name || '선생님');
                                             return;
@@ -521,7 +533,7 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
                                         onStaffClick && onStaffClick(effectiveDutyMember);
                                     }}
                                     className={`relative shrink-0 shadow-toss-subtle rounded-full ring-2 ring-tossBlue/30 transition-transform ${
-                                        effectiveDutyMember.isBusy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:scale-105'
+                                        !effectiveDutyMember.id ? 'cursor-default' : effectiveDutyMember.isBusy ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer hover:scale-105'
                                     }`}
                                 >
                                     <UserAvatar user={effectiveDutyMember} size={dutySize} textSize={dutyTextSize} />

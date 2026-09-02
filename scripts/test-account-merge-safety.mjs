@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+const api = readFileSync(new URL('../src/api/userMergeApi.js', import.meta.url), 'utf8');
+assert.match(api,/isAccountAuthEnabled\(\)/);assert.match(api,/members\.merge/);
+assert.doesNotMatch(api,/\.rpc\s*\(|\.from\s*\(|\bfetch\s*\(/);
+const modal = readFileSync(new URL('../src/components/admin/users/modals/UserMergeModal.jsx', import.meta.url), 'utf8');
+assert.match(modal,/mergeUserStats|handleMergeAction|mergeCandidates|confirm\s*\(/);
+const school = readFileSync(new URL('../src/components/admin/school/modals/StudentDetailModal.jsx', import.meta.url), 'utf8');
+const mergeBody=school.slice(school.indexOf('const handleMerge'),school.indexOf('const handleDeleteTempStudent'));
+assert.match(mergeBody,/mergeUserStats/);assert.doesNotMatch(mergeBody,/school_logs|calling_forest_progress|\.delete\s*\(/);
+console.log('PASS account merge client safety: existing UI uses one secure server action with no RPC/direct-table fallback');

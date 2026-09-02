@@ -136,7 +136,7 @@ const GuestEntryForm = ({ onSuccess, onCancel }) => {
                 guardian_relation: birthInfo.isUnder14 ? guardian.relation.trim() : null,
                 preferences: buildGuestPrivacyPreferences(null, birthInfo.isUnder14),
                 user_group: '게스트',
-                password: '0000', // default filler
+                password: null, // default filler
                 role: 'student',
                 status: 'approved',
                 memo: memoText

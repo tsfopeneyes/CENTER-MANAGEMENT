@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import PropTypes from 'prop-types';
 import { noticesApi } from '../../../api/noticesApi';
 import { supabase } from '../../../supabaseClient';
+import { readNoticeWithPreview } from '../../../api/programReadApi';
 
 // Hooks
 import useViewPreferences from './hooks/useViewPreferences';
@@ -127,10 +128,19 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
         setShowWriteForm(false);
     }, []);
 
-    const handleEditNotice = useCallback((notice) => {
-        setEditNoticeId(notice.id);
-        setSelectedNoticeForEdit(notice);
-        setShowWriteForm(true);
+    const handleEditNotice = useCallback(async (notice) => {
+        try {
+            const editable = notice.is_program_preview ? await readNoticeWithPreview(notice.id) : notice;
+            if (!editable || editable.is_program_preview) {
+                alert('모집 예정 본문을 수정하려면 관리자 계정으로 다시 로그인해주세요.');
+                return;
+            }
+            setEditNoticeId(editable.id);
+            setSelectedNoticeForEdit(editable);
+            setShowWriteForm(true);
+        } catch {
+            alert('프로그램 정보를 불러오지 못했습니다. 잠시 후 다시 시도해주세요.');
+        }
     }, []);
 
     const handleDeleteNotice = useCallback(async (id) => {
@@ -153,7 +163,6 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
 
             await noticesApi.update(id, { 
                 program_status: newStatus,
-                ...(newStatus === 'COMPLETED' ? { is_recruiting: false } : {}),
                 guest_properties: {
                     ...currentGp,
                     is_ended: isEndedVal
@@ -162,7 +171,6 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
             setNotices(prev => prev.map(n => n.id === id ? { 
                 ...n, 
                 program_status: newStatus,
-                ...(newStatus === 'COMPLETED' ? { is_recruiting: false } : {}),
                 guest_properties: {
                     ...(n.guest_properties || {}),
                     is_ended: isEndedVal
