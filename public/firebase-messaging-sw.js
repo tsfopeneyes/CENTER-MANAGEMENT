@@ -1,34 +1,62 @@
-// firebase-messaging-sw.js
-// 백그라운드 푸시 알림을 수신하기 위한 서비스 워커입니다.
-importScripts('https://www.gstatic.com/firebasejs/10.9.0/firebase-app-compat.js');
-importScripts('https://www.gstatic.com/firebasejs/10.9.0/firebase-messaging-compat.js');
+// Standards-based receiver for Firebase-issued web push subscriptions.
+// Keeping delivery independent of the Firebase worker runtime preserves
+// compatibility with Samsung Internet and installed Samsung web apps.
+self.addEventListener('install', () => self.skipWaiting());
 
-// 관리자님: 여기에 파이어베이스 웹 콘솔에서 발급받으신 firebaseConfig 설정 내용을 그대로 붙여넣어 주세요!
-// 예시: const firebaseConfig = { apiKey: "AIzaSy...", authDomain: "...", ... };
-const firebaseConfig = {
-  apiKey: "AIzaSyDwk6Kzplfyf6k3sTy-OqZ5NmfqQkVVFnU",
-  authDomain: "sci-center-6f265.firebaseapp.com",
-  projectId: "sci-center-6f265",
-  storageBucket: "sci-center-6f265.firebasestorage.app",
-  messagingSenderId: "598421604467",
-  appId: "1:598421604467:web:2b57d2c17961e111124206",
-  measurementId: "G-B5HD4MZNY2"
+self.addEventListener('activate', (event) => {
+  event.waitUntil(
+    caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+      .then(() => self.clients.claim())
+  );
+});
+
+const receiptEndpoint = 'https://erecqalsxoxrufggvmcc.supabase.co/functions/v1/push-receipts';
+const reportReceipt = (receiptToken, receiptEvent) => {
+  if (!receiptToken) return Promise.resolve();
+  return fetch(receiptEndpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ receiptToken, event: receiptEvent }),
+  }).catch(() => undefined);
 };
 
-firebase.initializeApp(firebaseConfig);
-const messaging = firebase.messaging();
-
-messaging.onBackgroundMessage((payload) => {
-  console.log('[firebase-messaging-sw.js] Received background message ', payload);
-  // FCM SDK는 payload에 notification 객체가 있으면 자동으로 알림을 노출하므로,
-  // data-only 메시지일 때만 수동으로 showNotification을 호출하여 중복 팝업 방지합니다.
-  if (!payload.notification) {
-    const notificationTitle = payload.data?.title || "새 알림";
-    const notificationOptions = {
-      body: payload.data?.body || "확인 부탁드립니다.",
-      icon: '/vite.svg',
-      data: payload.data
-    };
-    self.registration.showNotification(notificationTitle, notificationOptions);
+self.addEventListener('push', (event) => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch (_) {
+    payload = { body: event.data ? event.data.text() : '' };
   }
+
+  const notification = payload.notification || {};
+  const data = payload.data || {};
+  const title = notification.title || data.title || payload.title || 'SCI CENTER';
+  const body = notification.body || data.body || payload.body || '새로운 알림이 도착했습니다.';
+  const url = data.url || payload.url || '/';
+
+  event.waitUntil(
+    self.registration.showNotification(title, {
+      body,
+      icon: notification.icon || '/icon-512.png',
+      badge: '/icon-512.png',
+      data: { ...data, url },
+      vibrate: [100, 50, 100],
+    }).then(() => reportReceipt(data.receiptToken, 'DISPLAYED'))
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const targetUrl = event.notification?.data?.url || '/';
+  event.waitUntil(
+    reportReceipt(event.notification?.data?.receiptToken, 'CLICKED').then(() =>
+    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+      const existing = windowClients.find((client) => 'focus' in client);
+      if (existing) {
+        if ('navigate' in existing) existing.navigate(targetUrl);
+        return existing.focus();
+      }
+      return clients.openWindow ? clients.openWindow(targetUrl) : undefined;
+    }))
+  );
 });

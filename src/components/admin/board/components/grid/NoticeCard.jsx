@@ -1,13 +1,12 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { parseISO } from 'date-fns';
-import { ImageIcon, Calendar, Clock } from 'lucide-react';
+import { Calendar, Clock } from 'lucide-react';
 import NoticeCardActions from './NoticeCardActions';
 import { CATEGORIES } from '../../utils/constants';
-import { parseDurationToMinutes, formatKoreanTimeRange } from '../../../../../utils/dateUtils';
-import RecruitmentBadge from '../../../../student/components/RecruitmentBadge';
+import { formatKoreanTimeRange } from '../../../../../utils/dateUtils';
 import { useCurrentTime } from '../../../../../hooks/useCurrentTime';
-import { getRecruitment } from '../../../../../utils/programRecruitment';
+import { formatRecruitmentStart, getRecruitment, getRecruitmentStart } from '../../../../../utils/programRecruitment';
 
 const NoticeCard = ({ 
     notice, 
@@ -33,21 +32,21 @@ const NoticeCard = ({
 
 
     // Card styles
-    let cardClass = "bg-white flex group rounded-[24px] border border-[#f2f4f6] shadow-[0_8px_24px_rgba(0,0,0,0.02)] hover:shadow-[0_12px_32px_rgba(0,0,0,0.06)] hover:-translate-y-0.5 transform transition-all duration-300 ";
+    let cardClass = "bg-white flex group rounded-[24px] border border-[#f2f4f6] shadow-[0_8px_24px_rgba(0,0,0,0.02)] hover:border-[#dbe7f5] hover:shadow-[0_12px_32px_rgba(0,0,0,0.055)] transition-[border-color,box-shadow] duration-200 ";
     let contentClass = "flex ";
     let thumbClass = "bg-[#f9fafb] overflow-hidden flex-shrink-0 cursor-pointer transition-colors ";
-    let titleClass = "font-bold text-[#191f28] cursor-pointer group-hover:text-[#1b64da] transition-colors line-clamp-2 leading-snug tracking-tight ";
+    let titleClass = "font-bold text-[#191f28] cursor-pointer group-hover:text-[#1b64da] transition-colors duration-200 line-clamp-2 leading-snug tracking-tight ";
 
     if (viewMode === 'large') {
         cardClass += "p-4 md:p-6 rounded-[1.5rem] flex-col";
         contentClass += "gap-4 mb-4 md:mb-6";
         thumbClass += "w-16 h-16 md:w-20 md:h-20 rounded-2xl shrink-0";
-        titleClass += "text-base md:text-lg mb-1";
+        titleClass += "text-base md:text-lg mb-1 min-h-[2.75rem] md:min-h-[3rem]";
     } else if (viewMode === 'small') {
         cardClass += "p-4 rounded-2xl flex-col";
         contentClass += "gap-3 mb-3";
         thumbClass += "w-12 h-12 md:w-16 md:h-16 rounded-xl";
-        titleClass += "text-sm md:text-base mb-0.5";
+        titleClass += "text-sm md:text-base mb-0.5 min-h-[2.5rem]";
     } else if (viewMode === 'smaller') {
         cardClass += "p-3 rounded-xl flex-col";
         contentClass += "gap-2 mb-2 flex-col"; // Stack image and text
@@ -67,6 +66,36 @@ const NoticeCard = ({
     const isCompleted = notice.program_status === 'COMPLETED' || isEnded;
     const isCancelled = notice.program_status === 'CANCELLED';
     const isActive = (notice.program_status === 'ACTIVE' || !notice.program_status) && !isCompleted && !isCancelled;
+    const isUpcoming = isActive && recruitment.status === 'SCHEDULED';
+
+    const recruitmentStartText = notice.is_recruiting
+        ? formatRecruitmentStart(getRecruitmentStart(notice), '시작')
+        : '';
+    const recruitmentEndText = notice.is_recruiting
+        ? formatRecruitmentStart(notice.recruitment_deadline, '마감')
+        : '';
+    const showRecruitmentSchedule = isActive && Boolean(recruitmentStartText || recruitmentEndText);
+
+    const getProgramDateText = () => {
+        const start = notice.is_recruiting ? notice.program_date : (notice.program_start_date || notice.program_date);
+        const end = notice.is_recruiting ? null : notice.program_end_date;
+        const days = ['일', '월', '화', '수', '목', '금', '토'];
+        if (start && end && start !== end) {
+            const startDate = new Date(start);
+            const endDate = new Date(end);
+            if (!Number.isNaN(startDate.getTime()) && !Number.isNaN(endDate.getTime())) {
+                return `${startDate.getMonth() + 1}/${startDate.getDate()}(${days[startDate.getDay()]}) ~ ${endDate.getMonth() + 1}/${endDate.getDate()}(${days[endDate.getDay()]})`;
+            }
+        }
+        if (start) {
+            const date = new Date(start);
+            if (!Number.isNaN(date.getTime())) return `${date.getMonth() + 1}/${date.getDate()}(${days[date.getDay()]})`;
+        }
+        return notice.is_recruiting ? '미정' : `매주 ${formatProgramDays(notice.program_days)}`;
+    };
+
+    const programDateText = getProgramDateText();
+    const programTimeText = formatKoreanTimeRange(notice.program_date || notice.program_start_date, notice.program_duration);
 
     const getDeadlineWarning = () => {
         if (!notice.recruitment_deadline) return null;
@@ -92,12 +121,11 @@ const NoticeCard = ({
 
     return (
         <div className={cardClass}>
-            {notice.category === 'PROGRAM' && <div className="mb-2"><RecruitmentBadge program={notice} now={recruitmentNow} showStart />{recruitment.preparing && <p className="text-[10px] font-semibold text-amber-700 mt-1">상세 정보 미작성 · 신청 대기</p>}</div>}
             <div className={contentClass}>
                 {viewMode !== 'list' && (
                     <div onClick={() => onViewDetails(notice)} className={thumbClass}>
                         {hasThumbnail ? (
-                            <img src={thumbnailSrc} alt="thumb" className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                            <img src={thumbnailSrc} alt="thumb" className="w-full h-full object-cover" />
                         ) : (
                             <div className="w-full h-full bg-[#f2f4f6] flex flex-col items-center justify-center text-[#8b95a1] gap-1 select-none">
                                 <Calendar size={18} className="text-[#8b95a1] opacity-70" />
@@ -117,19 +145,16 @@ const NoticeCard = ({
                         <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
                             {getTargetBadge()}
                             {notice.is_sticky && <span className="px-2 py-0.5 bg-[#fff0e6] text-[#ff6b00] rounded-md text-[9px] font-semibold tracking-tight">📌 공지</span>}
-                            {notice.is_recruiting && isActive && (
+                            {isUpcoming ? (
+                                <span className="px-2 py-0.5 bg-[#fff7e6] text-[#b45f06] rounded-md text-[9px] font-semibold tracking-tight uppercase">Upcoming</span>
+                            ) : isActive && (
                                 <>
                                     <span className="px-2 py-0.5 bg-[#e8f3ff] text-[#1b64da] rounded-md text-[9px] font-semibold tracking-tight uppercase">Active</span>
-                                    {getDeadlineWarning()}
+                                    {recruitment.status === 'OPEN' && getDeadlineWarning()}
                                 </>
                             )}
                             {isCompleted && <span className="px-2 py-0.5 bg-[#f2f4f6] text-[#4e5968] rounded-md text-[9px] font-semibold tracking-tight uppercase">Completed</span>}
                             {isCancelled && <span className="px-2 py-0.5 bg-[#fdf0f0] text-[#e63c3c] rounded-md text-[9px] font-semibold tracking-tight uppercase">Cancelled</span>}
-                            {hasThumbnail && (
-                                <div className="flex items-center gap-1 text-[9px] font-semibold text-[#8b95a1] bg-[#f2f4f6] px-1.5 py-0.5 rounded-md">
-                                    <ImageIcon size={10} className="opacity-60" /> {notice.images?.length || 1}
-                                </div>
-                            )}
                         </div>
                     )}
 
@@ -151,65 +176,38 @@ const NoticeCard = ({
                         {notice.title}
                     </h3>
                     
-                    {mode === CATEGORIES.PROGRAM ? (
-                        <div className="mt-1.5 space-y-0.5 flex flex-col text-[#4e5968] text-[10px] sm:text-xs md:text-sm font-medium">
-                            {notice.is_recruiting === false ? (
-                                <>
-                                    <div className="flex items-center gap-1.5 text-[#4e5968]">
-                                        <Calendar size={13} className="text-[#8b95a1] shrink-0" />
-                                        <span>
-                                            {(() => {
-                                                const start = notice.program_start_date || notice.program_date;
-                                                const end = notice.program_end_date;
-                                                
-                                                if (start && end && start !== end) {
-                                                    const s = new Date(start);
-                                                    const e = new Date(end);
-                                                    if (!isNaN(s.getTime()) && !isNaN(e.getTime())) {
-                                                        const days = ['일', '월', '화', '수', '목', '금', '토'];
-                                                        return `${s.getMonth() + 1}/${s.getDate()}(${days[s.getDay()]}) ~ ${e.getMonth() + 1}/${e.getDate()}(${days[e.getDay()]})`;
-                                                    }
-                                                }
-                                                
-                                                if (start) {
-                                                    const d = new Date(start);
-                                                    if (!isNaN(d.getTime())) {
-                                                        const days = ['일', '월', '화', '수', '목', '금', '토'];
-                                                        return `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
-                                                    }
-                                                }
-                                                return `매주 ${formatProgramDays(notice.program_days)}`;
-                                            })()}
-                                        </span>
-                                    </div>
-                                    <div className="flex items-center gap-1.5 text-[#4e5968]">
-                                        <Clock size={13} className="text-[#8b95a1] shrink-0" />
-                                        <span>{formatKoreanTimeRange(notice.program_date || notice.program_start_date, notice.program_duration)}</span>
-                                    </div>
-                                </>
-                            ) : (
-                                <div className="flex items-center gap-1.5 text-[#4e5968]">
-                                    <Calendar size={13} className="text-[#8b95a1] shrink-0" />
-                                    <span>
-                                        {(() => {
-                                            if (!notice.program_date) return '미정';
-                                            const d = new Date(notice.program_date);
-                                            if (isNaN(d.getTime())) return '미정';
-                                            const days = ['일', '월', '화', '수', '목', '금', '토'];
-                                            const datePart = `${d.getMonth() + 1}/${d.getDate()}(${days[d.getDay()]})`;
-                                            const timePart = formatKoreanTimeRange(notice.program_date, notice.program_duration);
-                                            return `${datePart} ${timePart}`;
-                                        })()}
-                                    </span>
-                                </div>
-                            )}
-                            <span className="text-[10px] text-[#8b95a1] mt-1">작성일: {new Date(notice.created_at).toLocaleDateString()}</span>
-                        </div>
-                    ) : (
-                        <p className="text-[10px] text-[#8b95a1] mt-1.5">작성일: {new Date(notice.created_at).toLocaleDateString()}</p>
-                    )}
                 </div>
             </div>
+
+            {mode === CATEGORIES.PROGRAM && viewMode !== 'list' && (
+                <div className="mb-4 space-y-2.5 border-t border-[#f2f4f6] pt-3 md:mb-5 md:pt-4">
+                    <div className="flex items-start gap-2.5">
+                        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#e8f3ff] text-[#3182f6]">
+                            <Calendar size={13} />
+                        </span>
+                        <div className="min-w-0 pt-0.5">
+                            <p className="text-[9px] font-bold text-[#8b95a1]">프로그램 일정</p>
+                            <p className="mt-0.5 break-keep text-[11px] font-bold leading-5 text-[#333d4b] sm:text-xs">
+                                {programDateText}{programTimeText ? ` ${programTimeText}` : ''}
+                            </p>
+                        </div>
+                    </div>
+
+                    {showRecruitmentSchedule && (
+                        <div className="flex items-start gap-2.5">
+                            <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#fff4e6] text-[#f08c00]">
+                                <Clock size={13} />
+                            </span>
+                            <div className="min-w-0 pt-0.5">
+                                <p className="text-[9px] font-bold text-[#8b95a1]">모집 일정</p>
+                                <p className="mt-0.5 break-keep text-[11px] font-semibold leading-5 text-[#4e5968] sm:text-xs">
+                                    {recruitmentStartText}{recruitmentStartText && recruitmentEndText ? ' ~ ' : ''}{recruitmentEndText}
+                                </p>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            )}
 
             <NoticeCardActions notice={notice} viewMode={viewMode} mode={mode} noticeStats={noticeStats} isActive={isActive}
                 onViewDetails={onViewDetails} onOpenParticipants={onOpenParticipants} onOpenFeedback={onOpenFeedback}

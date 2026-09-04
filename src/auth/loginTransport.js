@@ -3,7 +3,7 @@ export class AuthOperationError extends Error {
 }
 
 // Explicit endpoint only; no legacy RPC/hash fallback or automatic POST retry.
-export function createLoginTransport({endpoint,publishableKey,fetcher=fetch,timeoutMs=10000}) {
+export function createLoginTransport({endpoint,publishableKey,fetcher=fetch,timeoutMs=30000}) {
     const url=new URL(endpoint);
     if(url.username || url.password || url.search || url.hash ||
         (url.protocol!=='https:' && !(url.protocol==='http:' && ['localhost','127.0.0.1'].includes(url.hostname))) ||

@@ -120,10 +120,12 @@ try {
         assert.equal((await assess({verifyToken: async () => altered})).decision, 'reauth');
     }
     for (const altered of [{...evidence, sessionId: otherId}, {...evidence, authUserId: otherId},
-        {...evidence, profileId: otherId}, {...evidence, status: 'revoked'}, {...evidence, validUntil: time},
+        {...evidence, profileId: otherId}, {...evidence, status: 'revoked'},
         {...evidence, credentialVersion: 1}]) {
         assert.equal((await assess({loadAssurance: async () => altered})).decision, 'reauth');
     }
+    assert.equal((await assess({loadAssurance: async () => ({...evidence, validUntil: time - 1})})).decision, 'retain',
+        'a previously verified live provider session must not require the password again each day');
     await assert.rejects(assess({loadAccount: async () => { throw Error('DB unavailable'); }}));
 
     for (const status of [401, 403, 404, 429, 503]) {

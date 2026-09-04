@@ -43,7 +43,7 @@ export function createProfileUpdateService({pool,verifyToken,readiness=async()=>
                     WHERE a.profile_id=u.id AND a.auth_user_id=$1::uuid AND s.session_id=$2::uuid
                     AND a.mapping_verified AND a.status='active' AND NOT a.must_change_password
                     AND s.status='trusted' AND s.credential_version=a.credential_version
-                    AND s.valid_until>clock_timestamp() AND to_timestamp($4::double precision/1000)>clock_timestamp())
+                    AND to_timestamp($4::double precision/1000)>clock_timestamp())
                 RETURNING u.id,u.school,u.church,u.bio,u.profile_image_url,u.preferences->'is_school_church' AS "isSchoolChurch"`,
                 [principal.authUserId,principal.sessionId,profileId,principal.expiresAt,
                     Object.hasOwn(patch,'school'),Object.hasOwn(patch,'school')?normalizeProfileSchool(patch.school.trim()):null,

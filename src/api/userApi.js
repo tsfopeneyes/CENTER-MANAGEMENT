@@ -41,13 +41,15 @@ export const userApi = {
         const currentPrefs = await this.fetchUserPreferences(userId);
         const updatedPrefs = { ...currentPrefs, ...newPreferences };
 
-        const { error } = await supabase
+        const { data, error } = await supabase
             .from('users')
             .update({ preferences: updatedPrefs })
-            .eq('id', userId);
+            .eq('id', userId)
+            .select('preferences')
+            .single();
 
         if (error) throw error;
-        return updatedPrefs;
+        return data?.preferences || updatedPrefs;
     },
 
     async updateProfile(userId, updates) {

@@ -29,9 +29,14 @@ export async function assessSessionContinuity(accessToken, {verifyToken, loadAcc
     const assurance = await loadAssurance(principal.sessionId);
     if (!assurance || assurance.authUserId !== principal.authUserId || assurance.profileId !== account.profileId ||
         assurance.sessionId !== principal.sessionId || assurance.credentialVersion !== account.credentialVersion ||
-        assurance.status !== 'trusted' || !Number.isFinite(assurance.validUntil) || assurance.validUntil <= time) {
+        assurance.status !== 'trusted') {
         return result('reauth', 'confirmation_required');
     }
+    // The assurance records that this exact live provider session completed the
+    // vetted password flow. Its timestamp limits the initial issuance window;
+    // it must not turn an otherwise live, refreshable browser session into a
+    // daily password prompt. Sign-out/revocation, account blocking and a
+    // credential-version change still invalidate continuity authoritatively.
     return {...result('retain', 'verified'), authUserId: principal.authUserId, profileId: account.profileId,
-        sessionId: principal.sessionId, validUntil: Math.min(principal.expiresAt, assurance.validUntil, time + 60000)};
+        sessionId: principal.sessionId, validUntil: Math.min(principal.expiresAt, time + 60000)};
 }

@@ -7,9 +7,12 @@ import UserAvatar from '../../common/UserAvatar';
 import { startOfDay, addDays, startOfWeek } from 'date-fns';
 import { useDutyRoster } from '../../../hooks/useDutyRoster';
 import { useSeoulDate } from '../../../hooks/useSeoulDate';
+import { useCurrentTime } from '../../../hooks/useCurrentTime';
+import { isDutyDisplayTime } from '../../../utils/dutyRoster';
 
 const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCategories = [], onStaffClick, tutorialMode = false, tutorialStep = null }) => {
     const todayDate = useSeoulDate();
+    const currentTime = useCurrentTime();
     const { roster } = useDutyRoster(todayDate.slice(0, 7), studentRegion !== '강서');
     const haifnAssignment = roster[todayDate];
     const haifnDutyId = haifnAssignment?.duty_status === 'ASSIGNED' ? haifnAssignment.staff_id || '' : '';
@@ -306,10 +309,10 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
     const openTime = todayConfig ? todayConfig.open : '10:00';
     const closeTime = todayConfig ? todayConfig.close : '18:00';
 
-    const now = new Date();
+    const now = new Date(currentTime);
     const currentHour = now.getHours();
     const isAfter6PM = currentHour >= 18;
-    const isDutyTime = currentHour >= 14 && currentHour < 22; // 오후 2시 ~ 오후 10시
+    const isDutyTime = isDutyDisplayTime(now);
 
     // Undated legacy HAIFN settings are no longer a second duty source: an
     // unassigned day stays empty and OFF never falls back to yesterday's staff.
@@ -323,17 +326,14 @@ const TodayOperatingWidget = ({ studentRegion, adminSchedules = [], calendarCate
                 ? staffList.find(u => u.id === dutyStaffId) || { ...haifnAssignment.staff, id: null, name: haifnAssignment.staff_name }
                 : null
             : staffList.find(u => u.id === dutyStaffId);
-        if (!member) return null;
-        if (currentSpaceKey === '하이픈') return member;
-        const isToggledPresent = !isAfter6PM && !!presenceStatus[dutyStaffId];
-        if (isToggledPresent || isDutyTime) return member;
-        return null;
+        if (!member || !isDutyTime) return null;
+        return member;
     })();
 
     // Present (non-duty) staff: after 6 PM all are absent
     const presentStaff = tutorialMode ? [] : (isAfter6PM 
         ? [] 
-        : staffList.filter(u => !!presenceStatus[u.id] && u.id !== dutyStaffId));
+        : staffList.filter(u => !!presenceStatus[u.id] && (!isDutyTime || u.id !== dutyStaffId)));
 
     const isCoffeeChatStep = tutorialMode && tutorialStep === 'homeCoffeeChat';
     const tutorialStaff = { id: 'tutorial-staff', name: '스처', user_group: 'STAFF', role: 'staff', isBusy: false };

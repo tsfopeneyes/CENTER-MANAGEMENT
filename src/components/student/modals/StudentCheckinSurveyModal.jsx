@@ -27,9 +27,10 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
     const [chatPlaceholderText, setChatPlaceholderText] = useState('예: 3층 빈백존 입성! 보드게임 할 사람 덤벼라~');
     const [surveyId, setSurveyId] = useState(null);
     const [recommendationsEnabled, setRecommendationsEnabled] = useState(true);
+    const [additionalComment, setAdditionalComment] = useState({ enabled: false, label: '', placeholder: '', required: false, maxLength: 300 });
 
     const [optionsList, setOptionsList] = useState(DEFAULT_SURVEY_OPTIONS);
-    const [selectedLabels, setSelectedLabels] = useState([DEFAULT_SURVEY_OPTIONS[0].label]);
+    const [selectedLabels, setSelectedLabels] = useState([]);
     const [userAnswerText, setUserAnswerText] = useState('');
     const [chatShoutoutText, setChatShoutoutText] = useState('');
 
@@ -39,11 +40,12 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
     React.useEffect(() => {
         if (!isOpen) return;
         setStep('SELECT');
+        setSelectedLabels([]);
         setUserAnswerText('');
         setChatShoutoutText('');
         const fetchConfig = async () => {
             try {
-                const assigned = await loadAssignedSurvey({ surveyType: 'CHECKIN', locationName });
+                const assigned = await loadAssignedSurvey({ surveyType: 'CHECKIN', locationName, userId: user?.id });
                 if (!assigned) {
                     onClose(false);
                     return;
@@ -52,6 +54,7 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                     const parsed = assigned.config;
                     setSurveyId(assigned.id || null);
                     setRecommendationsEnabled(parsed.recommendationsEnabled !== false);
+                    setAdditionalComment({ enabled: false, label: '추가 의견이 있다면 적어주세요', placeholder: '선택한 이유나 의견을 자유롭게 알려주세요.', required: false, maxLength: 300, ...(parsed.additionalComment || {}) });
                     if (parsed.mode) setMode(parsed.mode);
                     if (parsed.question) setQuestionText(parsed.question);
                     setDescriptionText(parsed.description || '');
@@ -61,7 +64,6 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                     if (parsed.chatPlaceholder) setChatPlaceholderText(parsed.chatPlaceholder);
                     if (parsed.options && parsed.options.length > 0) {
                         setOptionsList(parsed.options);
-                        setSelectedLabels([parsed.options[0].label]);
                     }
                 }
             } catch (e) {
@@ -69,7 +71,7 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
             }
         };
         fetchConfig();
-    }, [isOpen, locationName]);
+    }, [isOpen, locationName, user?.id]);
 
     if (!isOpen) return null;
 
@@ -110,6 +112,10 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
             return;
         }
 
+        if ((mode === 'SURVEY' || mode === 'HYBRID') && additionalComment.enabled && additionalComment.required && !userAnswerText.trim()) {
+            alert('추가 의견을 입력해 주세요.');
+            return;
+        }
         setIsSubmitting(true);
         try {
             // The QR flow records the visit before this optional survey opens.
@@ -119,7 +125,9 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
             // 1. Prepare Survey Answer Payload (survey_type: 'CHECKIN')
             const textAnswer = mode === 'QUESTION_QA'
                 ? userAnswerText.trim()
-                : (mode === 'CHAT_SHOUTOUT' || mode === 'HYBRID' ? chatShoutoutText.trim() : null);
+                : ((mode === 'SURVEY' || mode === 'HYBRID') && additionalComment.enabled
+                    ? userAnswerText.trim() || null
+                    : (mode === 'CHAT_SHOUTOUT' || mode === 'HYBRID' ? chatShoutoutText.trim() : null));
 
             const surveyPayload = {
                 user_id: user.id,
@@ -333,6 +341,11 @@ const StudentCheckinSurveyModal = ({ isOpen, onClose, user, locationName }) => {
                                         />
                                     </div>
                                 )}
+                                {additionalComment.enabled && <div className="border-t border-gray-100 pt-4">
+                                    <label className="block text-xs font-bold text-gray-700">{additionalComment.label || '추가 의견이 있다면 적어주세요'}{!additionalComment.required && <span className="ml-1 font-medium text-gray-400">(선택)</span>}</label>
+                                    <textarea value={userAnswerText} onChange={e => setUserAnswerText(e.target.value)} placeholder={additionalComment.placeholder} rows={3} maxLength={additionalComment.maxLength || 300} className="mt-2 w-full resize-none rounded-2xl border border-gray-200 bg-gray-50 p-4 text-sm font-semibold outline-none transition focus:border-blue-500 focus:bg-white" />
+                                    <p className="mt-1 text-right text-[11px] font-medium text-gray-400">{userAnswerText.length} / {additionalComment.maxLength || 300}자</p>
+                                </div>}
                             </>
                         )}
 

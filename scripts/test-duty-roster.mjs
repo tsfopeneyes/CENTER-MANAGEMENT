@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { PGlite } from '@electric-sql/pglite';
-import { dutyStaffOptions, sameDutyAssignment, saveDutyAssignment, seoulDateString } from '../src/utils/dutyRoster.js';
+import { dutyStaffOptions, sameDutyAssignment, saveDutyAssignment, seoulDateString, isDutyDisplayTime } from '../src/utils/dutyRoster.js';
 
 // Isolated in-memory database only; never connects to Supabase or real accounts.
 const db = new PGlite();
@@ -63,5 +63,9 @@ try {
     assert.equal(sameDutyAssignment(initial, null), false);
     assert.equal(seoulDateString(new Date('2026-08-31T14:59:59Z')), '2026-08-31');
     assert.equal(seoulDateString(new Date('2026-08-31T15:00:00Z')), '2026-09-01');
+    assert.equal(isDutyDisplayTime(new Date('2026-09-03T04:59:59Z')), false); // 13:59:59 KST
+    assert.equal(isDutyDisplayTime(new Date('2026-09-03T05:00:00Z')), true); // 14:00 KST
+    assert.equal(isDutyDisplayTime(new Date('2026-09-03T12:59:59Z')), true); // 21:59:59 KST
+    assert.equal(isDutyDisplayTime(new Date('2026-09-03T13:00:00Z')), false); // 22:00 KST
     console.log('PASS: staff selection, duplicate names, concurrent inserts, stale account/status/label updates, OFF transitions, and Seoul midnight. No production writes.');
 } finally { await db.close(); }

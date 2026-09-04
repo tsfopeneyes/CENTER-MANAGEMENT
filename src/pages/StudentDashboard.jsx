@@ -2,9 +2,12 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useNavigate, useLocation } from 'react-router-dom';
 import confetti from 'canvas-confetti';
-import { Home, Calendar, BookOpen, Award, Store, MessageSquareHeart, Menu, X, Settings, ShieldCheck, LogOut, Bell, Share2, QrCode } from 'lucide-react';
+import { Home, Calendar, BookOpen, Award, Store, MessageSquareHeart, Menu, X, Settings, ShieldCheck, LogOut, Bell, Share2, QrCode, Clock3 } from 'lucide-react';
 import { TAB_NAMES } from '../constants/appConstants';
 import { useStudentDashboard } from '../hooks/useStudentDashboard';
+import { formatProgramSchedule } from '../utils/dateUtils';
+import { getRecruitmentStart } from '../utils/programRecruitment';
+import { extractProgramInfo } from '../utils/textUtils';
 
 // Tabs
 import StudentHomeTab from '../components/student/StudentHomeTab';
@@ -21,6 +24,7 @@ import { userApi } from '../api/userApi';
 import { noticesApi } from '../api/noticesApi';
 import UserAvatar from '../components/common/UserAvatar';
 import StudentImpersonateBar from '../components/student/modals/StudentImpersonateBar';
+import InterestSessionDialog from '../components/student/modals/InterestSessionDialog';
 import StudentGuidedTour from '../components/student/StudentGuidedTour';
 
 // Extracted Modals
@@ -43,6 +47,8 @@ import { supabase } from '../supabaseClient';
 import { requestSupabaseFunction } from '../utils/supabaseRest';
 import { buildTutorialNotice, buildTutorialPrograms, isTutorialNotice, isTutorialProgram } from '../components/student/studentTutorialData';
 import { getTodayVisitState } from '../utils/visitLifecycle';
+import { recruitmentInterestsApi } from '../api/recruitmentInterestsApi';
+import PushPermissionPrompt from '../components/student/modals/PushPermissionPrompt';
 
 const createInitialTutorialSession = () => ({
     step: 'start',
@@ -124,6 +130,18 @@ const StudentDashboard = () => {
 
     const [showVerificationWrite, setShowVerificationWrite] = useState(false);
     const [showRegisterModal, setShowRegisterModal] = useState(false);
+    const [showAccountReconnect, setShowAccountReconnect] = useState(false);
+    const [recruitmentSavedPreview, setRecruitmentSavedPreview] = useState(null);
+
+    useEffect(() => {
+        if (!user?.id || hookData.impersonatedUser) return;
+        let active = true;
+        recruitmentInterestsApi.status(null).then(status => {
+            if (!active || status.userId) return;
+            setShowAccountReconnect(true);
+        }).catch(() => {});
+        return () => { active = false; };
+    }, [user?.id, hookData.impersonatedUser]);
     const [editVerificationPost, setEditVerificationPost] = useState(null);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [showMenuDrawer, setShowMenuDrawer] = useState(false);
@@ -941,12 +959,21 @@ const StudentDashboard = () => {
         const targetNotice = findNoticeForNotification(notification);
         if (!targetNotice) return;
         setShowNotificationsModal(false);
-        openNoticeDetailForStudent(targetNotice, 'notification');
+        if (notification.notification_type === 'RECRUITMENT_SAVED') {
+            setRecruitmentSavedPreview(targetNotice);
+            return;
+        }
+        // Let the bell modal finish unmounting before opening the linked notice.
+        // Otherwise its close handler can immediately close the new detail modal.
+        window.setTimeout(() => openNoticeDetailForStudent(targetNotice, 'notification'), 320);
     };
 
     const notificationsForModal = notifications.map((notification) => ({
         ...notification,
-        is_notice_linked: Boolean(findNoticeForNotification(notification))
+        is_notice_linked: Boolean(findNoticeForNotification(notification)),
+        notification_action_label: notification.notification_type === 'RECRUITMENT_SAVED'
+            ? '등록 확인'
+            : '눌러서 글 보기'
     }));
 
     const handleTutorialProgramOpen = (notice) => {
@@ -1463,6 +1490,27 @@ const StudentDashboard = () => {
     );
     const isTutorialSelectedNotice = Boolean(selectedNotice && (isTutorialProgram(selectedNotice) || isTutorialNoticeDetail));
 
+    const formatRecruitmentDateTime = (value) => {
+        if (!value) return '일정 미정';
+        const date = new Date(value);
+        if (Number.isNaN(date.getTime())) return '일정 미정';
+        const weekdays = ['일', '월', '화', '수', '목', '금', '토'];
+        let hour = date.getHours();
+        const minute = date.getMinutes();
+        const meridiem = hour >= 12 ? '오후' : '오전';
+        hour = hour % 12 || 12;
+        return `${date.getMonth() + 1}/${date.getDate()}(${weekdays[date.getDay()]}) ${meridiem} ${hour}시${minute ? ` ${minute}분` : ''}`;
+    };
+
+    const getRecruitmentSchedule = (notice) => {
+        const start = getRecruitmentStart(notice);
+        const end = notice?.recruitment_deadline;
+        if (!start && !end) return '일정 미정';
+        if (!start) return `${formatRecruitmentDateTime(end)} 마감`;
+        if (!end) return `${formatRecruitmentDateTime(start)} 시작`;
+        return `${formatRecruitmentDateTime(start)} ~ ${formatRecruitmentDateTime(end)}`;
+    };
+
     return (
         <div 
             className="w-full md:max-w-lg mx-auto min-h-screen bg-tossGrey50 pb-20 font-sans transition-all duration-300 pt-[max(env(safe-area-inset-top),0px)]"
@@ -1470,6 +1518,64 @@ const StudentDashboard = () => {
             onTouchMove={onTouchMove}
             onTouchEnd={onTouchEnd}
         >
+            {!hookData.impersonatedUser && <PushPermissionPrompt user={user} />}
+            <AnimatePresence>
+                {recruitmentSavedPreview && (
+                    <div className="fixed inset-0 z-[10010] flex items-center justify-center bg-black/35 p-6 backdrop-blur-sm">
+                        <motion.div
+                            role="dialog"
+                            aria-modal="true"
+                            aria-label="관심 프로그램 일정 안내"
+                            initial={{ opacity: 0, y: 8, scale: 0.94 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            exit={{ opacity: 0, y: -4, scale: 0.97 }}
+                            className="w-full max-w-sm rounded-[28px] bg-white p-6 shadow-2xl"
+                        >
+                            <div className="mb-5 flex items-center justify-between">
+                                <span className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-extrabold text-tossBlue">관심 프로그램</span>
+                                <button type="button" onClick={() => setRecruitmentSavedPreview(null)} className="flex h-8 w-8 items-center justify-center rounded-full text-tossGrey500 transition-colors hover:bg-tossGrey100" aria-label="닫기">
+                                    <X size={18} />
+                                </button>
+                            </div>
+                            <h2 className="text-xl font-black leading-snug text-tossGrey900">{recruitmentSavedPreview.title}</h2>
+                            <div className="mt-6 space-y-5 border-y border-tossGrey100 py-5">
+                                <div className="flex gap-3">
+                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-50 text-tossBlue"><Calendar size={17} /></span>
+                                    <div className="min-w-0 pt-0.5">
+                                        <p className="text-xs font-bold text-tossGrey500">프로그램 일정</p>
+                                        <p className="mt-1 text-sm font-bold leading-relaxed text-tossGrey800">
+                                            {formatProgramSchedule(recruitmentSavedPreview.program_date, recruitmentSavedPreview.program_duration || extractProgramInfo(recruitmentSavedPreview.content).duration, recruitmentSavedPreview.is_recruiting, recruitmentSavedPreview.program_days, recruitmentSavedPreview.program_start_date, recruitmentSavedPreview.program_end_date)}
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-3">
+                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-orange-50 text-orange-500"><Clock3 size={17} /></span>
+                                    <div className="min-w-0 pt-0.5">
+                                        <p className="text-xs font-bold text-tossGrey500">모집 일정</p>
+                                        <p className="mt-1 text-sm font-bold leading-relaxed text-tossGrey800">{getRecruitmentSchedule(recruitmentSavedPreview)}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <button
+                                type="button"
+                                autoFocus
+                                onClick={() => setRecruitmentSavedPreview(null)}
+                                className="mt-5 w-full rounded-2xl bg-tossBlue py-3.5 text-sm font-extrabold text-white transition-colors hover:bg-blue-600"
+                            >
+                                확인
+                            </button>
+                        </motion.div>
+                    </div>
+                )}
+            </AnimatePresence>
+            {showAccountReconnect && (
+                <InterestSessionDialog
+                    noticeId={null}
+                    api={recruitmentInterestsApi}
+                    onClose={() => setShowAccountReconnect(false)}
+                    onContinue={() => setShowAccountReconnect(false)}
+                />
+            )}
             <AnimatePresence>
                 {checkinToastMsg && !showCheckinSurveyModal && (
                     <motion.div
@@ -1772,6 +1878,7 @@ const StudentDashboard = () => {
 
                 {showNotificationsModal && (
                     <NotificationsModal 
+                        user={user}
                         notifications={notificationsForModal}
                         setShowNotificationsModal={setShowNotificationsModal}
                         markNotificationsAsRead={markNotificationsAsRead}

@@ -4,7 +4,7 @@ import CryptoJS from 'crypto-js';
 import {supabase} from '../supabaseClient';
 import {verifiedProfileLogin} from '../utils/verifiedProfileLogin';
 import {requestSupabaseFunction} from '../utils/supabaseRest';
-import {readInterestProfile,reconnectInterestSession} from '../utils/interestSession';
+import {getInterestSessionUser,readInterestProfile,reconnectInterestSession} from '../utils/interestSession';
 import {createAccountAuthClient} from '../auth/accountAuthClient';
 import {isAccountAuthEnabled} from '../auth/accountAuthRuntime';
 
@@ -14,9 +14,12 @@ export const useInterestSessionConfirmation = (noticeId,api) => {
     const [state,setState]=useState({phase:'checking',error:'',status:null});
     const active=useRef(true);
     const locked=useRef(false);
+    const readStatus=async()=>noticeId==null
+        ? {userId:await getInterestSessionUser(supabase.auth),enabled:false}
+        : api.status(noticeId);
     useEffect(()=>{
         active.current=true;
-        api.status(noticeId).then(status=>{
+        readStatus().then(status=>{
             if(active.current)setState({phase:status.userId?'ready':'password',error:'',status});
         }).catch(()=>{if(active.current)setState({phase:'error',error:'인증 상태를 확인하지 못했습니다. 잠시 후 다시 시도해주세요.',status:null});});
         return ()=>{active.current=false;};
@@ -49,7 +52,7 @@ export const useInterestSessionConfirmation = (noticeId,api) => {
                     return data?.session;
                 },
             });
-            const status=await api.status(noticeId);
+            const status=await readStatus();
             if(!status.userId)throw new Error('인증 연결을 확인하지 못했습니다.');
             window.dispatchEvent(new Event('recruitment-interest-changed'));
             if(active.current){setPassword('');setState({phase:'ready',error:'',status});}

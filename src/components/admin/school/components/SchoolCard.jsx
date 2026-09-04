@@ -5,6 +5,18 @@ import { Star, Trash2, School, Users } from 'lucide-react';
 const SchoolCard = ({ group, onClick, viewMode, isFavorite, onToggleFavorite, onDeleteSchool }) => {
     const meta = group.metadata;
     const isList = viewMode === 'list';
+    const isSeucheoConnected = Array.isArray(meta?.manager_ids) && meta.manager_ids.length > 0;
+
+    const connectionBadge = isSeucheoConnected ? (
+        <span className="shrink-0 rounded-full bg-[#e9f2ee] px-2 py-0.5 text-[9px] font-black text-[#3f6f5b] md:px-3 md:py-1 md:text-[10px]">
+            스처팀 연결
+        </span>
+    ) : null;
+    const regionBadge = (
+        <span className={`shrink-0 rounded-full px-2 py-0.5 text-[9px] font-black md:px-3 md:py-1 md:text-[10px] ${meta?.region === '강동' ? 'bg-blue-100 text-blue-700' : meta?.region === '강서' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}`}>
+            {meta?.region || '미지정'}
+        </span>
+    );
 
     // Card Style Logic
     const cardBaseClass = `bg-white border rounded-[1.5rem] md:rounded-[2rem] shadow-sm cursor-pointer transition-all flex h-full relative group
@@ -40,10 +52,14 @@ const SchoolCard = ({ group, onClick, viewMode, isFavorite, onToggleFavorite, on
                         <div className="text-xs text-gray-500 font-bold truncate max-w-[200px]">{meta?.club_name || '동아리 정보 없음'}</div>
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                        {connectionBadge}
+                        {regionBadge}
                         {group.students.length === 0 && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); onDeleteSchool(group.name); }}
-                                className="p-1.5 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors"
+                                className="p-1.5 text-red-300 hover:text-red-500 hover:bg-red-50 rounded-md transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                                title="학생이 없는 학교 삭제"
+                                aria-label={`${group.name} 학교 삭제`}
                             >
                                 <Trash2 size={14} />
                             </button>
@@ -78,19 +94,22 @@ const SchoolCard = ({ group, onClick, viewMode, isFavorite, onToggleFavorite, on
                         {group.students.length === 0 && (
                             <button
                                 onClick={(e) => { e.stopPropagation(); onDeleteSchool(group.name); }}
-                                className="p-1 text-red-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                                className="p-1 text-red-300 hover:text-red-500 hover:bg-red-50 rounded transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+                                title="학생이 없는 학교 삭제"
+                                aria-label={`${group.name} 학교 삭제`}
                             >
                                 <Trash2 size={12} />
                             </button>
                         )}
-                        <span className={`px-2 py-0.5 md:px-3 md:py-1 rounded-full text-[9px] md:text-[10px] font-black shrink-0 ${meta?.region === '강동' ? 'bg-blue-100 text-blue-600' : meta?.region === '강서' ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-400'}`}>
-                            {meta?.region || '미지정'}
-                        </span>
+                        {connectionBadge}
+                        {regionBadge}
                     </div>
                 </div>
 
-                <h3 className={`${isSmall ? 'text-sm' : 'text-sm md:text-lg'} font-black text-gray-800 mb-0.5 md:mb-1 truncate tracking-tight`}>{group.name}</h3>
-                <p className={`${isSmall ? 'text-[9px]' : 'text-[10px] md:text-xs'} font-bold text-gray-400 mb-3 md:mb-4 truncate`}>{meta?.club_name || '동아리 정보 없음'}</p>
+                <div className="mb-0.5 md:mb-1 flex min-w-0 items-center gap-1.5">
+                    <h3 className={`${isSmall ? 'text-sm' : 'text-sm md:text-lg'} min-w-0 truncate font-black tracking-tight text-gray-800`}>{group.name}</h3>
+                </div>
+                <p className={`${isSmall ? 'text-[9px]' : 'text-[10px] md:text-xs'} mb-3 truncate font-bold text-gray-400 md:mb-4`}>{meta?.club_name || '동아리 정보 없음'}</p>
             </div>
 
             <div className={`flex items-center justify-between ${isSmall ? 'pt-2' : 'pt-3 md:pt-4'} border-t border-gray-50 mt-auto`}>

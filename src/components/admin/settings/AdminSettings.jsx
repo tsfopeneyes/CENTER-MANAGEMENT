@@ -58,7 +58,8 @@ const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, 
         dashboardConfig, sidebarConfig, tabConfig,
         configLoading, sidebarConfigLoading, tabConfigLoading,
         handleMoveConfig, handleUpdateConfig, handleSaveDashboardConfig,
-        handleMoveSidebarConfig, handleUpdateSidebarConfig, handleSaveSidebarConfig,
+        handleMoveSidebarConfig, handleUpdateSidebarConfig, handleUpdateSidebarGroup,
+        handleMoveSidebarGroup, handleChangeSidebarGroup, handleSaveSidebarConfig,
         handleMoveTabConfig, handleUpdateTabConfig, handleSaveTabConfig,
         operatingHours, hoursLoading,
         handleUpdateOperatingHours, handleSaveOperatingHours,
@@ -262,6 +263,9 @@ const AdminSettings = ({ currentAdmin, locations, locationGroups = [], notices, 
                             handleSaveDashboardConfig={handleSaveDashboardConfig}
                             handleMoveSidebarConfig={handleMoveSidebarConfig}
                             handleUpdateSidebarConfig={handleUpdateSidebarConfig}
+                            handleUpdateSidebarGroup={handleUpdateSidebarGroup}
+                            handleMoveSidebarGroup={handleMoveSidebarGroup}
+                            handleChangeSidebarGroup={handleChangeSidebarGroup}
                             handleSaveSidebarConfig={handleSaveSidebarConfig}
                             handleMoveTabConfig={handleMoveTabConfig}
                             handleUpdateTabConfig={handleUpdateTabConfig}

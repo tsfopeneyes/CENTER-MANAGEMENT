@@ -377,6 +377,21 @@ export const useKioskManager = (navigate) => {
         setStatus('LOADING');
 
         try {
+            // Resolve again after the member is known so ONCE surveys can skip
+            // prior respondents and select the next eligible survey.
+            const [assignedCheckin, assignedCheckout] = await Promise.all([
+                loadAssignedSurvey({ surveyType: 'CHECKIN', locationName: selectedLocation.name, userId: user.id }),
+                loadAssignedSurvey({ surveyType: 'CHECKOUT', locationName: selectedLocation.name, userId: user.id })
+            ]);
+            const effectiveCheckinSurvey = assignedCheckin?.config
+                ? { ...assignedCheckin.config, _surveyId: assignedCheckin.id || null }
+                : null;
+            const effectiveCheckoutSurvey = assignedCheckout?.config
+                ? { ...assignedCheckout.config, _surveyId: assignedCheckout.id || null }
+                : null;
+            setCheckinSurveyConfig(effectiveCheckinSurvey);
+            setCheckoutSurveyConfig(effectiveCheckoutSurvey);
+
             // A. Use the same visit state as QR and mobile screens so a late
             // scan after 22:00 cannot be interpreted as a new check-in.
             const visitState = await getTodayVisitState(user.id);
@@ -563,7 +578,7 @@ export const useKioskManager = (navigate) => {
                     ? '🎉 1시간 이상 체류하여 1 하이픈이 적립되었습니다!'
                     : '';
 
-                if (!checkoutSurveyConfig) {
+                if (!effectiveCheckoutSurvey) {
                     sendRealtimeNotification(user, 'CHECKOUT', selectedLocation, {
                         duration: hours > 0 ? `${hours}시간 ${mins}분` : `${mins}분`,
                         purpose: ''
@@ -617,7 +632,7 @@ export const useKioskManager = (navigate) => {
                     sub += earnedCheckinMsg;
                 }
 
-                if (checkinSurveyConfig) {
+                if (effectiveCheckinSurvey) {
                     // Intercept CHECKIN to ask survey
                     setPendingKioskUser(user);
                     setPendingCheckinFeedback({

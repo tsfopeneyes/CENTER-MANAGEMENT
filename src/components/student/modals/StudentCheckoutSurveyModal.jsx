@@ -21,9 +21,10 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
     const [chatPromptText, setChatPromptText] = useState('퇴실하면서 친구들에게 작별 인사를 남겨보세요!');
     const [chatPlaceholderText, setChatPlaceholderText] = useState('예: 먼저 가볼게! 다들 재미있게 놀아~');
     const [surveyId, setSurveyId] = useState(null);
+    const [additionalComment, setAdditionalComment] = useState({ enabled: false, label: '', placeholder: '', required: false, maxLength: 300 });
 
     const [optionsList, setOptionsList] = useState(DEFAULT_CHECKOUT_OPTIONS);
-    const [selectedLabels, setSelectedLabels] = useState([DEFAULT_CHECKOUT_OPTIONS[0].label]);
+    const [selectedLabels, setSelectedLabels] = useState([]);
     const [userAnswerText, setUserAnswerText] = useState('');
     const [chatShoutoutText, setChatShoutoutText] = useState('');
 
@@ -32,11 +33,12 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
 
     useEffect(() => {
         if (!isOpen) return;
+        setSelectedLabels([]);
         setUserAnswerText('');
         setChatShoutoutText('');
         const fetchConfig = async () => {
             try {
-                const assigned = await loadAssignedSurvey({ surveyType: 'CHECKOUT', locationName });
+                const assigned = await loadAssignedSurvey({ surveyType: 'CHECKOUT', locationName, userId: user?.id || user?.userId });
                 if (!assigned) {
                     await onSurveySkipped?.();
                     onClose();
@@ -45,6 +47,7 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
                 if (assigned?.config) {
                     const parsed = assigned.config;
                     setSurveyId(assigned.id || null);
+                    setAdditionalComment({ enabled: false, label: '추가 의견이 있다면 적어주세요', placeholder: '선택한 이유나 의견을 자유롭게 알려주세요.', required: false, maxLength: 300, ...(parsed.additionalComment || {}) });
                     if (parsed.mode) setMode(parsed.mode);
                     if (parsed.question) setQuestionText(parsed.question);
                     if (parsed.qaQuestion) setQaQuestionText(parsed.qaQuestion);
@@ -53,7 +56,6 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
                     if (parsed.chatPlaceholder) setChatPlaceholderText(parsed.chatPlaceholder);
                     if (parsed.options && parsed.options.length > 0) {
                         setOptionsList(parsed.options);
-                        setSelectedLabels([parsed.options[0].label]);
                     }
                 }
             } catch (e) {
@@ -61,7 +63,7 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
             }
         };
         fetchConfig();
-    }, [isOpen, locationName]);
+    }, [isOpen, locationName, user?.id, user?.userId]);
 
     if (!isOpen) return null;
 
@@ -77,6 +79,10 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
 
     const handleConfirmCheckoutSubmit = async () => {
         if (submissionLockRef.current) return;
+        if (mode === 'SURVEY' && additionalComment.enabled && additionalComment.required && !userAnswerText.trim()) {
+            alert('추가 의견을 입력해 주세요.');
+            return;
+        }
         submissionLockRef.current = true;
         setIsSubmitting(true);
 
@@ -89,6 +95,7 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
 
             if (mode === 'SURVEY') {
                 finalSelections = selectedLabels;
+                textAns = additionalComment.enabled ? userAnswerText.trim() || null : null;
             } else if (mode === 'FEEDBACK_QA') {
                 textAns = userAnswerText.trim();
             } else if (mode === 'CHAT_SHOUTOUT') {
@@ -240,6 +247,11 @@ const StudentCheckoutSurveyModal = ({ isOpen, onClose, onSurveySaved, onSurveySk
                                         );
                                     })}
                                 </div>
+                                {additionalComment.enabled && <div className="mt-5 border-t border-slate-100 pt-4">
+                                    <label className="block text-xs font-bold text-slate-700">{additionalComment.label || '추가 의견이 있다면 적어주세요'}{!additionalComment.required && <span className="ml-1 font-medium text-slate-400">(선택)</span>}</label>
+                                    <textarea value={userAnswerText} onChange={e => setUserAnswerText(e.target.value)} placeholder={additionalComment.placeholder} rows={3} maxLength={additionalComment.maxLength || 300} className="mt-2 w-full resize-none rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm font-semibold outline-none transition focus:border-emerald-500 focus:bg-white" />
+                                    <p className="mt-1 text-right text-[11px] font-medium text-slate-400">{userAnswerText.length} / {additionalComment.maxLength || 300}자</p>
+                                </div>}
                             </div>
                         )}
 

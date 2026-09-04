@@ -403,6 +403,17 @@ import_map = "./functions/send-push/deno.json"
 # Supported file extensions are: .ts, .js, .mjs, .jsx, .tsx
 entrypoint = "./functions/send-push/index.ts"
 
+[functions.push-devices]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/push-devices/index.ts"
+
+[functions.push-receipts]
+enabled = true
+# Receipt tokens are unguessable, single-purpose credentials embedded in a push.
+verify_jwt = false
+entrypoint = "./functions/push-receipts/index.ts"
+
 [functions.send-recruitment-alerts]
 enabled = true
 # Only the dedicated cron secret is accepted by this handler; user JWTs are not.

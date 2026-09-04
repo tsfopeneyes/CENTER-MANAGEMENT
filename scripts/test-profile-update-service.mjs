@@ -33,6 +33,10 @@ try {
     await db.exec('SET ROLE account_profile_worker');
     const own=await readService({accessToken:'test-token',profileId:p});assert.equal(own.profile.role,'staff');
     assert.equal('password' in own.profile,false);assert.equal('auth_user_id' in own.profile,false);
+    await owner(()=>query("UPDATE account_security.session_assurances SET valid_until=now()-interval '1 second' WHERE session_id=$1",[s]));
+    assert.equal((await readService({accessToken:'test-token',profileId:p})).profile.id,p,
+        'the same live provider session remains usable after its initial assurance window');
+    await save({bio:'still signed in'});
     await assert.rejects(readService({accessToken:'test-token',profileId:q}),e=>e.code==='forbidden');
     const result=await save({school:' 가상고 ',church:'new',bio:'x'.repeat(3000),isSchoolChurch:false});
     assert.equal(result.profile.school,'가상고등학교');assert.equal(result.profile.bio.length,3000);

@@ -5,6 +5,7 @@ import NoticeEngagementStats from './NoticeEngagementStats';
 
 export default function NoticeCardActions({notice,viewMode,mode,noticeStats,isActive,onViewDetails,onOpenParticipants,onOpenFeedback,onStatusChange,onEdit,onDelete}) {
     const hasFeedback=(noticeStats[notice.id]?.feedbackCount || 0)>0;
+    const participantButtonClass = 'text-[9px] md:text-[10px] px-3 py-1.5 rounded-xl font-semibold transition-all bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff] hover:scale-[1.02] active:scale-[0.98]';
     return (
             <div className="mt-auto space-y-2 md:space-y-3">
                 {(mode === CATEGORIES.PROGRAM || notice.is_poll) && (
@@ -37,7 +38,7 @@ export default function NoticeCardActions({notice,viewMode,mode,noticeStats,isAc
                             <div className="flex items-center gap-1.5">
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, 'attendance'); }} 
-                                    className="text-[9px] md:text-[10px] px-2.5 py-1 rounded-xl font-semibold transition-all bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff] active:scale-95"
+                                    className={participantButtonClass}
                                 >
                                     명단
                                 </button>
@@ -60,11 +61,7 @@ export default function NoticeCardActions({notice,viewMode,mode,noticeStats,isAc
                             <div className="flex items-center gap-1.5">
                                 <button 
                                     onClick={(e) => { e.stopPropagation(); onOpenParticipants(notice, notice.is_poll ? 'poll' : 'attendance'); }} 
-                                    className={`text-[9px] md:text-[10px] px-3 py-1.5 rounded-xl font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] ${
-                                        isActive 
-                                            ? 'bg-[#e8f3ff] text-[#1b64da] hover:bg-[#d0e6ff]' 
-                                            : 'bg-[#f2f4f6] text-[#4e5968] hover:bg-[#e4e8eb]'
-                                    }`}
+                                    className={participantButtonClass}
                                 >
                                     {notice.is_poll ? '투표결과' : '명단'}
                                 </button>

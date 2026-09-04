@@ -10,7 +10,6 @@ import KioskInputSection from './kiosk_components/KioskInputSection';
 import KioskWelcomeSection from './kiosk_components/KioskWelcomeSection';
 import KioskFeedbackOverlay from './kiosk_components/KioskFeedbackOverlay';
 import KioskModals from './kiosk_components/KioskModals';
-import { isHaifnRotatingQrEnabled } from '../utils/kioskQr';
 
 const Kiosk = () => {
     const navigate = useNavigate();
@@ -135,7 +134,7 @@ const Kiosk = () => {
                             resetState={resetState}
                             matchingUsers={matchingUsers}
                             processKioskAction={processKioskAction}
-                            isHaifn={isHaifn && isHaifnRotatingQrEnabled()}
+                            isHaifn={isHaifn}
                             selectedLocation={selectedLocation}
                         />
                     </div>

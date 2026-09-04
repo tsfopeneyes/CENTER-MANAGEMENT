@@ -37,6 +37,11 @@ export const reconnectInterestSession = async ({profile,password,storage,auth,si
     if(readInterestProfile(storage)?.id!==profile.id)throw new Error('이용 중인 계정이 바뀌었습니다. 인증 정보를 적용하지 않았습니다.');
     const {data,error}=await auth.setSession({access_token:session.access_token,refresh_token:session.refresh_token});
     if(error || data?.session?.user?.id!==session.user.id)throw new Error('인증 연결을 완료하지 못했습니다. 다시 시도해주세요.');
+    // Do not report success until the SDK can read back the persisted session.
+    // This keeps the password confirmation genuinely one-time across reloads.
+    const saved=await auth.getSession();
+    if(saved.error || saved.data?.session?.user?.id!==session.user.id)
+        throw new Error('인증 연결을 저장하지 못했습니다. 브라우저 설정을 확인한 뒤 다시 시도해주세요.');
     for(const key of ['user','admin_user']) {
         const raw=storage.getItem(key);
         if(!raw)continue;

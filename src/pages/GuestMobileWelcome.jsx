@@ -14,7 +14,7 @@ import { sendCheckinNotification, sendCheckoutNotification } from '../utils/inte
 import { areExternalNotificationsMuted, dispatchVisitSlackAlert } from '../utils/serverIntegration';
 import { requestSupabaseRest } from '../utils/supabaseRest';
 import { getTodayVisitState, recordVisitEvent } from '../utils/visitLifecycle';
-import { isHaifnRotatingQrEnabled, isKioskQrAccessError, requiresRotatingQrAccess } from '../utils/kioskQr';
+import { isKioskQrAccessError, requiresRotatingQrAccess } from '../utils/kioskQr';
 import { markTodayProgramAttendance } from '../utils/programAttendance';
 import { buildGuestPrivacyPreferences, parseGuestBirthDate } from '../utils/guestBirthUtils';
 import { getAccountAuthClient, isAccountAuthEnabled } from '../auth/accountAuthRuntime';
@@ -55,11 +55,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
     const searchParams = new URLSearchParams(location.search);
     const locParam = searchParams.get('loc');
     const qrToken = searchParams.get('qr');
-    const rotatingQrFeatureEnabled = isHaifnRotatingQrEnabled();
-    const isLegacyHaifnQr = rotatingQrFeatureEnabled && isQRCheckin && locParam === 'HAIFN' && !qrToken;
-    const [haifnRotationActive, setHaifnRotationActive] = useState(isLegacyHaifnQr ? null : true);
     const requiresRotatingQr = requiresRotatingQrAccess({
-        enabled: rotatingQrFeatureEnabled && (!isLegacyHaifnQr || haifnRotationActive !== false),
         isQRCheckin,
         locationParam: locParam,
     });
@@ -96,28 +92,6 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
 
     useEffect(() => {
         let cancelled = false;
-        if (!isLegacyHaifnQr) {
-            setHaifnRotationActive(true);
-            return () => { cancelled = true; };
-        }
-        setHaifnRotationActive(null);
-        requestSupabaseFunction('kiosk-qr', { action: 'rotation-status' }, 1)
-            .then((status) => {
-                if (!cancelled) setHaifnRotationActive(status.active === true);
-            })
-            .catch((error) => {
-                console.error('Failed to read Haifn QR transition status:', error);
-                if (!cancelled) setHaifnRotationActive(true);
-            });
-        return () => { cancelled = true; };
-    }, [isLegacyHaifnQr]);
-
-    useEffect(() => {
-        let cancelled = false;
-        if (isLegacyHaifnQr && haifnRotationActive === null) {
-            setQrAccess({ status: 'VERIFYING', presenceGrant: null, location: null, expiresAt: null });
-            return () => { cancelled = true; };
-        }
         if (!requiresRotatingQr) {
             setQrAccess({ status: 'NOT_REQUIRED', presenceGrant: null, location: null, expiresAt: null });
             return () => { cancelled = true; };
@@ -144,17 +118,10 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                 setQrAccess({ status: 'INVALID', presenceGrant: null, location: null, expiresAt: null });
             });
         return () => { cancelled = true; };
-    }, [haifnRotationActive, isLegacyHaifnQr, qrToken, requiresRotatingQr]);
+    }, [qrToken, requiresRotatingQr]);
 
     const recordMobileVisitEvent = useCallback(async (visit) => {
         if (!requiresRotatingQr) {
-            if (isLegacyHaifnQr && haifnRotationActive === false) {
-                const latestStatus = await requestSupabaseFunction('kiosk-qr', { action: 'rotation-status' }, 1);
-                if (latestStatus.active === true) {
-                    setHaifnRotationActive(true);
-                    throw new Error('QR_TOKEN_EXPIRED');
-                }
-            }
             return recordVisitEvent(visit);
         }
         if (qrAccess.status !== 'VALID' || !qrAccess.presenceGrant) {
@@ -177,7 +144,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
             }
             throw error;
         }
-    }, [haifnRotationActive, isLegacyHaifnQr, qrAccess.presenceGrant, qrAccess.status, requiresRotatingQr]);
+    }, [qrAccess.presenceGrant, qrAccess.status, requiresRotatingQr]);
 
     // Frequent Guest Recommendation Modal State
     const [showFrequentGuestModal, setShowFrequentGuestModal] = useState(false);

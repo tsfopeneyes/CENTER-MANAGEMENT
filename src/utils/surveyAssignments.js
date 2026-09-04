@@ -28,9 +28,45 @@ const loadLegacyConfig = async (surveyType) => {
     }
 };
 
-export const loadAssignedSurvey = async ({ surveyType, centerCode, locationName }) => {
+const canUserAnswerSurvey = async (survey, userId) => {
+    if (survey?.config?.exposure?.frequency !== 'ONCE' || !userId) return true;
+    const { data, error } = await supabase
+        .from('checkin_surveys')
+        .select('id')
+        .eq('survey_id', survey.id)
+        .eq('user_id', userId)
+        .limit(1);
+    if (error) return true;
+    return !data?.length;
+};
+
+export const loadAssignedSurvey = async ({ surveyType, centerCode, locationName, userId }) => {
     const resolvedCenter = centerCode || resolveSurveyCenterCode(locationName);
     if (!resolvedCenter) return loadLegacyConfig(surveyType);
+
+    // New surveys keep their display policy inside config so existing tables and
+    // historical responses remain untouched. One-time surveys are tried first;
+    // a default survey is only used when no other eligible survey remains.
+    const { data: activeSurveys, error: activeError } = await supabase
+        .from('surveys')
+        .select('id, survey_type, config, status, created_at')
+        .eq('survey_type', surveyType)
+        .eq('status', 'ACTIVE');
+    if (!activeError) {
+        const configured = (activeSurveys || [])
+            .filter(survey => survey.config?.exposure?.enabled !== false)
+            .filter(survey => survey.config?.exposure?.centers?.includes(resolvedCenter))
+            .sort((a, b) => (a.config.exposure.priority ?? 999) - (b.config.exposure.priority ?? 999));
+        const ordered = [
+            ...configured.filter(survey => !survey.config.exposure.isDefault),
+            ...configured.filter(survey => survey.config.exposure.isDefault)
+        ];
+        for (const survey of ordered) {
+            if (await canUserAnswerSurvey(survey, userId)) {
+                return { id: survey.id, config: survey.config || {}, legacy: false };
+            }
+        }
+    }
 
     const { data: assignment, error: assignmentError } = await supabase
         .from('survey_assignments')

@@ -29,21 +29,29 @@ import AdminSchool from '../components/admin/school/AdminSchool';
 import AdminStore from '../components/admin/store/AdminStore';
 import AdminRentals from '../components/admin/rentals/AdminRentals';
 import AdminContents from '../components/admin/contents/AdminContents';
+import AdminPushNotifications from '../components/admin/notifications/AdminPushNotifications';
+import AdminScreen from '../components/admin/screen/AdminScreen';
+import { removeFirebaseToken } from '../firebase';
 import AdminDuty from '../components/admin/duty/AdminDuty';
 import StaffPresenceToggleCard from '../components/admin/dashboard/components/StaffPresenceToggleCard';
 import AdminSurveys from '../components/admin/surveys/AdminSurveys';
 import { Menu, X as CloseIcon } from 'lucide-react';
 import { subscribeToPush } from '../utils/pushUtils';
+import { getAccountAuthClient, isAccountAuthEnabled } from '../auth/accountAuthRuntime';
+import { useFCM } from '../hooks/useFCM';
 
 const AdminDashboard = () => {
     const navigate = useNavigate();
 
     // Auth & Data State
     const [currentAdmin, setCurrentAdmin] = useState(null);
+    useFCM(currentAdmin);
     const [activeMenu, setActiveMenu] = useState('STATUS'); // STATUS, BOARD, GALLERY, USERS, STATISTICS, LOGS, SETTINGS
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isSidebarPinned, setIsSidebarPinned] = useState(true);
     const [loading, setLoading] = useState(true);
+    const [adminAuthReady, setAdminAuthReady] = useState(false);
+    const [adminAuthError, setAdminAuthError] = useState('');
     const [isStatsLoading, setIsStatsLoading] = useState(false);
     const [loadError, setLoadError] = useState('');
 
@@ -80,6 +88,71 @@ const AdminDashboard = () => {
     useEffect(() => {
         currentAdminRef.current = currentAdmin;
     }, [currentAdmin]);
+
+    useEffect(() => {
+        const storedAdmin = localStorage.getItem('admin_user');
+        if (!storedAdmin) {
+            navigate('/', { replace: true });
+            return undefined;
+        }
+
+        let admin;
+        try {
+            admin = JSON.parse(storedAdmin);
+        } catch {
+            localStorage.removeItem('admin_user');
+            localStorage.removeItem('user');
+            navigate('/', { replace: true });
+            return undefined;
+        }
+
+        if (!isAccountAuthEnabled()) {
+            setCurrentAdmin(admin);
+            setAdminAuthReady(true);
+            return undefined;
+        }
+
+        const coordinator = getAccountAuthClient().createSessionCoordinator(admin.id);
+        let redirected = false;
+        let hasVerifiedSession = false;
+        const applyState = async state => {
+            if (state.phase === 'ready') {
+                hasVerifiedSession = true;
+                setAdminAuthError('');
+                setCurrentAdmin(admin);
+                setAdminAuthReady(true);
+                return;
+            }
+            if (state.phase === 'retry' || state.phase === 'checking') {
+                // Initial verification blocks entry. Once verified, token refreshes
+                // and scheduled checks stay in the background without replacing
+                // the administrator's current screen.
+                if (!hasVerifiedSession) {
+                    setAdminAuthReady(false);
+                    if (state.phase === 'retry') setAdminAuthError('로그인 상태를 확인하지 못했습니다. 네트워크를 확인한 뒤 다시 시도해주세요.');
+                }
+                return;
+            }
+            if (!redirected && (state.phase === 'reauth' || state.phase === 'blocked')) {
+                redirected = true;
+                setAdminAuthReady(false);
+                await supabase.auth.signOut({ scope: 'local' }).catch(() => {});
+                localStorage.removeItem('admin_user');
+                localStorage.removeItem('user');
+                alert(state.phase === 'blocked'
+                    ? '관리자 계정 권한을 확인할 수 없습니다. 다시 로그인해주세요.'
+                    : '안전한 이용을 위해 관리자 로그인이 다시 필요합니다.');
+                navigate('/', { replace: true });
+            }
+        };
+        const unsubscribe = coordinator.subscribe(() => { void applyState(coordinator.getSnapshot()); });
+        coordinator.start();
+        void coordinator.check().then(applyState);
+        return () => {
+            unsubscribe();
+            coordinator.stop();
+        };
+    }, [navigate]);
 
     const playChime = useCallback(() => {
         try {
@@ -285,6 +358,7 @@ const AdminDashboard = () => {
     }, [activeMenu]);
 
     useEffect(() => {
+        if (!adminAuthReady) return undefined;
         const storedAdmin = localStorage.getItem('admin_user');
         if (!storedAdmin) {
             alert('관리자 권한이 필요합니다.');
@@ -305,13 +379,29 @@ const AdminDashboard = () => {
             }, 1000);
         };
 
+        let isRefreshingOccupancy = false;
+        const refreshOccupancy = async () => {
+            if (activeMenu !== 'STATUS' || document.visibilityState === 'hidden' || isRefreshingOccupancy) return;
+
+            isRefreshingOccupancy = true;
+            try {
+                await fetchData();
+            } finally {
+                isRefreshingOccupancy = false;
+            }
+        };
+
         const subscription = supabase
             .channel('public:updates')
             .on('postgres_changes', { event: '*', schema: 'public', table: 'logs' }, debouncedFetch)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'notice_responses' }, debouncedFetch)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'checkin_surveys' }, debouncedFetch)
             .on('postgres_changes', { event: '*', schema: 'public', table: 'visit_notes' }, debouncedFetch)
-            .subscribe();
+            .subscribe(status => {
+                // A browser can miss events while its tab or network is suspended.
+                // Reconcile from the database as soon as the channel reconnects.
+                if (status === 'SUBSCRIBED') refreshOccupancy();
+            });
 
         // 100% Reliable Polling Fallback for Check-in Alerts
         const lastCheckedTimeRef = { current: new Date().toISOString() };
@@ -425,25 +515,27 @@ const AdminDashboard = () => {
         // WebSocket after the admin screen has been open for a while. Refresh
         // the live status separately from the alert preference so checkout is
         // still reflected even when desktop check-in sounds are turned off.
-        let isRefreshingOccupancy = false;
-        const occupancyRefreshInterval = setInterval(async () => {
-            if (activeMenu !== 'STATUS' || document.visibilityState === 'hidden' || isRefreshingOccupancy) return;
+        const occupancyRefreshInterval = setInterval(refreshOccupancy, 15000);
+        const refreshWhenVisible = () => {
+            if (document.visibilityState === 'visible') refreshOccupancy();
+        };
+        const refreshWhenFocused = () => refreshOccupancy();
+        const refreshWhenOnline = () => refreshOccupancy();
 
-            isRefreshingOccupancy = true;
-            try {
-                await fetchData();
-            } finally {
-                isRefreshingOccupancy = false;
-            }
-        }, 15000);
+        document.addEventListener('visibilitychange', refreshWhenVisible);
+        window.addEventListener('focus', refreshWhenFocused);
+        window.addEventListener('online', refreshWhenOnline);
 
         return () => {
             clearTimeout(debounceTimer);
             clearInterval(pollInterval);
             clearInterval(occupancyRefreshInterval);
+            document.removeEventListener('visibilitychange', refreshWhenVisible);
+            window.removeEventListener('focus', refreshWhenFocused);
+            window.removeEventListener('online', refreshWhenOnline);
             supabase.removeChannel(subscription);
         };
-    }, [navigate, fetchData, playChime]);
+    }, [navigate, fetchData, playChime, adminAuthReady]);
 
     const handleForceCheckout = useCallback(async (userId) => {
         if (!confirm('해당 이용자를 강제 퇴실 처리하시겠습니까?')) return;
@@ -607,6 +699,7 @@ const AdminDashboard = () => {
 
     const handleLogout = async () => {
         if (confirm("로그아웃 하시겠습니까?")) {
+            await removeFirebaseToken(currentAdmin?.id);
             await supabase.auth.signOut();
             localStorage.removeItem('admin_user');
             localStorage.removeItem('user');
@@ -614,7 +707,8 @@ const AdminDashboard = () => {
         }
     };
 
-    if (loading) return <div className="flex items-center justify-center h-screen text-gray-400 font-bold">로딩 중...</div>;
+    if (adminAuthError) return <div className="flex min-h-screen items-center justify-center bg-gray-50 p-6"><div className="w-full max-w-sm rounded-3xl bg-white p-8 text-center shadow-lg"><h1 className="text-xl font-black text-gray-900">로그인 확인이 필요해요</h1><p className="mt-3 text-sm font-semibold leading-relaxed text-gray-500">{adminAuthError}</p><button type="button" onClick={() => window.location.reload()} className="mt-6 w-full rounded-2xl bg-blue-600 py-3.5 font-bold text-white">다시 확인</button></div></div>;
+    if (loading || !adminAuthReady) return <div className="flex items-center justify-center h-screen text-gray-400 font-bold">로그인 확인 중...</div>;
 
     return (
         <div className="flex bg-gray-50 min-h-screen font-sans">
@@ -716,6 +810,12 @@ const AdminDashboard = () => {
                     )}
                     {activeMenu === 'RENTAL_MGMT' && (
                         <AdminRentals />
+                    )}
+                    {activeMenu === 'NOTIFICATIONS' && (
+                        <AdminPushNotifications currentAdmin={currentAdmin} />
+                    )}
+                    {activeMenu === 'SCREEN' && (
+                        <AdminScreen currentAdmin={currentAdmin} />
                     )}
                     {activeMenu === 'DUTY' && (
                         <AdminDuty currentAdmin={currentAdmin} users={users} />

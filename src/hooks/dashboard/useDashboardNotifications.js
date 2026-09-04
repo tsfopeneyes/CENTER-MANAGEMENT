@@ -10,6 +10,7 @@ export const useDashboardNotifications = (user) => {
 
     const getNotificationGroups = useCallback(async (currentUser) => {
         const groups = ['전체', currentUser.user_group, `USER_${currentUser.id}`];
+        if (currentUser.school) groups.push(`SCHOOL_${currentUser.school}`);
         const { data: auth, error: authError } = await supabase.auth.getSession();
         if (!authError) {
             const ownGroup = recruitmentNotificationGroup(currentUser, auth?.session?.user);
@@ -122,11 +123,6 @@ export const useDashboardNotifications = (user) => {
         if (!user?.id) return;
 
         fetchNotifications(user);
-
-        // Ask for web notification permission if default
-        if (typeof window !== 'undefined' && 'Notification' in window && Notification.permission === 'default') {
-            Notification.requestPermission().catch(() => {});
-        }
 
         const channelName = `app_notifs:${user.id}`;
         const subscription = supabase

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { supabase } from '../../../../supabaseClient';
 import { userApi } from '../../../../api/userApi';
 import { normalizeSchoolName } from '../../../../utils/schoolUtils';
@@ -53,25 +53,50 @@ export const useAdminSchool = ({ users, refreshDashboardData }) => {
 
     // Persisted State (Initialize empty, load from DB)
     const [favorites, setFavorites] = useState([]);
+    const favoritesRef = useRef([]);
+    const favoriteSaveInProgressRef = useRef(false);
     const [viewMode, setViewMode] = useState('grid-lg');
     const [prefsLoading, setPrefsLoading] = useState(true);
 
+    useEffect(() => {
+        favoritesRef.current = favorites;
+    }, [favorites]);
+
     const toggleFavorite = async (schoolName, e) => {
         e.stopPropagation();
-        const newFavorites = favorites.includes(schoolName)
-            ? favorites.filter(n => n !== schoolName)
-            : [...favorites, schoolName];
+        if (favoriteSaveInProgressRef.current) return;
 
-        setFavorites(newFavorites);
-
-        // Sync to DB
         const adminUser = JSON.parse(localStorage.getItem('admin_user'));
-        if (adminUser?.id) {
-            try {
-                await userApi.updateUserPreferences(adminUser.id, { admin_school_favorites: newFavorites });
-            } catch (err) {
-                console.error("Failed to sync favorites to DB", err);
+        if (!adminUser?.id) {
+            alert('로그인한 관리자 정보를 확인할 수 없어 즐겨찾기를 저장하지 못했습니다.');
+            return;
+        }
+
+        favoriteSaveInProgressRef.current = true;
+        const previousFavorites = favoritesRef.current;
+        const newFavorites = previousFavorites.includes(schoolName)
+            ? previousFavorites.filter(n => n !== schoolName)
+            : [...previousFavorites, schoolName];
+        const storageKey = `admin_school_favorites:${adminUser.id}`;
+
+        favoritesRef.current = newFavorites;
+        setFavorites(newFavorites);
+        localStorage.setItem(storageKey, JSON.stringify(newFavorites));
+
+        try {
+            const savedPrefs = await userApi.updateUserPreferences(adminUser.id, { admin_school_favorites: newFavorites });
+            const savedFavorites = savedPrefs?.admin_school_favorites;
+            if (!Array.isArray(savedFavorites) || JSON.stringify(savedFavorites) !== JSON.stringify(newFavorites)) {
+                throw new Error('저장된 즐겨찾기 정보를 확인하지 못했습니다.');
             }
+        } catch (err) {
+            favoritesRef.current = previousFavorites;
+            setFavorites(previousFavorites);
+            localStorage.setItem(storageKey, JSON.stringify(previousFavorites));
+            console.error('Failed to sync favorites to DB', err);
+            alert('즐겨찾기를 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.');
+        } finally {
+            favoriteSaveInProgressRef.current = false;
         }
     };
 
@@ -112,7 +137,12 @@ export const useAdminSchool = ({ users, refreshDashboardData }) => {
             let needsMigration = false;
             let mergedPrefs = { ...prefs };
 
-            const localFavorites = JSON.parse(localStorage.getItem('admin_school_favorites')) || [];
+            const userFavoritesKey = adminUser?.id ? `admin_school_favorites:${adminUser.id}` : null;
+            const accountLocalFavorites = userFavoritesKey
+                ? JSON.parse(localStorage.getItem(userFavoritesKey) || 'null')
+                : null;
+            const legacyLocalFavorites = JSON.parse(localStorage.getItem('admin_school_favorites') || 'null');
+            const localFavorites = accountLocalFavorites || legacyLocalFavorites || [];
             const localViewMode = localStorage.getItem('admin_school_view_mode') || 'grid-lg';
 
             if (!prefs.admin_school_favorites && localFavorites.length > 0) {
@@ -126,9 +156,15 @@ export const useAdminSchool = ({ users, refreshDashboardData }) => {
 
             if (needsMigration && adminUser?.id) {
                 await userApi.updateUserPreferences(adminUser.id, mergedPrefs);
+                if (legacyLocalFavorites) localStorage.removeItem('admin_school_favorites');
             }
 
-            setFavorites(mergedPrefs.admin_school_favorites || []);
+            const loadedFavorites = Array.isArray(mergedPrefs.admin_school_favorites)
+                ? mergedPrefs.admin_school_favorites
+                : localFavorites;
+            favoritesRef.current = loadedFavorites;
+            setFavorites(loadedFavorites);
+            if (userFavoritesKey) localStorage.setItem(userFavoritesKey, JSON.stringify(loadedFavorites));
             setViewMode(mergedPrefs.admin_school_view_mode || 'grid-lg');
 
             setSchools(schoolData || []);
@@ -206,8 +242,14 @@ export const useAdminSchool = ({ users, refreshDashboardData }) => {
             if (isAFav && !isBFav) return -1;
             if (!isAFav && isBFav) return 1;
 
+            // Then schools with an assigned Seucheo team manager
+            const isAConnected = Array.isArray(a.metadata?.manager_ids) && a.metadata.manager_ids.length > 0;
+            const isBConnected = Array.isArray(b.metadata?.manager_ids) && b.metadata.manager_ids.length > 0;
+            if (isAConnected && !isBConnected) return -1;
+            if (!isAConnected && isBConnected) return 1;
+
             // Then alphabetical
-            return a.name.localeCompare(b.name);
+            return a.name.localeCompare(b.name, 'ko');
         });
     }, [users, schools, searchTerm, selectedRegion, favorites]);
 

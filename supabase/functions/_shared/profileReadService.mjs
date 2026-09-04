@@ -25,7 +25,7 @@ export function createProfileReadService({pool,verifyToken,readiness=async()=>fa
                 LEFT JOIN account_security.account_roles r ON r.profile_id=a.profile_id
                 WHERE u.id=$3::uuid AND a.auth_user_id=$1::uuid AND sa.session_id=$2::uuid
                 AND a.mapping_verified AND a.status='active' AND NOT a.must_change_password
-                AND sa.status='trusted' AND sa.credential_version=a.credential_version AND sa.valid_until>clock_timestamp()
+                AND sa.status='trusted' AND sa.credential_version=a.credential_version
                 AND to_timestamp($4::double precision/1000)>clock_timestamp()`,
                 [principal.authUserId,principal.sessionId,profileId,principal.expiresAt]);
             if(rows.length!==1)throw new LoginError('forbidden',403);

@@ -1,6 +1,7 @@
 import React, { useMemo } from 'react';
-import { LayoutDashboard, MessageSquare, Users, BarChart2, FileText, Settings, LogOut, User, Calendar, School, Trophy, Store, ClipboardCheck, UserCheck, ClipboardList } from 'lucide-react';
+import { LayoutDashboard, LogOut, User } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import {ADMIN_SIDEBAR_GROUPS} from '../../constants/adminSidebarMenu';
 
 const AdminSidebar = ({ activeMenu, setActiveMenu, onLogout, isOpen, setIsOpen, isPinned, setIsPinned, notices = [] }) => {
     const navigate = useNavigate();
@@ -12,7 +13,9 @@ const AdminSidebar = ({ activeMenu, setActiveMenu, onLogout, isOpen, setIsOpen, 
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    const baseMenuGroups = [
+    const baseMenuGroups = ADMIN_SIDEBAR_GROUPS;
+    /* legacy inline definition retained only in history
+    const oldBaseMenuGroups = [
         {
             title: "센터 운영",
             items: [
@@ -49,7 +52,7 @@ const AdminSidebar = ({ activeMenu, setActiveMenu, onLogout, isOpen, setIsOpen, 
                 { id: 'SETTINGS', label: '설정', icon: <Settings size={20} /> },
             ]
         }
-    ];
+    ]; */
 
     const menuGroups = useMemo(() => {
         const configNotice = notices.find(n => n.category === 'SYSTEM' && n.title === 'ADMIN_SIDEBAR_CONFIG');
@@ -72,45 +75,53 @@ const AdminSidebar = ({ activeMenu, setActiveMenu, onLogout, isOpen, setIsOpen, 
             } catch (e) { console.error('Failed to parse sidebar config', e); }
         }
 
-        const newGroups = baseMenuGroups.map(group => {
-            let newItems = group.items.map(item => {
-                const conf = configMap[item.id];
-                if (conf) {
-                    let label = conf.label || item.label;
-                    if (item.id === 'BADGES') label = '뱃지 관리';
-                    return { ...item, label, isVisible: conf.isVisible !== false };
-                }
-                return { ...item, isVisible: true };
-            });
-
-            // If we have an order defined, let's try to sort within the group. 
-            // Better yet, just apply visibility and label changes since moving across groups is complex.
-            // Wait, the config is a flat list! AdminSidebar uses groups.
-            // For now, we will sort items within each group based on the flat order if they exist in the order list.
-            if (configOrder.length > 0) {
-                newItems.sort((a, b) => {
-                    const idxA = configOrder.indexOf(a.id);
-                    const idxB = configOrder.indexOf(b.id);
-                    if (idxA === -1 && idxB === -1) return 0;
-                    if (idxA === -1) return 1;
-                    if (idxB === -1) return -1;
-                    return idxA - idxB;
+        const baseItems = new Map(baseMenuGroups.flatMap(group => group.items).map(item => [item.id, item]));
+        const hasGroupMetadata = Object.values(configMap).some(item => item.groupId);
+        if (hasGroupMetadata) {
+            const groups = new Map();
+            Object.values(configMap)
+                .filter(conf => baseItems.has(conf.id))
+                .forEach(conf => {
+                    const groupId = conf.groupId || 'ETC';
+                    if (!groups.has(groupId)) groups.set(groupId, {
+                        id: groupId,
+                        title: conf.groupTitle || '기타',
+                        order: conf.groupOrder ?? conf.groupIndex ?? 0,
+                        items: []
+                    });
+                    if (conf.isVisible !== false) groups.get(groupId).items.push({
+                        ...baseItems.get(conf.id),
+                        label: conf.id === 'BADGES' ? '뱃지 관리' : (conf.label || baseItems.get(conf.id).label),
+                        order: conf.order ?? configOrder.indexOf(conf.id)
+                    });
                 });
-            }
-
-            return { ...group, items: newItems.filter(item => item.isVisible) };
-        });
-
-        // Reorder groups based on the first item's index in the configOrder (simple approximation)
-        if (configOrder.length > 0) {
-            newGroups.sort((a, b) => {
-                const idxA = a.items.length > 0 ? configOrder.indexOf(a.items[0].id) : Infinity;
-                const idxB = b.items.length > 0 ? configOrder.indexOf(b.items[0].id) : Infinity;
-                return (idxA === -1 ? Infinity : idxA) - (idxB === -1 ? Infinity : idxB);
-            });
+            // Newly added menu definitions remain visible in their default group.
+            baseMenuGroups.forEach((baseGroup, groupIndex) => baseGroup.items.forEach((item, order) => {
+                if (configMap[item.id]) return;
+                if (!groups.has(baseGroup.id)) groups.set(baseGroup.id, { id: baseGroup.id, title: baseGroup.title, order: groupIndex, items: [] });
+                groups.get(baseGroup.id).items.push({ ...item, order });
+            }));
+            return [...groups.values()]
+                .map(group => ({ ...group, items: group.items.sort((a, b) => a.order - b.order) }))
+                .filter(group => group.items.length > 0)
+                .sort((a, b) => a.order - b.order);
         }
 
-        return newGroups.filter(g => g.items.length > 0);
+        // Backward compatibility for the previous flat configuration format.
+        return baseMenuGroups.map(group => ({
+            ...group,
+            items: group.items
+                .map(item => ({ ...item, label: configMap[item.id]?.label || item.label, isVisible: configMap[item.id]?.isVisible !== false }))
+                .filter(item => item.isVisible)
+                .sort((a, b) => {
+                    const indexA = configOrder.indexOf(a.id);
+                    const indexB = configOrder.indexOf(b.id);
+                    if (indexA === -1 && indexB === -1) return 0;
+                    if (indexA === -1) return 1;
+                    if (indexB === -1) return -1;
+                    return indexA - indexB;
+                })
+        })).filter(group => group.items.length > 0);
     }, [notices]);
 
     // Helper to handle menu click and auto-close if in overlay mode

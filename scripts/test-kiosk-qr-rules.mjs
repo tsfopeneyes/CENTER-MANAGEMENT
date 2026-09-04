@@ -6,7 +6,7 @@ import {
 } from '../src/utils/kioskQr.js';
 
 assert.equal(requiresRotatingQrAccess({ isQRCheckin: true, locationParam: 'HAIFN' }), true);
-assert.equal(requiresRotatingQrAccess({ enabled: false, isQRCheckin: true, locationParam: 'HAIFN' }), false);
+assert.equal(requiresRotatingQrAccess({ enabled: false, isQRCheckin: true, locationParam: 'HAIFN' }), true, 'legacy feature flags must not disable token checks');
 assert.equal(requiresRotatingQrAccess({ isQRCheckin: true, locationParam: null }), true);
 assert.equal(requiresRotatingQrAccess({ isQRCheckin: true, locationParam: '06d8ca2b-a2b4-4fe8-a568-7d425cd2d0ca' }), true);
 assert.equal(requiresRotatingQrAccess({ isQRCheckin: true, locationParam: 'ENOUGH_PLACE' }), false);

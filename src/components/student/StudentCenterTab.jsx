@@ -4,6 +4,8 @@ import StudentProgramsTab from './StudentProgramsTab';
 import { Store, Calendar, MapPin, Check, Plus, Coffee, Gamepad2, Landmark, CheckCircle, Sparkles, BookOpen, Wrench } from 'lucide-react';
 import RentalBookingModal from './modals/RentalBookingModal';
 import MyRentalsModal from './modals/MyRentalsModal';
+import ContentPostModal from './modals/ContentPostModal';
+import { parseContentPost, sortContentPosts } from '../../utils/contentPosts';
 
 const StudentCenterTab = ({
     user,
@@ -32,6 +34,7 @@ const StudentCenterTab = ({
     const [selectedRental, setSelectedRental] = useState(null);
     const [showBookingModal, setShowBookingModal] = useState(false);
     const [showMyBookings, setShowMyBookings] = useState(false);
+    const [selectedContent, setSelectedContent] = useState(null);
 
     // Get mapped center name based on student school/region
     // 강동 -> 하이픈, 강서 -> 이높플레이스
@@ -66,7 +69,7 @@ const StudentCenterTab = ({
 
             const { data, error } = await query;
             if (error) throw error;
-            setContents(data || []);
+            setContents(sortContentPosts((data || []).map(parseContentPost).filter(Boolean)));
         } catch (error) {
             console.error('Error fetching contents:', error);
         } finally {
@@ -214,9 +217,6 @@ const StudentCenterTab = ({
                         <div className="text-center py-6 text-tossGrey400 text-xs font-bold">등록된 콘텐츠가 없습니다.</div>
                     ) : (
                         (() => {
-                            const snacks = contents.filter(c => c.category === '간식');
-                            const boardGames = contents.filter(c => c.category === '보드게임');
-
                             const isEnoughPlace = selectedRegion === 'GANGSEO' || (selectedRegion !== 'GANGDONG' && centerName === '이높플레이스');
 
                             const renderList = (items, categoryLabel, CategoryIcon, locationLabel, tutorialIndex) => {
@@ -227,21 +227,7 @@ const StudentCenterTab = ({
                                         data-tour-label={categoryLabel}
                                         className="rounded-xl"
                                     >
-                                        <div className="flex items-center gap-1.5 mb-2.5">
-                                            <CategoryIcon size={13} className="text-tossGrey500" strokeWidth={2.5} />
-                                            <span className="text-[13px] font-bold text-tossGrey800">{categoryLabel}</span>
-                                            <span className="text-[10px] font-bold text-tossGrey400 bg-tossGrey100 px-1.5 py-0.5 rounded-full ml-0.5">{items.length}</span>
-                                            {!isEnoughPlace && locationLabel && (
-                                                <span className={`text-[9px] font-black px-2 py-0.5 rounded ml-auto tracking-wider ${
-                                                    locationLabel === '2F SQUARE' ? 'bg-amber-50 text-amber-600 border border-amber-100' :
-                                                    locationLabel === '3F ROUND' ? 'bg-emerald-50 text-emerald-600 border border-emerald-100' :
-                                                    'bg-tossGrey100 text-tossGrey600'
-                                                 }`}>
-                                                    {locationLabel}
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="flex flex-wrap gap-1.5 mb-4 last:mb-0">
+                                        <div className="grid grid-cols-1 gap-3 mb-4 last:mb-0 sm:grid-cols-2">
                                             {items.map(item => {
                                                 let d = '';
                                                 try {
@@ -256,9 +242,10 @@ const StudentCenterTab = ({
                                                 }
 
                                                 return (
-                                                    <div key={item.id} className="bg-tossGrey50 rounded-lg border border-tossGrey100 px-2.5 py-1.5 hover:bg-tossGrey100/50 transition-colors whitespace-nowrap">
-                                                        <h4 className="font-bold text-tossGrey900 text-[12px] tracking-tight">{item.name}</h4>
-                                                        {d && <p className="text-[10px] text-tossGrey400 mt-0.5">{d}</p>}
+                                                    <div key={item.id} onClick={()=>setSelectedContent(item)} className="group cursor-pointer overflow-hidden rounded-2xl bg-white shadow-toss-standard transition hover:shadow-toss-elevated active:scale-[0.98]">
+                                                        {item.image_url?<div className="aspect-[11/10] w-full overflow-hidden bg-tossGrey50"><img src={item.image_url} alt="" className="h-full w-full object-cover"/></div>:<div className="flex aspect-[11/10] items-center justify-center bg-blue-50 text-blue-500"><Store size={28}/></div>}
+                                                        <div className="p-4"><h4 className="font-extrabold text-tossGrey900 transition group-hover:text-tossBlue">{item.name}</h4>
+                                                        {item.short_description && <p className="mt-1 line-clamp-2 min-h-9 text-[11px] font-medium leading-relaxed text-tossGrey500">{item.short_description}</p>}<div className="mt-3 flex items-center gap-1.5 border-t border-tossGrey100 pt-3 text-[11px] font-bold text-tossGrey600"><MapPin size={13}/>{item.location}</div></div>
                                                     </div>
                                                 );
                                             })}
@@ -268,9 +255,8 @@ const StudentCenterTab = ({
                             };
 
                             const contentGroups = [
-                                { items: snacks, label: '간식', icon: Coffee, location: '2F SQUARE' },
-                                { items: boardGames, label: '보드게임', icon: Gamepad2, location: '3F ROUND' }
-                            ].filter((group) => group.items.length > 0);
+                                { items: contents, label: '콘텐츠', icon: Store, location: '' }
+                            ];
 
                             return (
                                 <div className="space-y-4">
@@ -413,6 +399,7 @@ const StudentCenterTab = ({
                     onClose={() => setShowMyBookings(false)}
                 />
             )}
+            {selectedContent && <ContentPostModal post={selectedContent} onClose={()=>setSelectedContent(null)}/>}
         </div>
     );
 };

@@ -7,6 +7,7 @@ import { uploadSummaryToNotion, performFullSyncToGoogleSheets } from '../../../.
 import { processAnalyticsData, processUserAnalytics, processProgramAnalytics } from '../../../../utils/analyticsUtils';
 import { aggregateVisitSessions } from '../../../../utils/visitUtils';
 import { getAccountAuthClient, isAccountAuthEnabled } from '../../../../auth/accountAuthRuntime';
+import {DEFAULT_ADMIN_SIDEBAR_CONFIG} from '../../../../constants/adminSidebarMenu';
 
 const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, users, allLogs, responses, schoolLogs, notices }) => {
     // 1. Profile State
@@ -104,20 +105,7 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
     ];
 
     const [dashboardConfig, setDashboardConfig] = useState(DEFAULT_DASHBOARD_ITEMS);
-    const [sidebarConfig, setSidebarConfig] = useState([
-        { id: 'STATUS', label: '공간 현황', isVisible: true },
-        { id: 'CALENDAR', label: '일정 관리', isVisible: true },
-        { id: 'PROGRAMS', label: '프로그램 관리', isVisible: true },
-        { id: 'BOARD', label: '공지사항', isVisible: true },
-        { id: 'USERS', label: '이용자 관리', isVisible: true },
-        { id: 'SCHOOLS', label: '학교 관리', isVisible: true },
-        { id: 'SURVEYS', label: '설문조사', isVisible: true },
-        { id: 'BADGES', label: '뱃지 관리', isVisible: true },
-        { id: 'STATISTICS', label: '통계', isVisible: true },
-        { id: 'LOGS', label: '로그', isVisible: true },
-        { id: 'REPORTS', label: '운영 리포트', isVisible: true },
-        { id: 'SETTINGS', label: '설정', isVisible: true }
-    ]);
+    const [sidebarConfig, setSidebarConfig] = useState(DEFAULT_ADMIN_SIDEBAR_CONFIG);
     const [tabConfig, setTabConfig] = useState([
         { id: 'home', label: '홈', isVisible: true },
         { id: 'badges', label: '뱃지', isVisible: true },
@@ -221,9 +209,20 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
                     const parsed = JSON.parse(sbData.content);
                     if (Array.isArray(parsed)) {
                         const filteredParsed = parsed.filter(c => c.id !== 'GALLERY');
-                        const merged = sidebarConfig.map(def => {
+                        // Match AdminSidebar's legacy migration exactly: WORK_STATUS was
+                        // introduced later and is placed directly after STATUS.
+                        const statusIndex = filteredParsed.findIndex(item => item.id === 'STATUS');
+                        if (statusIndex !== -1 && !filteredParsed.some(item => item.id === 'WORK_STATUS')) {
+                            filteredParsed.splice(statusIndex + 1, 0, { id: 'WORK_STATUS' });
+                        }
+                        const merged = DEFAULT_ADMIN_SIDEBAR_CONFIG.map(def => {
                             const found = filteredParsed.find(p => p.id === def.id);
                             let mergedItem = found ? { ...def, ...found } : def;
+                            // Older settings only stored groupIndex. Fill the new group metadata
+                            // from the defaults so existing installations migrate without losing data.
+                            if (!mergedItem.groupId) mergedItem.groupId = def.groupId;
+                            if (!mergedItem.groupTitle) mergedItem.groupTitle = def.groupTitle;
+                            if (!Number.isFinite(mergedItem.groupOrder)) mergedItem.groupOrder = def.groupOrder;
                             if (mergedItem.id === 'BADGES') mergedItem.label = '뱃지 관리';
                             if (mergedItem.id === 'badges') mergedItem.label = '뱃지';
                             return mergedItem;
@@ -232,7 +231,22 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
                             ...filteredParsed.map(p => merged.find(m => m.id === p.id)).filter(Boolean),
                             ...merged.filter(m => !filteredParsed.find(p => p.id === m.id))
                         ];
-                        setSidebarConfig(ordered.filter(c => c.id !== 'GALLERY'));
+                        const hasSavedGroups = filteredParsed.some(item => item.groupId);
+                        if (hasSavedGroups) {
+                            setSidebarConfig(ordered.filter(c => c.id !== 'GALLERY'));
+                        } else {
+                            // The legacy format was a flat array. Its array position is exactly
+                            // what the live sidebar used, so reflect that same order in the editor.
+                            const groupSequence = [...new Set(ordered.map(item => item.groupId))];
+                            const groupCounts = {};
+                            const normalized = ordered.map(item => {
+                                const order = groupCounts[item.groupId] ?? 0;
+                                groupCounts[item.groupId] = order + 1;
+                                const groupOrder = groupSequence.indexOf(item.groupId);
+                                return { ...item, order, groupOrder, groupIndex: groupOrder };
+                            });
+                            setSidebarConfig(normalized.filter(c => c.id !== 'GALLERY'));
+                        }
                     }
                 } catch (e) { console.error(e); }
             }
@@ -715,9 +729,11 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
             };
 
             if (existing) {
-                await supabase.from('notices').update(payload).eq('id', existing.id);
+                const {error}=await supabase.from('notices').update(payload).eq('id', existing.id);
+                if(error)throw error;
             } else {
-                await supabase.from('notices').insert([payload]);
+                const {error}=await supabase.from('notices').insert([payload]);
+                if(error)throw error;
             }
             alert('대시보드 레이아웃 설정이 저장되었습니다.');
         } catch (err) {
@@ -729,19 +745,63 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
     };
 
     const handleMoveSidebarConfig = (index, direction) => {
-        const newConfig = [...sidebarConfig];
-        const targetIndex = index + direction;
-        if (targetIndex < 0 || targetIndex >= newConfig.length) return;
-        const temp = newConfig[index];
-        newConfig[index] = newConfig[targetIndex];
-        newConfig[targetIndex] = temp;
-        setSidebarConfig(newConfig);
+        setSidebarConfig(prev => {
+            const current = prev[index];
+            if (!current) return prev;
+            const siblings = prev.filter(item => item.groupId === current.groupId).sort((a, b) => a.order - b.order);
+            const siblingIndex = siblings.findIndex(item => item.id === current.id);
+            const target = siblings[siblingIndex + direction];
+            if (!target) return prev;
+            return prev.map(item => item.id === current.id
+                ? { ...item, order: target.order }
+                : item.id === target.id ? { ...item, order: current.order } : item);
+        });
     };
 
     const handleUpdateSidebarConfig = (id, field, value) => {
         setSidebarConfig(prev => prev.map(item =>
             item.id === id ? { ...item, [field]: value } : item
         ));
+    };
+
+    const handleUpdateSidebarGroup = (groupId, field, value) => {
+        setSidebarConfig(prev => prev.map(item =>
+            item.groupId === groupId ? { ...item, [field]: value } : item
+        ));
+    };
+
+    const handleMoveSidebarGroup = (groupId, direction) => {
+        setSidebarConfig(prev => {
+            const groups = [...new Map([...prev]
+                .sort((a, b) => a.groupOrder - b.groupOrder)
+                .map(item => [item.groupId, item])).values()];
+            const index = groups.findIndex(group => group.groupId === groupId);
+            const targetIndex = index + direction;
+            if (index < 0 || targetIndex < 0 || targetIndex >= groups.length) return prev;
+            const currentOrder = groups[index].groupOrder;
+            const targetOrder = groups[targetIndex].groupOrder;
+            return prev.map(item => item.groupId === groupId
+                ? { ...item, groupOrder: targetOrder, groupIndex: targetOrder }
+                : item.groupId === groups[targetIndex].groupId
+                    ? { ...item, groupOrder: currentOrder, groupIndex: currentOrder }
+                    : item);
+        });
+    };
+
+    const handleChangeSidebarGroup = (id, groupId) => {
+        setSidebarConfig(prev => {
+            const targetGroup = prev.find(item => item.groupId === groupId);
+            if (!targetGroup) return prev;
+            const nextOrder = Math.max(-1, ...prev.filter(item => item.groupId === groupId).map(item => item.order ?? 0)) + 1;
+            return prev.map(item => item.id === id ? {
+                ...item,
+                groupId,
+                groupTitle: targetGroup.groupTitle,
+                groupOrder: targetGroup.groupOrder,
+                groupIndex: targetGroup.groupOrder,
+                order: nextOrder
+            } : item);
+        });
     };
 
     const handleSaveSidebarConfig = async () => {
@@ -1027,7 +1087,8 @@ const useAdminSettings = ({ currentAdmin, locations, locationGroups, fetchData, 
         dashboardConfig, sidebarConfig, tabConfig,
         configLoading, sidebarConfigLoading, tabConfigLoading,
         handleMoveConfig, handleUpdateConfig, handleSaveDashboardConfig,
-        handleMoveSidebarConfig, handleUpdateSidebarConfig, handleSaveSidebarConfig,
+        handleMoveSidebarConfig, handleUpdateSidebarConfig, handleUpdateSidebarGroup,
+        handleMoveSidebarGroup, handleChangeSidebarGroup, handleSaveSidebarConfig,
         handleMoveTabConfig, handleUpdateTabConfig, handleSaveTabConfig,
 
         operatingHours, hoursLoading,

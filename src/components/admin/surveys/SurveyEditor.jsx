@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Check, ListChecks, MessageSquareText, Plus, Save, Sparkles, Trash2 } from 'lucide-react';
+import { Check, ListChecks, MessageSquareText, Plus, Save, Sparkles, Trash2, MapPin, Repeat2 } from 'lucide-react';
 
 const isTextMode = (type, mode) => mode === (type === 'CHECKIN' ? 'QUESTION_QA' : 'FEEDBACK_QA');
 
@@ -10,6 +10,10 @@ const SurveyEditor = ({ type, initialConfig, onSave, onCancel, isSaving }) => {
     const [placeholder, setPlaceholder] = useState('자유롭게 작성해 주세요');
     const [options, setOptions] = useState([]);
     const [recommendationsEnabled, setRecommendationsEnabled] = useState(false);
+    const [additionalComment, setAdditionalComment] = useState({ enabled: false, label: '추가 의견이 있다면 적어주세요', placeholder: '선택한 이유나 의견을 자유롭게 알려주세요.', required: false, maxLength: 300 });
+    const [frequency, setFrequency] = useState('EVERY_VISIT');
+    const [centers, setCenters] = useState(['HAIFN']);
+    const [isDefault, setIsDefault] = useState(false);
 
     useEffect(() => {
         const textMode = isTextMode(type, initialConfig?.mode);
@@ -21,6 +25,10 @@ const SurveyEditor = ({ type, initialConfig, onSave, onCancel, isSaving }) => {
         setPlaceholder(initialConfig?.qaPlaceholder || '자유롭게 작성해 주세요');
         setOptions(initialConfig?.options || []);
         setRecommendationsEnabled(type === 'CHECKIN' && initialConfig?.recommendationsEnabled !== false);
+        setAdditionalComment({ enabled: false, label: '추가 의견이 있다면 적어주세요', placeholder: '선택한 이유나 의견을 자유롭게 알려주세요.', required: false, maxLength: 300, ...(initialConfig?.additionalComment || {}) });
+        setFrequency(initialConfig?.exposure?.frequency || 'EVERY_VISIT');
+        setCenters(initialConfig?.exposure?.centers?.length ? initialConfig.exposure.centers : ['HAIFN']);
+        setIsDefault(initialConfig?.exposure?.isDefault === true);
     }, [initialConfig, type]);
 
     const updateOption = (index, field, value) => {
@@ -74,6 +82,14 @@ const SurveyEditor = ({ type, initialConfig, onSave, onCancel, isSaving }) => {
             recommendationsEnabled: type === 'CHECKIN' && answerType === 'CHOICE'
                 ? recommendationsEnabled
                 : false,
+            additionalComment: answerType === 'CHOICE' ? additionalComment : { ...additionalComment, enabled: false },
+            exposure: {
+                enabled: true,
+                frequency,
+                centers,
+                isDefault,
+                priority: initialConfig?.exposure?.priority ?? 999
+            },
             chatPrompt: undefined,
             chatPlaceholder: undefined
         });
@@ -153,7 +169,29 @@ const SurveyEditor = ({ type, initialConfig, onSave, onCancel, isSaving }) => {
                         </div>}
                     </div>)}
                 </div>
+
+                <div className="border-t border-gray-100 pt-4">
+                    <div className="flex items-center justify-between gap-4">
+                        <div><p className="text-sm font-bold text-gray-900">추가 의견 받기</p><p className="mt-1 text-xs text-gray-500">선택 응답 아래에 자유 입력란을 함께 보여줍니다.</p></div>
+                        <button type="button" role="switch" aria-checked={additionalComment.enabled} onClick={() => setAdditionalComment(current => ({ ...current, enabled: !current.enabled }))} className={`relative h-6 w-11 shrink-0 rounded-full transition-colors ${additionalComment.enabled ? 'bg-blue-600' : 'bg-gray-300'}`}><span className={`absolute left-1 top-1 h-4 w-4 rounded-full bg-white shadow transition-transform ${additionalComment.enabled ? 'translate-x-5' : ''}`} /></button>
+                    </div>
+                    {additionalComment.enabled && <div className="mt-4 grid gap-3 rounded-2xl bg-gray-50 p-4 md:grid-cols-2">
+                        <label className="text-xs font-bold text-gray-600">입력란 제목<input value={additionalComment.label} onChange={e => setAdditionalComment(current => ({ ...current, label: e.target.value }))} className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500" /></label>
+                        <label className="text-xs font-bold text-gray-600">안내 문구<input value={additionalComment.placeholder} onChange={e => setAdditionalComment(current => ({ ...current, placeholder: e.target.value }))} className="mt-2 w-full rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-blue-500" /></label>
+                        <label className="flex items-center gap-2 text-xs font-bold text-gray-600"><input type="checkbox" checked={additionalComment.required} onChange={e => setAdditionalComment(current => ({ ...current, required: e.target.checked }))} className="h-4 w-4 rounded border-gray-300" />필수 입력</label>
+                        <label className="flex items-center justify-end gap-2 text-xs font-bold text-gray-600">최대 글자 수<input type="number" min="50" max="1000" value={additionalComment.maxLength} onChange={e => setAdditionalComment(current => ({ ...current, maxLength: Math.min(1000, Math.max(50, Number(e.target.value) || 300)) }))} className="w-24 rounded-lg border border-gray-200 bg-white px-2 py-2 text-center" /></label>
+                    </div>}
+                </div>
             </div>}
+
+            <div className="space-y-5 border-t border-gray-100 pt-6">
+                <div><p className="flex items-center gap-2 text-sm font-bold text-gray-900"><Repeat2 size={17} className="text-blue-600" />노출 설정</p><p className="mt-1 text-xs text-gray-500">목록에는 결과만 간단히 표시하고 세부 조건은 여기에서 관리합니다.</p></div>
+                <div className="grid gap-4 md:grid-cols-2">
+                    <div><p className="mb-2 text-xs font-bold text-gray-600">응답 주기</p><div className="grid grid-cols-2 gap-2">{[['ONCE','이용자당 1회'],['EVERY_VISIT','방문마다']].map(([value,label]) => <button key={value} type="button" onClick={() => setFrequency(value)} className={`rounded-xl border px-3 py-3 text-sm font-bold ${frequency === value ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}>{label}</button>)}</div></div>
+                    <div><p className="mb-2 flex items-center gap-1 text-xs font-bold text-gray-600"><MapPin size={14} />노출 공간</p><div className="grid grid-cols-2 gap-2">{[['HAIFN','하이픈'],['ENOUGH_PLACE','이높플레이스']].map(([value,label]) => { const selected=centers.includes(value); return <button key={value} type="button" onClick={() => setCenters(current => selected ? (current.length > 1 ? current.filter(item => item !== value) : current) : [...current,value])} className={`rounded-xl border px-3 py-3 text-sm font-bold ${selected ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-gray-200 bg-white text-gray-600'}`}>{label}</button>; })}</div></div>
+                </div>
+                <label className="flex cursor-pointer items-center justify-between rounded-2xl bg-gray-50 p-4"><span><strong className="block text-sm text-gray-900">기본 설문</strong><span className="mt-1 block text-xs text-gray-500">응답 가능한 다른 설문이 없을 때 마지막으로 표시합니다.</span></span><input type="checkbox" checked={isDefault} onChange={e => setIsDefault(e.target.checked)} className="h-5 w-5 rounded border-gray-300 text-blue-600" /></label>
+            </div>
 
             <div className="flex justify-end border-t border-gray-100 pt-5">
                 <button type="submit" disabled={isSaving} className="px-5 py-3 rounded-xl bg-blue-600 text-white text-sm font-bold flex items-center gap-2 shadow-sm hover:bg-blue-700 disabled:opacity-50"><Save size={16} />{isSaving ? '저장 중...' : '설문 저장'}</button>

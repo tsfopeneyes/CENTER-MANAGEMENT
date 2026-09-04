@@ -28,6 +28,7 @@ import { getAccountAuthClient, isAccountAuthEnabled } from '../auth/accountAuthR
 import { stripHtml, extractUrls } from '../utils/textUtils';
 import { formatToLocalISO } from '../utils/dateUtils';
 import { subscribeToPush } from '../utils/pushUtils';
+import { removeFirebaseToken } from '../firebase';
 import getCroppedImg from '../utils/imageUtils';
 import { hashPassword } from '../utils/hashUtils';
 
@@ -654,6 +655,7 @@ export const useStudentDashboard = () => {
     };
     const handleLogout = async () => {
         if (window.confirm("로그아웃 하시겠습니까?")) {
+            await removeFirebaseToken(effectiveUser?.id || user?.id);
             await supabase.auth.signOut();
             localStorage.removeItem('user');
             localStorage.removeItem('admin_user');

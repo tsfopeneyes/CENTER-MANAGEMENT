@@ -15,13 +15,14 @@ import { trackUserWebActivity } from './utils/userActivityUtils'
 
 import StandaloneLiveChat from './pages/StandaloneLiveChat'
 import TvSignageViewer from './pages/TvSignageViewer'
+import ScreenViewer from './pages/ScreenViewer'
 import AppAlertDialog from './components/common/AppAlertDialog'
 
 function App() {
     const [isLoading, setIsLoading] = useState(() => {
         try {
             const path = window.location.pathname.toLowerCase();
-            if (path.includes('/chat') || path.includes('/live-chat') || path.includes('/kiosk') || path.includes('/tv') || path.includes('/view') || path.includes('/signage')) {
+            if (path.includes('/chat') || path.includes('/live-chat') || path.includes('/kiosk') || path.includes('/tv') || path.includes('/view') || path.includes('/signage') || path === '/screen') {
                 return false;
             }
             return !sessionStorage.getItem('splash_shown');
@@ -31,6 +32,7 @@ function App() {
     });
 
     useEffect(() => {
+        if (window.location.pathname.toLowerCase() === '/screen') return;
         const loadGlobalSettings = async () => {
             // Once server integrations are enabled, external-service credentials
             // must remain on the server and must not be copied into this browser.
@@ -82,7 +84,7 @@ function App() {
     return (
         <>
             {isLoading && <SplashScreen finishLoading={handleFinishLoading} />}
-            <AppAlertDialog />
+            {window.location.pathname.toLowerCase() !== '/screen' && <AppAlertDialog />}
             <BrowserRouter>
                 <Routes>
                     <Route path="/" element={<Landing />} />
@@ -97,6 +99,7 @@ function App() {
                     </Route>
                     <Route path="admin" element={<AdminDashboard />} />
                     <Route path="kiosk" element={<Kiosk />} />
+                    <Route path="screen" element={<ScreenViewer />} />
                     <Route path="/live-chat" element={<StandaloneLiveChat />} />
                     <Route path="/live-chat/:center" element={<StandaloneLiveChat />} />
                     <Route path="/chat" element={<StandaloneLiveChat />} />

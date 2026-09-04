@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { QRCodeSVG } from 'qrcode.react';
-import { Share2, Bell, ShieldCheck, Settings, LogOut, AlertCircle, ChevronRight, User, Image as ImageIcon, Pin, QrCode, Home, Trophy, Calendar as LucideCalendar, Users, Sparkles, Coffee, X, CheckCircle2, Clock3, MapPin } from 'lucide-react';
+import { Share2, Bell, ShieldCheck, Settings, LogOut, AlertCircle, ChevronRight, User, Image as ImageIcon, Pin, QrCode, Home, Trophy, Calendar as LucideCalendar, Users, Sparkles, Coffee, X, CheckCircle2, Clock3, MapPin, Store } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import UserAvatar from '../common/UserAvatar';
 import ProgramCard from './ProgramCard';
@@ -12,6 +12,8 @@ import TodayOperatingWidget from './components/TodayOperatingWidget';
 import LiveCenterChat from './components/LiveCenterChat';
 import CoffeeChatModal from './modals/CoffeeChatModal';
 import { supabase } from '../../supabaseClient';
+import ContentPostModal from './modals/ContentPostModal';
+import {parseContentPost, sortContentPosts} from '../../utils/contentPosts';
 
 const StudentHomeTab = ({
     user,
@@ -60,11 +62,47 @@ const StudentHomeTab = ({
     // 뱃지 관련 로직 제거됨
     const isGuest = user?.user_group === '게스트';
     const [coffeeChatClock, setCoffeeChatClock] = useState(() => Date.now());
+    const [homeContents, setHomeContents] = useState([]);
+    const [selectedContent, setSelectedContent] = useState(null);
+    const contentScrollRef = useRef(null);
+    const contentDragRef = useRef({ active: false, startX: 0, scrollLeft: 0, moved: false });
+
+    const startContentDrag = (event) => {
+        const container = contentScrollRef.current;
+        if (!container) return;
+        contentDragRef.current = { active: true, startX: event.clientX, scrollLeft: container.scrollLeft, moved: false };
+    };
+
+    const moveContentDrag = (event) => {
+        const container = contentScrollRef.current;
+        const drag = contentDragRef.current;
+        if (!container || !drag.active) return;
+        const distance = event.clientX - drag.startX;
+        if (Math.abs(distance) > 4) drag.moved = true;
+        container.scrollLeft = drag.scrollLeft - distance;
+    };
+
+    const endContentDrag = () => {
+        contentDragRef.current.active = false;
+    };
 
     useEffect(() => {
         const timer = window.setInterval(() => setCoffeeChatClock(Date.now()), 30_000);
         return () => window.clearInterval(timer);
     }, []);
+    useEffect(()=>{
+        let active=true;
+        const loadContents=async()=>{
+            try{
+                let region=studentRegion || (user?.school?.includes('강서')?'강서':'강동');
+                if(user?.role==='admin') region=selectedRegion==='GANGSEO'?'강서':selectedRegion==='GANGDONG'?'강동':null;
+                let query=supabase.from('contents').select('*, schools(region)').eq('is_active',true).order('created_at',{ascending:false});
+                if(region){const {data:matchedSchools}=await supabase.from('schools').select('id').eq('region',region);query=query.in('school_id',(matchedSchools||[]).map(s=>s.id));}
+                const {data,error}=await query;if(error)throw error;if(active)setHomeContents(sortContentPosts((data||[]).map(parseContentPost).filter(Boolean)));
+            }catch(error){console.error('Failed to load home contents:',error);if(active)setHomeContents([]);}
+        };
+        loadContents();return()=>{active=false};
+    },[user?.id,user?.school,user?.role,studentRegion,selectedRegion]);
     const today = startOfDay(new Date());
     const matchesSelectedRegion = (cardRegion) => {
         if (!selectedRegion || selectedRegion === 'ALL') return true;
@@ -652,7 +690,51 @@ const StudentHomeTab = ({
 
                     return null;
                 })}
+                {homeContents.length > 0 && (
+                    <section className="rounded-toss-xl bg-white p-5 shadow-toss-standard">
+                        <div className="mb-4 flex items-start justify-between">
+                            <div className="flex items-center gap-3">
+                                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-tossWarning/10 text-tossWarning"><Store size={18} /></div>
+                                <div>
+                                    <h3 className="text-[15px] font-bold leading-tight text-tossGrey900">콘텐츠</h3>
+                                    <p className="mt-0.5 text-[11px] font-semibold text-tossGrey500">센터에서 자유롭게 누릴 수 있는 다채로운 경험!</p>
+                                </div>
+                            </div>
+                            <button onClick={() => handleTabChange(TAB_NAMES.PROGRAMS)} className="rounded-toss-md bg-tossGrey100 px-2.5 py-1.5 text-[11px] font-bold text-tossGrey600">더보기</button>
+                        </div>
+                        <div
+                            ref={contentScrollRef}
+                            className="no-swipe flex cursor-grab snap-x gap-3 overflow-x-auto pb-1 active:cursor-grabbing"
+                            style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                            onMouseDown={startContentDrag}
+                            onMouseMove={moveContentDrag}
+                            onMouseUp={endContentDrag}
+                            onMouseLeave={endContentDrag}
+                        >
+                            {homeContents.map(item => (
+                                <article
+                                    key={item.id}
+                                    onClick={() => {
+                                        if (!contentDragRef.current.moved) setSelectedContent(item);
+                                    }}
+                                    className="w-[220px] shrink-0 snap-start cursor-pointer select-none overflow-hidden rounded-2xl border border-tossGrey100 bg-white shadow-sm transition active:scale-[0.98]"
+                                >
+                                    <div className="flex aspect-[11/10] w-full items-center justify-center overflow-hidden bg-tossGrey50">
+                                        {item.image_url ? <img src={item.image_url} alt="" draggable="false" className="pointer-events-none h-full w-full object-cover" /> : <Store size={30} className="text-blue-400" />}
+                                    </div>
+                                    <div className="p-4">
+                                        <h4 className="line-clamp-1 font-extrabold text-tossGrey900">{item.name}</h4>
+                                        {item.short_description && <p className="mt-1 line-clamp-2 min-h-9 text-[11px] font-medium leading-relaxed text-tossGrey500">{item.short_description}</p>}
+                                        <div className="mt-3 flex items-center gap-1.5 border-t border-tossGrey100 pt-3 text-[11px] font-bold text-tossGrey600"><MapPin size={13} />{item.location}</div>
+                                    </div>
+                                </article>
+                            ))}
+                        </div>
+                    </section>
+                )}
             </div>
+
+            {selectedContent&&<ContentPostModal post={selectedContent} onClose={()=>setSelectedContent(null)}/>}
 
         </>
     );

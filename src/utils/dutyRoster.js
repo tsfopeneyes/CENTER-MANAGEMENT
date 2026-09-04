@@ -73,3 +73,10 @@ export async function saveDutyAssignment(client, { date, staff, off, expected })
 export const seoulDateString = (date = new Date()) => new Intl.DateTimeFormat('sv-SE', {
     timeZone: 'Asia/Seoul', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(date);
+
+export const isDutyDisplayTime = (date = new Date()) => {
+    const hour = Number(new Intl.DateTimeFormat('en-US', {
+        timeZone: 'Asia/Seoul', hour: '2-digit', hour12: false,
+    }).format(date));
+    return hour >= 14 && hour < 22;
+};

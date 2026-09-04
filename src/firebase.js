@@ -15,6 +15,70 @@ const firebaseConfig = {
 let app;
 let messaging;
 
+export const parseStoredPushTokens = (value) => {
+    if (!value) return [];
+    try {
+        const parsed = JSON.parse(value);
+        if (Array.isArray(parsed)) return [...new Set(parsed.filter(token => typeof token === 'string' && token))];
+    } catch (_) {}
+    return [String(value)];
+};
+
+export const storedPushTokenIncludes = (value, token) => Boolean(token) && parseStoredPushTokens(value).includes(token);
+
+const base64UrlToBytes = (value) => {
+    const padding = '='.repeat((4 - value.length % 4) % 4);
+    const raw = atob((value + padding).replace(/-/g, '+').replace(/_/g, '/'));
+    return Uint8Array.from(raw, character => character.charCodeAt(0));
+};
+
+const getPushDeviceId = () => {
+    const key = 'sci_push_device_id';
+    let value = localStorage.getItem(key);
+    if (!value) {
+        value = crypto.randomUUID().replace(/-/g, '_');
+        localStorage.setItem(key, value);
+    }
+    return value;
+};
+
+const getDeviceMetadata = () => {
+    const agent = navigator.userAgent || '';
+    const browser = /SamsungBrowser/i.test(agent) ? 'Samsung Internet'
+        : /Edg/i.test(agent) ? 'Edge' : /Firefox/i.test(agent) ? 'Firefox'
+        : /Chrome|CriOS/i.test(agent) ? 'Chrome' : /Safari/i.test(agent) ? 'Safari' : 'Other';
+    const platform = /Android/i.test(agent) ? 'Android' : /iPhone|iPad|iPod/i.test(agent) ? 'iOS'
+        : /Windows/i.test(agent) ? 'Windows' : /Mac/i.test(agent) ? 'macOS' : 'Other';
+    const standalone = window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true;
+    return { browser, platform, displayMode: standalone ? 'standalone' : 'browser' };
+};
+
+const registerPushDevice = async (provider, credential) => {
+    const { data, error } = await supabase.functions.invoke('push-devices', { body: {
+        action: 'register', deviceId: getPushDeviceId(), provider, credential, ...getDeviceMetadata(),
+    }});
+    if (error || !data?.success) throw error || new Error(data?.error || 'Push device registration failed.');
+    return data;
+};
+
+const subscribeStandardWebPush = async (registration) => {
+    const publicKey = import.meta.env.VITE_WEB_PUSH_VAPID_PUBLIC_KEY;
+    if (!publicKey || !registration?.pushManager) return null;
+    let existing = await registration.pushManager.getSubscription();
+    const expectedKey = base64UrlToBytes(publicKey);
+    const existingKey = existing?.options?.applicationServerKey ? new Uint8Array(existing.options.applicationServerKey) : null;
+    if (existing && (!existingKey || existingKey.length !== expectedKey.length || existingKey.some((byte, index) => byte !== expectedKey[index]))) {
+        await existing.unsubscribe();
+        existing = null;
+    }
+    const subscription = existing || await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: expectedKey,
+    });
+    await registerPushDevice('WEB_PUSH', subscription.toJSON());
+    return subscription;
+};
+
 // Ensure this only runs in the browser
 if (typeof window !== 'undefined') {
   try {
@@ -44,8 +108,7 @@ export const requestFirebaseToken = async (userId) => {
         let swRegistration;
         if ('serviceWorker' in navigator) {
             try {
-                await navigator.serviceWorker.register('/firebase-messaging-sw.js');
-                swRegistration = await navigator.serviceWorker.ready;
+                swRegistration = await navigator.serviceWorker.register('/firebase-messaging-sw.js?v=20260904-delivery-receipts');
             } catch (swErr) {
                 swRegistration = await navigator.serviceWorker.ready.catch(() => undefined);
             }
@@ -56,14 +119,26 @@ export const requestFirebaseToken = async (userId) => {
             getTokenOptions.serviceWorkerRegistration = swRegistration;
         }
 
+        if (/SamsungBrowser/i.test(navigator.userAgent || '')) {
+            const subscription = await subscribeStandardWebPush(swRegistration);
+            if (subscription) return `WEB_PUSH:${getPushDeviceId()}`;
+        }
+
         const token = await getToken(messaging, getTokenOptions);
         
         if (token) {
             console.log("FCM Token retrieved.");
-            // 다른 계정에 동일한 토큰이 등록되어 있다면 먼저 제거하여 중복 발송 방지
-            await supabase.from('users').update({ fcm_token: null }).eq('fcm_token', token).neq('id', userId);
-            
-            const { error } = await supabase.from('users').update({ fcm_token: token }).eq('id', userId);
+            try {
+                await registerPushDevice('FCM', { token });
+                return token;
+            } catch (registryError) {
+                console.warn('Device registry unavailable; using legacy push storage.', registryError);
+            }
+            const { data: profile, error: readError } = await supabase.from('users').select('fcm_token').eq('id', userId).maybeSingle();
+            if (readError) throw readError;
+            const tokens = [...new Set([...parseStoredPushTokens(profile?.fcm_token), token])].slice(-10);
+            const storedValue = tokens.length === 1 ? tokens[0] : JSON.stringify(tokens);
+            const { error } = await supabase.from('users').update({ fcm_token: storedValue }).eq('id', userId);
             if (error) {
                 console.error("Failed to save FCM token to Supabase:", error);
             }
@@ -81,7 +156,23 @@ export const requestFirebaseToken = async (userId) => {
 export const removeFirebaseToken = async (userId) => {
     if (!userId) return false;
     try {
-        const { error } = await supabase.from('users').update({ fcm_token: null }).eq('id', userId);
+        await supabase.functions.invoke('push-devices', { body: {
+            action: 'unregister', deviceId: getPushDeviceId(),
+        }}).catch(() => null);
+        let currentToken = null;
+        if (messaging && typeof window !== 'undefined' && window.Notification?.permission === 'granted' && 'serviceWorker' in navigator) {
+            const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js?v=20260904-delivery-receipts');
+            currentToken = await getToken(messaging, {
+                vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY,
+                serviceWorkerRegistration: registration,
+            }).catch(() => null);
+        }
+        if (!currentToken) return true;
+        const { data, error: readError } = await supabase.from('users').select('fcm_token').eq('id', userId).maybeSingle();
+        if (readError) throw readError;
+        const remainingTokens = parseStoredPushTokens(data?.fcm_token).filter(token => token !== currentToken);
+        const storedValue = remainingTokens.length === 0 ? null : remainingTokens.length === 1 ? remainingTokens[0] : JSON.stringify(remainingTokens);
+        const { error } = await supabase.from('users').update({ fcm_token: storedValue }).eq('id', userId);
         if (error) {
             console.error("Failed to remove FCM token from Supabase:", error);
             return false;
@@ -131,14 +222,23 @@ export const promptAndEnableNotification = async (userId) => {
     }
 };
 
-export const onMessageListener = () =>
-  new Promise((resolve) => {
-    if (messaging) {
-        onMessage(messaging, (payload) => {
-            resolve(payload);
+export const listenForForegroundMessages = (handler) => {
+    if (!messaging || typeof handler !== 'function') return () => {};
+    return onMessage(messaging, handler);
+};
+
+export const reportPushReceipt = async (receiptToken, event = 'DISPLAYED') => {
+    if (!receiptToken) return false;
+    try {
+        const response = await fetch('https://erecqalsxoxrufggvmcc.supabase.co/functions/v1/push-receipts', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ receiptToken, event }),
         });
+        return response.ok;
+    } catch (_) {
+        return false;
     }
-  });
+};
 
 export { app, messaging };
 
@@ -157,7 +257,7 @@ export const requestRecruitmentPushToken = async () => {
     try {
         return await Promise.race([
             (async () => {
-                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js');
+                const registration = await navigator.serviceWorker.register('/firebase-messaging-sw.js?v=20260904-delivery-receipts');
                 const token = await getToken(messaging,{vapidKey,serviceWorkerRegistration:registration});
                 if (!token) throw new Error('이 기기의 알림 등록을 완료하지 못했습니다. 다시 시도해주세요.');
                 return token;

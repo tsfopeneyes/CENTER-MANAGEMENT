@@ -5,7 +5,7 @@ const uuid = value => typeof value === 'string' && /^[0-9a-f]{8}(-[0-9a-f]{4}){3
 const terminalCodes = new Set(['session_not_found', 'refresh_token_not_found', 'refresh_token_already_used', 'user_not_found']);
 
 export function createSessionCoordinator({auth, resolveSession, expectedProfileId = null,
-    now = Date.now, timeoutMs = 8000, schedule = setTimeout, cancel = clearTimeout}) {
+    now = Date.now, timeoutMs = 20000, schedule = setTimeout, cancel = clearTimeout}) {
     let revision = 0, pending = null, expiryTimer, queuedTimer, subscription;
     let active = false, context = expectedProfileId;
     const listeners = new Set();
