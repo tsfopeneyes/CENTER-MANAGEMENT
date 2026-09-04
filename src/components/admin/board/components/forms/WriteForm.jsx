@@ -231,6 +231,10 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 noticeData.challenge_missions = formData.challenge_missions || [];
                 noticeData.challenge_success_message = formData.challenge_success_message || '';
                 noticeData.challenge_show_haifn_btn = formData.challenge_show_haifn_btn || false;
+                noticeData.community_enabled = formData.is_challenge && formData.community_enabled === true;
+                noticeData.community_mission_mode = noticeData.community_enabled ? (formData.community_mission_mode || 'NONE') : 'NONE';
+                noticeData.community_image_required = noticeData.community_enabled && formData.community_image_required === true;
+                noticeData.community_after_end = formData.community_after_end || 'READ_ONLY';
                 const gp = formData.guest_properties || { allow_guest: true, require_school: true, require_phone: true };
                 const configuredHosts = (formData.hosts || []).filter(h => h && h.host_id);
                 noticeData.guest_properties = {

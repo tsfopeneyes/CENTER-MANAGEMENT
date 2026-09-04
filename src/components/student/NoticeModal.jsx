@@ -971,7 +971,7 @@ const NoticeModalContent = ({
                                                 })
                                             )}
                                         </div>
-                                        {responseDetails[notice.id]?.status === 'JOIN' && !fromAdmin && <button type="button" onClick={() => setShowChallengeCommunity(true)} className="mt-4 w-full rounded-2xl bg-tossBlue py-4 text-sm font-black text-white shadow-md shadow-blue-100 flex items-center justify-center gap-2"><MessageSquare size={18}/>챌린지 커뮤니티 입장하기</button>}
+                                        {notice.community_enabled && responseDetails[notice.id]?.status === 'JOIN' && !fromAdmin && <button type="button" onClick={() => setShowChallengeCommunity(true)} className="mt-4 w-full rounded-2xl bg-tossBlue py-4 text-sm font-black text-white shadow-md shadow-blue-100 flex items-center justify-center gap-2"><MessageSquare size={18}/>챌린지 커뮤니티 입장하기</button>}
                                     </div>
                                 </>
                             )})()}

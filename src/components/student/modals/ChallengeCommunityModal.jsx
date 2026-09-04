@@ -40,13 +40,17 @@ export default function ChallengeCommunityModal({ notice, user, onClose, onMissi
 
     const submitPost = async () => {
         if ((!content.trim() && !imageFile) || submitting) return;
+        if (notice.community_image_required && nextMission && !imageFile) {
+            alert('이 챌린지의 미션 인증 게시글에는 사진이 필요합니다.');
+            return;
+        }
         setSubmitting(true);
         try {
             const imageUrl = await uploadImage();
-            await challengeCommunityApi.createPost({ challengeId: notice.id, authorId: user.id, content, imageUrl, missionId: nextMission?.id, missionDate: nextMission ? today : null });
+            await challengeCommunityApi.createPost({ challengeId: notice.id, authorId: user.id, content, imageUrl, missionId: notice.community_mission_mode !== 'NONE' ? nextMission?.id : null, missionDate: nextMission ? today : null, missionMode: notice.community_mission_mode });
             setContent(''); setImageFile(null);
             await refresh();
-            if (nextMission) onMissionCompleted?.();
+            if (nextMission && notice.community_mission_mode !== 'NONE') onMissionCompleted?.();
         } catch (error) {
             console.error(error);
             alert('챌린지 글을 등록하지 못했습니다. 잠시 후 다시 시도해주세요.');
@@ -74,13 +78,13 @@ export default function ChallengeCommunityModal({ notice, user, onClose, onMissi
         <main className="flex-1 overflow-y-auto bg-tossGrey50/70">
             <div className="max-w-2xl mx-auto p-4 space-y-4">
                 <section className="bg-white rounded-3xl border border-tossGrey200 p-4 shadow-sm">
-                    {nextMission && <div className="mb-3 rounded-2xl bg-tossBlueLight px-3 py-2"><p className="text-[11px] font-black text-tossBlue">글을 올리면 다음 미션 자동 완료</p><p className="text-sm font-bold text-tossGrey900 mt-0.5">{nextMission.title}</p></div>}
+                    {nextMission && notice.community_mission_mode !== 'NONE' && <div className="mb-3 rounded-2xl bg-tossBlueLight px-3 py-2"><p className="text-[11px] font-black text-tossBlue">{notice.community_mission_mode === 'REVIEW' ? '글을 올리면 미션 검토 요청' : '글을 올리면 다음 미션 자동 완료'}</p><p className="text-sm font-bold text-tossGrey900 mt-0.5">{nextMission.title}</p></div>}
                     <textarea value={content} onChange={e => setContent(e.target.value)} placeholder="오늘의 이야기를 함께 나눠주세요" className="w-full min-h-24 resize-none outline-none text-sm leading-6" />
                     {imageFile && <div className="flex items-center justify-between rounded-xl bg-tossGrey50 px-3 py-2 text-xs font-bold"><span className="truncate">{imageFile.name}</span><button onClick={() => setImageFile(null)}><X size={15}/></button></div>}
                     <div className="mt-3 flex items-center gap-2 border-t border-tossGrey100 pt-3">
                         <input ref={fileRef} type="file" accept="image/*" hidden onChange={e => setImageFile(e.target.files?.[0] || null)}/>
                         <button onClick={() => fileRef.current?.click()} className="p-2.5 rounded-xl bg-tossGrey50 text-tossGrey600"><Camera size={19}/></button>
-                        <button onClick={submitPost} disabled={submitting || (!content.trim() && !imageFile)} className="ml-auto px-5 py-2.5 rounded-xl bg-tossBlue text-white text-xs font-black disabled:opacity-40">{submitting ? '등록 중...' : '게시하기'}</button>
+                        <button onClick={submitPost} disabled={submitting || (!content.trim() && !imageFile) || (notice.community_image_required && nextMission && !imageFile)} className="ml-auto px-5 py-2.5 rounded-xl bg-tossBlue text-white text-xs font-black disabled:opacity-40">{submitting ? '등록 중...' : '게시하기'}</button>
                     </div>
                 </section>
                 {loading ? <p className="py-12 text-center text-sm text-tossGrey400">불러오는 중...</p> : posts.length === 0 ? <p className="py-12 text-center text-sm font-bold text-tossGrey400">첫 번째 기록을 남겨보세요.</p> : posts.map(post => <article key={post.id} className="bg-white rounded-3xl border border-tossGrey200 p-4 shadow-sm">
@@ -88,9 +92,9 @@ export default function ChallengeCommunityModal({ notice, user, onClose, onMissi
                     {post.mission_id && <span className="inline-block mt-3 rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">미션 인증 완료</span>}
                     {post.content && <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-6 text-tossGrey850">{post.content}</p>}
                     {post.image_url && <img src={post.image_url} alt="챌린지 인증" className="mt-3 max-h-[460px] w-full rounded-2xl object-cover"/>}
-                    <div className="mt-3"><NoticeReactions reactions={post.challenge_community_reactions || []} currentUserId={user.id} onToggleReaction={emoji => toggleReaction(post.id, emoji)}/></div>
+                    <div className="mt-3"><NoticeReactions reactions={post.community_channel_reactions || []} currentUserId={user.id} onToggleReaction={emoji => toggleReaction(post.id, emoji)}/></div>
                     <div className="mt-3 border-t border-tossGrey100 pt-3 space-y-3">
-                        {(post.challenge_community_comments || []).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(comment => <div key={comment.id} className="flex gap-2"><UserAvatar user={comment.author} size="w-7 h-7"/><div className="rounded-2xl bg-tossGrey50 px-3 py-2"><p className="text-[11px] font-black">{comment.author?.name}</p><p className="text-xs mt-0.5">{comment.content}</p></div></div>)}
+                        {(post.community_channel_comments || []).sort((a,b)=>new Date(a.created_at)-new Date(b.created_at)).map(comment => <div key={comment.id} className="flex gap-2"><UserAvatar user={comment.author} size="w-7 h-7"/><div className="rounded-2xl bg-tossGrey50 px-3 py-2"><p className="text-[11px] font-black">{comment.author?.name}</p><p className="text-xs mt-0.5">{comment.content}</p></div></div>)}
                         <div className="flex items-center gap-2"><MessageCircle size={16} className="text-tossGrey400"/><input value={commentInputs[post.id] || ''} onChange={e=>setCommentInputs(v=>({...v,[post.id]:e.target.value}))} onKeyDown={e=>{if(e.key==='Enter') submitComment(post.id)}} placeholder="댓글 남기기" className="flex-1 rounded-xl bg-tossGrey50 px-3 py-2 text-xs outline-none"/><button onClick={()=>submitComment(post.id)} className="p-2 text-tossBlue"><Send size={16}/></button></div>
                     </div>
                 </article>)}

@@ -138,6 +138,10 @@ export const prepareNoticeForEdit = (notice) => {
         challenge_missions: notice.challenge_missions || [],
         challenge_success_message: notice.challenge_success_message || '',
         challenge_show_haifn_btn: notice.challenge_show_haifn_btn ?? false,
+        community_enabled: notice.community_enabled ?? false,
+        community_mission_mode: notice.community_mission_mode || 'NONE',
+        community_image_required: notice.community_image_required ?? false,
+        community_after_end: notice.community_after_end || 'READ_ONLY',
         guest_properties: {
             ...(notice.guest_properties || { allow_guest: true }),
             require_school: true,

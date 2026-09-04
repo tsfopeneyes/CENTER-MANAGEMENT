@@ -1250,6 +1250,26 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
 
             {/* 6. 챌린지 미션 설정 카드 */}
             {formData.is_challenge && (
+                <div className="space-y-4">
+                <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4">
+                    <div className="flex items-center justify-between gap-4">
+                        <div><p className="text-sm font-black text-slate-800">챌린지 커뮤니티</p><p className="text-xs font-semibold text-slate-400 mt-1">참여자끼리 글·사진·댓글·이모지 반응을 나눕니다.</p></div>
+                        <button type="button" onClick={() => updateField('community_enabled', !formData.community_enabled)} className={`px-4 py-2 rounded-xl text-xs font-black ${formData.community_enabled ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500'}`}>{formData.community_enabled ? '사용 중' : '사용 안 함'}</button>
+                    </div>
+                    {formData.community_enabled && <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-3 border-t border-slate-100">
+                        <label className="text-xs font-bold text-slate-600">게시글 미션 인증
+                            <select value={formData.community_mission_mode || 'NONE'} onChange={e => updateField('community_mission_mode', e.target.value)} className="mt-2 w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 outline-none">
+                                <option value="NONE">인증하지 않음</option><option value="AUTO">게시 즉시 완료</option><option value="REVIEW">관리자 승인 후 완료</option>
+                            </select>
+                        </label>
+                        <label className="text-xs font-bold text-slate-600">챌린지 종료 후
+                            <select value={formData.community_after_end || 'READ_ONLY'} onChange={e => updateField('community_after_end', e.target.value)} className="mt-2 w-full h-10 rounded-xl border border-slate-200 bg-slate-50 px-3 outline-none">
+                                <option value="READ_ONLY">읽기 전용</option><option value="CLOSED">커뮤니티 닫기</option>
+                            </select>
+                        </label>
+                        <label className="md:col-span-2 flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-xs font-bold text-slate-600"><input type="checkbox" checked={formData.community_image_required === true} onChange={e => updateField('community_image_required', e.target.checked)}/>미션 인증 게시글은 사진을 필수로 받기</label>
+                    </div>}
+                </div>
                 <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4">
                     <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
                         <Target size={18} className="text-blue-600" />
@@ -1434,7 +1454,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                             />
                         </div>
                     </div>
-                </div>
+                </div></div>
             )}
 
             {/* 7. 신청자 전용 맞춤 버튼 및 팝업 설정 (아코디언 카드) */}

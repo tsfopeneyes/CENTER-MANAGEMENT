@@ -35,6 +35,7 @@ import { removeFirebaseToken } from '../firebase';
 import AdminDuty from '../components/admin/duty/AdminDuty';
 import StaffPresenceToggleCard from '../components/admin/dashboard/components/StaffPresenceToggleCard';
 import AdminSurveys from '../components/admin/surveys/AdminSurveys';
+import AdminCommunity from '../components/admin/community/AdminCommunity';
 import { Menu, X as CloseIcon } from 'lucide-react';
 import { subscribeToPush } from '../utils/pushUtils';
 import { getAccountAuthClient, isAccountAuthEnabled } from '../auth/accountAuthRuntime';
@@ -811,6 +812,7 @@ const AdminDashboard = () => {
                     {activeMenu === 'RENTAL_MGMT' && (
                         <AdminRentals />
                     )}
+                    {activeMenu === 'COMMUNITY' && <AdminCommunity />}
                     {activeMenu === 'NOTIFICATIONS' && (
                         <AdminPushNotifications currentAdmin={currentAdmin} />
                     )}
