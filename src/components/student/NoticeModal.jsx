@@ -47,6 +47,7 @@ import AdminFeedbackListModal from '../admin/board/components/modals/AdminFeedba
 import { getRecruitment } from '../../utils/programRecruitment';
 import { useCurrentTime } from '../../hooks/useCurrentTime';
 import ProgramAvailabilityNotice from './components/ProgramAvailabilityNotice';
+import ChallengeCommunityModal from './modals/ChallengeCommunityModal';
 
 const NoticeModalContent = ({
     notice, context, onClose, user, fromAdmin = false, isImpersonating = false, responses, responseDetails = {}, onResponse, onRefresh, comments, newComment, setNewComment, onPostComment, onDeleteComment, onUpdate, onDelete, onViewParticipants, onRegisterRegularUser, tutorialMode = false, tutorialStep = '', tutorialOpenCardsTotal = 0, tutorialOpenCardIndex = 0, tutorialChallengeCardsTotal = 0, tutorialChallengeCardIndex = 0, onTutorialAction, onTutorialReaction, onTutorialComment
@@ -113,6 +114,7 @@ const NoticeModalContent = ({
     const [selectedMissionForDetail, setSelectedMissionForDetail] = useState(null);
     const [showSuccessPopup, setShowSuccessPopup] = useState(false);
     const [selectedParticipantForMissions, setSelectedParticipantForMissions] = useState(null);
+    const [showChallengeCommunity, setShowChallengeCommunity] = useState(false);
     const [showPostProgramPopup, setShowPostProgramPopup] = useState(false);
     const [showFeedbackModal, setShowFeedbackModal] = useState(false);
     const [showAdminFeedbackModal, setShowAdminFeedbackModal] = useState(false);
@@ -933,7 +935,7 @@ const NoticeModalContent = ({
                                                 참여자 현황
                                             </h3>
                                         </div>
-                                        <div className="flex flex-wrap gap-2.5 justify-start">
+                                        <div className="flex flex-col gap-2.5">
                                             {challengeParticipants.length === 0 ? (
                                                 <div className="w-full p-8 text-center text-tossGrey400 text-xs font-bold bg-white border border-tossGrey200 rounded-toss-xl">
                                                     첫 번째 참여자가 되어보세요.
@@ -945,26 +947,31 @@ const NoticeModalContent = ({
                                                     const completedCount = notice.challenge_missions?.filter(m => statuses[m.id]?.completed).length || 0;
 
                                                     return (
-                                                        <div 
+                                                        <button
                                                             key={challenger.user_id} 
-                                                            className="px-3 py-2 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-colors border border-tossGrey200 rounded-2xl bg-white text-center hover:border-tossBlue hover:shadow-toss-subtle min-w-[75px] max-w-[100px] flex-1"
+                                                            type="button"
+                                                            className="w-full px-4 py-3 flex items-center gap-3 cursor-pointer hover:bg-slate-50 transition-colors border border-tossGrey200 rounded-2xl bg-white text-left hover:border-tossBlue hover:shadow-toss-subtle"
                                                             onClick={() => setSelectedParticipantForMissions(challenger)}
                                                         >
-                                                            <span className="text-xs font-bold text-tossGrey850 truncate w-full px-1">
+                                                            <span className="text-xs font-black text-tossGrey850 truncate w-20 shrink-0">
                                                                 {challenger.users?.name?.replace('(guest)', '')}
                                                             </span>
-                                                            <span className={`text-[9px] font-black mt-1 px-1.5 py-0.5 rounded-full whitespace-nowrap ${
+                                                            <span className="flex flex-wrap gap-1 flex-1" aria-label={`${completedCount}/${notice.challenge_missions?.length || 0} 완료`}>
+                                                                {(notice.challenge_missions || []).map((mission, missionIndex) => <span key={mission.id || missionIndex} className={`w-3 h-3 rounded-full border ${statuses[mission.id]?.completed ? 'bg-tossBlue border-tossBlue' : 'bg-white border-tossGrey300'}`}/>) }
+                                                            </span>
+                                                            <span className={`text-[10px] font-black px-2 py-1 rounded-full whitespace-nowrap ${
                                                                 isSuccess 
                                                                     ? 'bg-tossBlueLight text-tossBlue' 
                                                                     : 'bg-tossGrey50 text-tossGrey500'
                                                             }`}>
-                                                                {completedCount}/{notice.challenge_missions?.length || 0} 완료
+                                                                {completedCount}/{notice.challenge_missions?.length || 0} {isSuccess ? '성공' : '진행'}
                                                             </span>
-                                                        </div>
+                                                        </button>
                                                     );
                                                 })
                                             )}
                                         </div>
+                                        {responseDetails[notice.id]?.status === 'JOIN' && !fromAdmin && <button type="button" onClick={() => setShowChallengeCommunity(true)} className="mt-4 w-full rounded-2xl bg-tossBlue py-4 text-sm font-black text-white shadow-md shadow-blue-100 flex items-center justify-center gap-2"><MessageSquare size={18}/>챌린지 커뮤니티 입장하기</button>}
                                     </div>
                                 </>
                             )})()}
@@ -1547,6 +1554,7 @@ const NoticeModalContent = ({
                      </div>
                  );
              })()}
+             {showChallengeCommunity && <ChallengeCommunityModal notice={{...notice,__myResponse:responseDetails[notice.id]}} user={user} onClose={() => setShowChallengeCommunity(false)} onMissionCompleted={() => { onRefresh?.(); }} />}
             {/* Post-Program Custom Popup Modal (Ultra Sleek Toss Light Minimal UI) */}
             {showPostProgramPopup && (
                 <div 
