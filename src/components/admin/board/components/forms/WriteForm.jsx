@@ -75,6 +75,11 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
             alert(validation.message);
             return;
         }
+        if (mode === CATEGORIES.PROGRAM && (formData.recruitment_push_plans || []).some(plan => plan.timing === 'NOW')
+            && !formData.guest_properties?.recruitment_push_immediate_dispatched_at
+            && !window.confirm('프로그램을 저장한 직후 선택한 대상에게 푸시를 발송합니다. 지금 진행할까요?')) {
+            return;
+        }
 
         setIsSaving(true);
         try {
@@ -171,7 +176,9 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 content: finalContent,
                 category: mode,
                 is_sticky: formData.is_sticky,
-                send_push: formData.send_push || false,
+                send_push: mode === CATEGORIES.PROGRAM
+                    ? (formData.recruitment_push_plans || []).some(plan => plan.timing === 'NOW')
+                    : formData.send_push === true,
                 images: uploadedUrls,
                 image_url: uploadedUrls.length > 0 ? uploadedUrls[0] : null,
                 is_recruiting: formData.is_recruiting,
@@ -205,7 +212,7 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 noticeData.program_duration = (formData.is_challenge && !challengeHasTime)
                     ? ''
                     : (formData.program_duration || '');
-                noticeData.program_location = formData.program_location || '';
+                noticeData.program_location = (formData.is_challenge && formData.challenge_format === 'ONLINE') ? '' : (formData.program_location || '');
                 
                 noticeData.program_type = formData.program_type;
                 
@@ -231,7 +238,8 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 noticeData.challenge_missions = formData.challenge_missions || [];
                 noticeData.challenge_success_message = formData.challenge_success_message || '';
                 noticeData.challenge_show_haifn_btn = formData.challenge_show_haifn_btn || false;
-                noticeData.community_enabled = formData.is_challenge && formData.community_enabled === true;
+                noticeData.challenge_format = formData.is_challenge ? (formData.challenge_format || 'OFFLINE') : 'OFFLINE';
+                noticeData.community_enabled = formData.is_challenge && formData.challenge_format === 'ONLINE' && formData.community_enabled === true;
                 noticeData.community_mission_mode = noticeData.community_enabled ? (formData.community_mission_mode || 'NONE') : 'NONE';
                 noticeData.community_image_required = noticeData.community_enabled && formData.community_image_required === true;
                 noticeData.community_after_end = formData.community_after_end || 'READ_ONLY';
@@ -239,6 +247,16 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 const configuredHosts = (formData.hosts || []).filter(h => h && h.host_id);
                 noticeData.guest_properties = {
                     ...gp,
+                    recruitment_push_enabled: Array.isArray(formData.recruitment_push_plans) && formData.recruitment_push_plans.length > 0,
+                    recruitment_push_plans: (formData.recruitment_push_plans || []).map(plan => ({
+                        ...plan,
+                        scheduled_at: plan.timing === 'CUSTOM' && plan.scheduled_at ? fromKstInput(plan.scheduled_at) : null
+                    })),
+                    recruitment_push_audience: formData.recruitment_push_audience || 'TARGET_REGIONS',
+                    recruitment_push_timing: formData.recruitment_push_timing || 'AT_START',
+                    recruitment_push_scheduled_at: formData.recruitment_push_timing === 'CUSTOM' && formData.recruitment_push_scheduled_at
+                        ? fromKstInput(formData.recruitment_push_scheduled_at)
+                        : null,
                     require_school: true,
                     require_phone: true,
                     custom_fields: (Array.isArray(gp.custom_fields) ? gp.custom_fields : [])
@@ -330,7 +348,7 @@ const WriteForm = ({ mode, editNoticeId, existingNotice, onSave, onCancel, flat 
                 
                 <PollBuilder formData={formData} updateField={updateField} />
 
-                <PostSettings formData={formData} updateField={updateField} mode={mode} />
+                <PostSettings formData={formData} updateField={updateField} mode={mode} noticeId={editNoticeId} />
 
                 {/* --- Image Upload Section --- */}
                 <div className="space-y-4 pt-4 border-t border-gray-50">

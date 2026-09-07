@@ -48,6 +48,7 @@ const AdminDashboard = () => {
     const [currentAdmin, setCurrentAdmin] = useState(null);
     useFCM(currentAdmin);
     const [activeMenu, setActiveMenu] = useState('STATUS'); // STATUS, BOARD, GALLERY, USERS, STATISTICS, LOGS, SETTINGS
+    const [programNoticeToOpen, setProgramNoticeToOpen] = useState(null);
     const [isMenuOpen, setIsMenuOpen] = useState(false);
     const [isSidebarPinned, setIsSidebarPinned] = useState(true);
     const [loading, setLoading] = useState(true);
@@ -792,10 +793,15 @@ const AdminDashboard = () => {
                         </div>
                     )}
                     {activeMenu === 'CALENDAR' && (
-                        <AdminCalendar notices={notices} fetchData={fetchData} setActiveMenu={setActiveMenu} />
+                        <AdminCalendar notices={notices} fetchData={fetchData} setActiveMenu={setActiveMenu}
+                            onOpenProgram={(noticeId) => {
+                                setProgramNoticeToOpen(noticeId);
+                                setActiveMenu('PROGRAMS');
+                            }} />
                     )}
                     {activeMenu === 'PROGRAMS' && (
-                        <AdminBoard mode="PROGRAM" notices={notices} fetchData={fetchData} users={users} currentLocations={currentLocations} setActiveMenu={setActiveMenu} />
+                        <AdminBoard mode="PROGRAM" notices={notices} fetchData={fetchData} users={users} currentLocations={currentLocations} setActiveMenu={setActiveMenu}
+                            initialNoticeId={programNoticeToOpen} onInitialNoticeOpened={() => setProgramNoticeToOpen(null)} />
                     )}
                     {activeMenu === 'BOARD' && (
                         <AdminBoard mode="NOTICE" notices={notices} fetchData={fetchData} users={users} currentLocations={currentLocations} setActiveMenu={setActiveMenu} />

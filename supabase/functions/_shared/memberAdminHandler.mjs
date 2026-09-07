@@ -10,12 +10,14 @@ export function createMemberAdminHandler({members,allowedOrigins=[]}){
         if(request.method!=='POST')return out(405,{error:'method_not_allowed'});
         const bearer=request.headers.get('Authorization');if(!/^Bearer [^\s]{1,8192}$/.test(bearer||''))return out(401,{error:'invalid_login'});
         let input;try{const text=await request.text();if(text.length>2048)throw Error();input=JSON.parse(text);}catch{return out(400,{error:'invalid_request'});}
-        if(input?.protocol!==1||!['set-admin','list-merge-reviews','merge'].includes(input.action))return out(400,{error:'invalid_request'});
+        if(input?.protocol!==1||!['set-admin','withdraw','list-merge-reviews','merge'].includes(input.action))return out(400,{error:'invalid_request'});
         const allowed=input.action==='set-admin'?['protocol','action','profileId','admin']:
+            input.action==='withdraw'?['protocol','action','profileId']:
             input.action==='merge'?['protocol','action','requestId','sourceProfileId','targetProfileId']:['protocol','action'];
         if(Object.keys(input).some(key=>!allowed.includes(key)))return out(400,{error:'invalid_request'});
         try{const accessToken=bearer.slice(7);const result=input.action==='set-admin'
             ?await members.setRole({accessToken,profileId:input.profileId,admin:input.admin})
+            :input.action==='withdraw'?await members.withdraw({accessToken,profileId:input.profileId})
             :input.action==='merge'?await members.merge({accessToken,requestId:input.requestId,
                 sourceProfileId:input.sourceProfileId,targetProfileId:input.targetProfileId})
                 :await members.listReviews({accessToken});return out(200,result);}

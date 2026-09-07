@@ -1,5 +1,7 @@
 import {LoginError,isProfileId,normalizeLoginName} from './loginSecurity.mjs';
 
+const normalizeGuestName=value=>String(value||'').replace(/\s*\(guest\)\s*$/i,'').trim().normalize('NFC');
+
 // Server-only final stage. accessToken is the new password-verified session held
 // by the registration server, never obtained from a cached member profile.
 export function createMembershipFinalizer({pool,keyFor,validateForm,verifyToken,readiness=async()=>false,now=Date.now}) {
@@ -54,7 +56,7 @@ export function createMembershipFinalizer({pool,keyFor,validateForm,verifyToken,
                 AND (u.preferences->>'is_temporary'='true' OR u.user_group IN ('게스트','미가입'))
                 AND (u.id=$1::uuid OR regexp_replace(COALESCE(u.phone,''),'[^0-9]','','g')=$2)`,
                 [requestedGuestUserId||principal.authUserId,profile.phone.replace(/-/g,'')])).rows;
-            const exact=item=>item.name?.trim().normalize('NFC')===profile.name.trim().normalize('NFC')&&
+            const exact=item=>normalizeGuestName(item?.name)===normalizeGuestName(profile.name)&&
                 item.birth===profile.birth&&String(item.phone||'').replace(/[^0-9]/g,'')===profile.phone.replace(/-/g,'');
             if(guestUserId&&!exact(temporary.find(item=>item.id===guestUserId)))guestUserId=null;
             if(!requestedGuestUserId){const compatible=temporary.filter(exact);if(compatible.length===1)guestUserId=compatible[0].id;}
@@ -66,7 +68,7 @@ export function createMembershipFinalizer({pool,keyFor,validateForm,verifyToken,
                 const guest=(await query(`SELECT id,name,birth,phone,user_group,preferences,auth_user_id FROM public.users
                     WHERE id=$1 FOR UPDATE`,[guestUserId])).rows[0];
                 const alreadyMapped=(await query(`SELECT 1 FROM account_security.accounts WHERE profile_id=$1`,[guestUserId])).rows.length;
-                if(!guest||alreadyMapped||guest.auth_user_id!==null||guest.name?.trim().normalize('NFC')!==profile.name.trim().normalize('NFC')||
+                if(!guest||alreadyMapped||guest.auth_user_id!==null||normalizeGuestName(guest.name)!==normalizeGuestName(profile.name)||
                     guest.birth!==profile.birth||String(guest.phone||'').replace(/[^0-9]/g,'')!==profile.phone.replace(/-/g,'')||
                     !(guest.preferences?.is_temporary===true||['게스트','미가입'].includes(guest.user_group)))throw review();
                 const duplicate=(await query(`SELECT 1 FROM public.users u WHERE id<>$1

@@ -29,7 +29,8 @@ const EventEditModal = ({
     handleDelete, 
     setShowModal,
     setActiveMenu,
-    onProgramSaved
+    onProgramSaved,
+    onOpenProgram
 }) => {
     useModalClose(true, () => setShowModal(false));
     const [localMain, setLocalMain] = useState('');
@@ -48,6 +49,17 @@ const EventEditModal = ({
     const isProgram = selectedEvent?.id?.startsWith('PRG-') || selectedEvent?.isPublic;
     const isRental = selectedEvent?.id?.startsWith('RNT-') || selectedEvent?.category_id === 'RENTAL';
     const isReadOnly = isProgram || isRental;
+
+    const openProgramManagement = () => {
+        const noticeId = selectedEvent?.originalId || selectedEvent?.raw?.id;
+        if (!noticeId) {
+            alert('연결된 프로그램 정보를 찾지 못했습니다.');
+            return;
+        }
+        setShowModal(false);
+        if (onOpenProgram) onOpenProgram(noticeId);
+        else setActiveMenu('PROGRAMS');
+    };
 
     // Initialize/Sync local main categories for location picker
     useEffect(() => {
@@ -321,10 +333,7 @@ const EventEditModal = ({
                         {isProgram && setActiveMenu && (
                             <button
                                 type="button"
-                                onClick={() => {
-                                    setActiveMenu('PROGRAMS');
-                                    setShowModal(false);
-                                }}
+                                onClick={openProgramManagement}
                                 className="w-full py-3 bg-pink-600 hover:bg-pink-700 text-white rounded-2xl font-black shadow-lg shadow-pink-200 text-xs tracking-wider transition-all"
                             >
                                 프로그램 관리 바로가기

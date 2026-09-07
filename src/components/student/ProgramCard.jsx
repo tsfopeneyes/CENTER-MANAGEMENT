@@ -6,7 +6,6 @@ import { parseDurationToMinutes, formatKoreanTimeRange } from '../../utils/dateU
 import { getRecruitment, getRecruitmentStart, formatRecruitmentStart } from '../../utils/programRecruitment';
 import { useCurrentTime } from '../../hooks/useCurrentTime';
 import RecruitmentBadge from './components/RecruitmentBadge';
-import RecruitmentInterestButton from './components/RecruitmentInterestButton';
 
 const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel }) => {
     const now = useCurrentTime();
@@ -63,7 +62,7 @@ const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel 
             data-tour={tourTarget}
             data-tour-label={tourLabel}
             onClick={isScheduled ? undefined : () => onClick(program)}
-            className={`group bg-white overflow-hidden shadow-toss-standard transition-all duration-300 flex flex-col border-none ${isScheduled ? 'cursor-default' : 'hover:shadow-toss-elevated active:scale-[0.98] cursor-pointer'} ${thumb ? 'h-full' : 'self-start'} ${compact ? 'rounded-toss-lg' : 'rounded-toss-xl'}`}
+            className={`group h-full bg-white overflow-hidden shadow-toss-standard transition-all duration-300 flex flex-col border-none ${isScheduled ? 'cursor-default' : 'hover:shadow-toss-elevated active:scale-[0.98] cursor-pointer'} ${compact ? 'rounded-toss-lg' : 'rounded-toss-xl'}`}
         >
             {/* Thumbnail Section */}
             <div className={thumb ? `relative aspect-square overflow-hidden bg-tossGrey50 border-b border-tossGrey100/50 ${compact ? 'rounded-t-toss-lg' : 'rounded-t-toss-xl'}` : `${compact ? 'px-4 pt-4' : 'px-6 pt-6'}`}>
@@ -177,11 +176,24 @@ const ProgramCard = ({ program, onClick, compact = false, tourTarget, tourLabel 
                         신청 없이 참여할 수 있어요!
                     </button>
                 ) : (
-                    <div className="flex items-stretch gap-2 mt-auto">
-                    <button type="button" disabled={isScheduled} className={`w-full min-w-0 px-2 font-bold leading-relaxed transition-colors active:scale-95 shadow-toss-subtle border border-transparent ${compact ? 'py-2 rounded-toss-md text-xs' : 'py-3.5 rounded-toss-xl text-sm'} ${isScheduled ? 'bg-tossBlue text-white cursor-default' : program.responseStatus === 'JOIN' ? 'bg-tossGrey100 text-tossGrey500 pointer-events-none shadow-none' : (program.responseStatus === 'WAITLIST' ? 'bg-tossWarning/10 text-[#fe9800] pointer-events-none shadow-none' : 'bg-tossBlue text-white hover:bg-tossBlueHover')}`}>
-                        {isScheduled ? scheduledLabel : !recruitment.canViewDetails ? recruitment.message : !recruitment.canApply ? '상세 보기' : program.responseStatus === 'JOIN' ? '신청 완료' : (program.responseStatus === 'WAITLIST' ? '대기명단' : '신청하기')}
+                    <div className="flex items-stretch mt-auto">
+                    <button
+                        type="button"
+                        onClick={isScheduled ? (event) => {
+                            event.stopPropagation();
+                            const capacity = program.max_capacity > 0 ? `${program.max_capacity}명` : '제한 없음';
+                            window.dispatchEvent(new CustomEvent('app-alert', {
+                                detail: {
+                                    title: program.title || '프로그램',
+                                    message: `일시: ${formatDate(program.program_date)}\n장소: ${program.program_location || '장소 미정'}\n정원: ${capacity}`,
+                                    highlight: scheduledLabel
+                                }
+                            }));
+                        } : undefined}
+                        className={`w-full min-w-0 px-2 font-bold leading-relaxed transition-colors active:scale-95 shadow-toss-subtle border border-transparent ${compact ? 'py-2 rounded-toss-md text-xs' : 'py-3.5 rounded-toss-xl text-sm'} ${isScheduled ? 'bg-tossBlue text-white hover:bg-tossBlueHover cursor-pointer' : program.responseStatus === 'JOIN' ? 'bg-tossGrey100 text-tossGrey500 pointer-events-none shadow-none' : (program.responseStatus === 'WAITLIST' ? 'bg-tossWarning/10 text-[#fe9800] pointer-events-none shadow-none' : 'bg-tossBlue text-white hover:bg-tossBlueHover')}`}
+                    >
+                        {isScheduled ? '모집 예정' : !recruitment.canViewDetails ? recruitment.message : !recruitment.canApply ? '상세 보기' : program.responseStatus === 'JOIN' ? '신청 완료' : (program.responseStatus === 'WAITLIST' ? '대기명단' : '신청하기')}
                     </button>
-                    {isScheduled && <RecruitmentInterestButton noticeId={program.id}/>}
                     </div>
                 )}
             </div>

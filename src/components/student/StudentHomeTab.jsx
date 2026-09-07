@@ -66,6 +66,7 @@ const StudentHomeTab = ({
     const [selectedContent, setSelectedContent] = useState(null);
     const contentScrollRef = useRef(null);
     const contentDragRef = useRef({ active: false, startX: 0, scrollLeft: 0, moved: false });
+    const programDragRef = useRef({ active: false, container: null, startX: 0, scrollLeft: 0, moved: false });
 
     const startContentDrag = (event) => {
         const container = contentScrollRef.current;
@@ -84,6 +85,29 @@ const StudentHomeTab = ({
 
     const endContentDrag = () => {
         contentDragRef.current.active = false;
+    };
+
+    const startProgramDrag = (event) => {
+        const container = event.currentTarget;
+        programDragRef.current = { active: true, container, startX: event.clientX, scrollLeft: container.scrollLeft, moved: false };
+    };
+
+    const moveProgramDrag = (event) => {
+        const drag = programDragRef.current;
+        if (!drag.active || drag.container !== event.currentTarget) return;
+        const distance = event.clientX - drag.startX;
+        if (Math.abs(distance) > 4) drag.moved = true;
+        drag.container.scrollLeft = drag.scrollLeft - distance;
+    };
+
+    const endProgramDrag = () => {
+        programDragRef.current.active = false;
+    };
+
+    const preventProgramClickAfterDrag = (event) => {
+        if (!programDragRef.current.moved) return;
+        event.preventDefault();
+        event.stopPropagation();
     };
 
     useEffect(() => {
@@ -610,9 +634,17 @@ const StudentHomeTab = ({
                                                         현재 {user?.name?.replace('(guest)', '') || '학생'}님이 참여 신청했어요
                                                     </p>
                                                 </div>
-                                                <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x no-swipe" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                                                <div
+                                                    className="no-swipe flex cursor-grab snap-x gap-3 overflow-x-auto pb-1 active:cursor-grabbing"
+                                                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                                                    onMouseDown={startProgramDrag}
+                                                    onMouseMove={moveProgramDrag}
+                                                    onMouseUp={endProgramDrag}
+                                                    onMouseLeave={endProgramDrag}
+                                                    onClickCapture={preventProgramClickAfterDrag}
+                                                >
                                                     {myJoinedPrograms.map(p => (
-                                                        <div key={p.id} className={myJoinedPrograms.length === 1 ? "w-full snap-start shrink-0" : "min-w-[160px] w-[160px] shrink-0 snap-start"}>
+                                                        <div key={p.id} className={myJoinedPrograms.length === 1 ? "w-full snap-start shrink-0" : "w-[220px] shrink-0 snap-start"}>
                                                             <ProgramCard
                                                                 program={{ ...p, responseStatus: responses[p.id] }}
                                                                 onClick={openNoticeDetail}
@@ -637,9 +669,17 @@ const StudentHomeTab = ({
                                                     </div>
                                                     <p className="text-[10.5px] sm:text-[11.5px] text-tossGrey500 font-semibold pl-2.5">누구나 신청 없이 함께할 수 있어요</p>
                                                 </div>
-                                                <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x no-swipe" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                                                <div
+                                                    className="no-swipe flex cursor-grab snap-x gap-3 overflow-x-auto pb-1 active:cursor-grabbing"
+                                                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                                                    onMouseDown={startProgramDrag}
+                                                    onMouseMove={moveProgramDrag}
+                                                    onMouseUp={endProgramDrag}
+                                                    onMouseLeave={endProgramDrag}
+                                                    onClickCapture={preventProgramClickAfterDrag}
+                                                >
                                                     {openPrograms.slice(0, item.count || 10).map(p => (
-                                                        <div key={p.id} className={openPrograms.length === 1 ? "w-full snap-start shrink-0" : "min-w-[160px] w-[160px] shrink-0 snap-start"}>
+                                                        <div key={p.id} className={openPrograms.length === 1 ? "w-full snap-start shrink-0" : "w-[220px] shrink-0 snap-start"}>
                                                             <ProgramCard
                                                                 program={{ ...p, responseStatus: responses[p.id] }}
                                                                 onClick={openNoticeDetail}
@@ -665,9 +705,17 @@ const StudentHomeTab = ({
                                                     </div>
                                                     <p className="text-[10.5px] sm:text-[11.5px] text-tossGrey500 font-semibold pl-2.5">미리 신청하고 약속된 시간에 만나요!</p>
                                                 </div>
-                                                <div className="flex gap-3 overflow-x-auto pb-1 -mx-4 px-4 snap-x no-swipe" style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}>
+                                                <div
+                                                    className="no-swipe flex cursor-grab snap-x gap-3 overflow-x-auto pb-1 active:cursor-grabbing"
+                                                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                                                    onMouseDown={startProgramDrag}
+                                                    onMouseMove={moveProgramDrag}
+                                                    onMouseUp={endProgramDrag}
+                                                    onMouseLeave={endProgramDrag}
+                                                    onClickCapture={preventProgramClickAfterDrag}
+                                                >
                                                     {applyPrograms.slice(0, item.count || 10).map(p => (
-                                                        <div key={p.id} className={applyPrograms.length === 1 ? "w-full snap-start shrink-0" : "min-w-[160px] w-[160px] shrink-0 snap-start"}>
+                                                        <div key={p.id} className={applyPrograms.length === 1 ? "w-full snap-start shrink-0" : "w-[220px] shrink-0 snap-start"}>
                                                             <ProgramCard
                                                                 program={{ ...p, responseStatus: responses[p.id] }}
                                                                 onClick={openNoticeDetail}

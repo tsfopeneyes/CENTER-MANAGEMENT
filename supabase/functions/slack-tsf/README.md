@@ -34,6 +34,7 @@ TSF는 Slack 질문을 OpenAI Responses API로 이해한 뒤, 필요한 자료�
 ```text
 OPENAI_API_KEY
 OPENAI_MODEL=gpt-5.6-terra
+OPENAI_REASONING_EFFORT=medium
 NOTION_API_KEY
 SLACK_BOT_TOKEN
 SLACK_SIGNING_SECRET
@@ -71,7 +72,9 @@ commands
 
 또한 Slack App 설정에서 Interactivity를 켜고 Request URL에 같은 Edge Function 주소를 넣어야 확인 버튼이 동작합니다. App Home의 **Messages Tab**도 켜고 Event Subscriptions에 `message.im`을 추가하면 퐁퐁에게 DM으로도 질문할 수 있습니다. 저장 뒤 앱을 다시 설치해 변경 권한을 적용하세요.
 
-TSF는 멘션된 같은 스레드의 최근 대화만 읽어 후속 답변(예: “그 프로젝트에 연결해줘”)을 이어서 처리합니다. 이를 위해 위의 History 권한이 필요합니다.
+TSF는 같은 스레드의 최근 대화를 읽어 후속 답변을 이어서 처리하고, 회의·일정·결정·진행 상황처럼 채널 대화에 근거해야 하는 질문에는 봇이 참여 중인 허용 채널을 기간과 주제로 검색합니다. 출처가 지정되지 않으면 Notion도 함께 확인합니다. 이를 위해 위의 Read/History 권한이 필요합니다.
+
+`OPENAI_REASONING_EFFORT`는 `low`, `medium`, `high`, `xhigh` 중에서 정할 수 있습니다. 기본값은 `medium`입니다. 일상 질문은 병렬로 여러 자료원을 확인하므로, 새 질문 유형마다 별도의 문장 감지 규칙을 추가할 필요가 없습니다.
 
 `@TSF 지난주 전 채널 운영 보고서 만들어줘` 또는 `/tsf 지난주 전체 채널 내용을 수합해서 운영 보고서 만들어줘`라고 요청하면, 봇이 초대된 공개·비공개 채널의 해당 기간 메시지와 웹앱 집계를 함께 정리합니다. DM과 그룹 DM은 보고서 수합 대상에서 제외합니다. `TSF_REPORT_ALLOWED_CHANNEL_IDS`를 비워 두면 봇이 들어가 있는 모든 채널을 대상으로 하고, 값을 넣으면 해당 채널만 대상으로 제한합니다.
 

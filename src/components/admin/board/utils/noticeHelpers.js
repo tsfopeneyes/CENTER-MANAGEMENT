@@ -27,6 +27,7 @@ export const generateProgramInfoHtml = ({
     program_end_date,
     program_days,
     is_challenge,
+    challenge_format,
     challenge_missions
 }) => {
     const leaderWarning = is_leader_only 
@@ -56,7 +57,7 @@ export const generateProgramInfoHtml = ({
     <p style="margin: 0 0 8px 0;"><strong>📅 진행 기간:</strong> ${start} ~ ${end}</p>
     <p style="margin: 0 0 8px 0;"><strong>🗓️ 진행 요일:</strong> ${daysText}</p>
     <p style="margin: 0 0 8px 0;"><strong>⏰ 진행 시간:</strong> ${formattedTime} (${program_duration || '미정'})</p>
-    <p style="margin: 0 0 8px 0;"><strong>📍 장소:</strong> ${program_location || '미정'}</p>
+    ${challenge_format === 'ONLINE' ? '<p style="margin: 0 0 8px 0;"><strong>🌐 진행 방식:</strong> 온라인 · 어디서든 참여</p>' : `<p style="margin: 0 0 8px 0;"><strong>📍 장소:</strong> ${program_location || '미정'}</p>`}
     ${leaderWarning}
 </div>
 `;
@@ -101,6 +102,31 @@ export const prepareNoticeForEdit = (notice) => {
         is_recruiting: notice.is_recruiting,
         is_sticky: notice.is_sticky || false,
         send_push: false,
+        recruitment_push_enabled: notice.guest_properties?.recruitment_push_enabled !== false,
+        recruitment_push_audience: notice.guest_properties?.recruitment_push_audience === 'INTERESTED'
+            ? 'TARGET_REGIONS'
+            : (notice.guest_properties?.recruitment_push_audience || 'TARGET_REGIONS'),
+        recruitment_push_timing: notice.guest_properties?.recruitment_push_timing || 'AT_START',
+        recruitment_push_scheduled_at: notice.guest_properties?.recruitment_push_scheduled_at
+            ? toKstInput(notice.guest_properties.recruitment_push_scheduled_at)
+            : '',
+        recruitment_push_plans: Array.isArray(notice.guest_properties?.recruitment_push_plans)
+            ? notice.guest_properties.recruitment_push_plans.map(plan => ({
+                ...plan,
+                scheduled_at: plan.scheduled_at ? toKstInput(plan.scheduled_at) : ''
+            }))
+            : (notice.guest_properties?.recruitment_push_enabled === true
+                && notice.guest_properties?.recruitment_push_timing !== 'OFF'
+                && notice.guest_properties?.recruitment_push_audience !== 'INTERESTED'
+                ? [{
+                    id: (notice.guest_properties?.recruitment_push_timing || 'AT_START').toLowerCase(),
+                    timing: notice.guest_properties?.recruitment_push_timing || 'AT_START',
+                    audience: notice.guest_properties?.recruitment_push_audience || 'TARGET_REGIONS',
+                    scheduled_at: notice.guest_properties?.recruitment_push_scheduled_at
+                        ? toKstInput(notice.guest_properties.recruitment_push_scheduled_at)
+                        : ''
+                }]
+                : []),
         category: notice.category,
         recruitment_deadline: toKstInput(notice.recruitment_deadline),
         recruitment_start_at: toKstInput(getRecruitmentStart(notice)),
@@ -135,6 +161,7 @@ export const prepareNoticeForEdit = (notice) => {
         is_challenge: notice.is_challenge || false,
         challenge_has_time: notice.guest_properties?.challenge_has_time
             ?? Boolean(notice.is_challenge && notice.program_date && notice.program_duration),
+        challenge_format: notice.challenge_format || 'OFFLINE',
         challenge_missions: notice.challenge_missions || [],
         challenge_success_message: notice.challenge_success_message || '',
         challenge_show_haifn_btn: notice.challenge_show_haifn_btn ?? false,

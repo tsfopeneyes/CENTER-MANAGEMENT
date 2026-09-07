@@ -38,6 +38,7 @@ const normalizeSearch = (value) =>
     .replace(/\s+/g, "")
     .toLowerCase();
 export default function AdminPushNotifications() {
+  const testMode = new URLSearchParams(window.location.search).get("programPushTest") === "1";
   const [form, setForm] = useState({
     title: "",
     body: "",
@@ -55,6 +56,14 @@ export default function AdminPushNotifications() {
     [sending, setSending] = useState(false),
     [loading, setLoading] = useState(true),
     [deletingId, setDeletingId] = useState("");
+  const programTestNotice = useMemo(
+    () => notices.find((notice) => notice.category === "PROGRAM" && notice.title === "DINNER CHURCH [9월: 관심]"),
+    [notices],
+  );
+  const programTestUser = useMemo(
+    () => users.find((user) => normalizeSearch(user.name) === "jin" && isStaffUser(user)),
+    [users],
+  );
   const load = useCallback(async (options = {}) => {
     const silent = options?.silent === true;
     if (!silent) setLoading(true);
@@ -244,6 +253,30 @@ export default function AdminPushNotifications() {
       setSending(false);
     }
   };
+  const sendProgramTest = async () => {
+    if (!programTestNotice || !programTestUser) return alert("테스트할 프로그램 또는 Jin 계정을 찾지 못했습니다.");
+    const title = "프로그램 모집 알림";
+    const body = `${programTestNotice.title}\n프로그램 신청이 시작됐어요!`;
+    setSending(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("send-push", { body: {
+        action: "test-program-push", title, body, targetKind: "USERS",
+        userIds: [programTestUser.id], noticeId: programTestNotice.id,
+        programTiming: "AT_START", url: `/p/${programTestNotice.id}`, manual: false,
+      }});
+      if (error) throw error;
+      if (!data?.success || Number(data?.successCount || 0) < 1) {
+        throw new Error(Number(data?.targetCount || 0) === 0
+          ? "Jin 계정에 연결된 알림 기기가 없습니다."
+          : `전송 실패: ${(data?.failureReasons || []).join(", ") || "알 수 없는 오류"}`);
+      }
+      alert(`프로그램 테스트 푸시를 보냈습니다.\n대상 Jin · 성공 ${data.successCount}대${data.failureCount ? ` · 실패 ${data.failureCount}대` : ""}`);
+    } catch (error) {
+      alert(`프로그램 테스트 푸시를 보내지 못했습니다.\n${error.message || ""}`);
+    } finally {
+      setSending(false);
+    }
+  };
   return (
     <div className="space-y-6 animate-fade-in-up">
       <AdminPageHeader
@@ -252,6 +285,17 @@ export default function AdminPushNotifications() {
         icon={<BellRing />}
       />
       <div className="space-y-6">
+        {testMode && (
+          <section className="rounded-3xl border border-blue-200 bg-blue-50 p-6">
+            <p className="text-sm font-extrabold text-blue-700">프로그램 예약 푸시 비공개 테스트</p>
+            <p className="mt-2 font-bold text-gray-900">{programTestNotice?.title || "프로그램을 불러오는 중..."}</p>
+            <p className="mt-1 text-sm text-gray-600">대상: {programTestUser ? "Jin 스탭 1명" : "Jin 계정을 찾는 중..."} · 실제 예약 상태는 변경되지 않습니다.</p>
+            <button type="button" disabled={sending || loading || !programTestNotice || !programTestUser}
+              onClick={sendProgramTest} className="mt-4 rounded-xl bg-blue-600 px-5 py-3 text-sm font-extrabold text-white disabled:opacity-40">
+              {sending ? "테스트 발송 중..." : "Jin에게 테스트 발송"}
+            </button>
+          </section>
+        )}
         <form
           onSubmit={send}
           className="space-y-6 rounded-3xl border border-gray-100 bg-white p-6 shadow-sm md:p-8"

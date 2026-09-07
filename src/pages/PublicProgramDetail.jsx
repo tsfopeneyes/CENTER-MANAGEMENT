@@ -20,6 +20,7 @@ import ProgramAvailabilityNotice from '../components/student/components/ProgramA
 import RecruitmentBadge from '../components/student/components/RecruitmentBadge';
 import { readNoticeWithPreview } from '../api/programReadApi';
 import SignUpForm from '../components/auth/SignUpForm';
+import DatePicker from '../components/common/DatePicker';
 
 const isInternalAccount = (user) => {
     if (!user) return false;
@@ -307,7 +308,7 @@ const PublicProgramDetail = () => {
                     .from('users')
                     .insert([{
                         id: newUserId,
-                        name: `${guestForm.name}(guest)`,
+                        name: guestForm.name.trim(),
                         gender: 'M',
                         school: normalizeSchoolName(guestForm.school),
                         birth: birthInfo.yymmdd,
@@ -696,9 +697,15 @@ const PublicProgramDetail = () => {
         }
 
         try {
+            const shareText = [
+                notice?.title || 'SCI CENTER 프로그램',
+                formattedSchedule ? `일정: ${formattedSchedule}` : null,
+                `장소: ${notice?.program_location || location || '미정'}`,
+                '프로그램 내용을 확인하고 신청해 보세요!'
+            ].filter(Boolean).join('\n');
             await navigator.share({
                 title: notice?.title || 'SCI CENTER 프로그램',
-                text: notice?.title || 'SCI CENTER 프로그램에 참여해 보세요.',
+                text: shareText,
                 url: programUrl
             });
         } catch (err) {
@@ -1218,15 +1225,13 @@ const PublicProgramDetail = () => {
                             </button>
                         </div>
 
-                        {typeof navigator !== 'undefined' && navigator.share && (
-                            <button
-                                type="button"
-                                onClick={shareProgramUrl}
-                                className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-100 px-3 py-3 text-sm font-bold text-blue-600 transition hover:bg-blue-50"
-                            >
-                                <Share size={16} /> 다른 앱으로 공유
-                            </button>
-                        )}
+                        <button
+                            type="button"
+                            onClick={shareProgramUrl}
+                            className="mt-2 flex w-full items-center justify-center gap-2 rounded-xl border border-blue-100 px-3 py-3 text-sm font-bold text-blue-600 transition hover:bg-blue-50"
+                        >
+                            <Share size={16} /> 공유하기
+                        </button>
                     </div>
                 </div>
             )}
@@ -1337,10 +1342,7 @@ const PublicProgramDetail = () => {
 
                                 <div>
                                     <label className="block text-[11px] font-black text-gray-400 mb-1.5 ml-1 uppercase">생년월일</label>
-                                    <div className="relative">
-                                        <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-300" size={18} />
-                                        <input type="date" name="birth" required max={new Date().toLocaleDateString('en-CA')} value={guestForm.birth} onChange={handleGuestFormChange} className="w-full pl-11 pr-4 py-3 bg-gray-50 border border-gray-100 rounded-xl focus:ring-4 focus:ring-blue-500/10 focus:bg-white outline-none font-bold text-sm" />
-                                    </div>
+                                    <DatePicker label="생년월일" required max={new Date().toLocaleDateString('en-CA')} value={guestForm.birth} onChange={(birth) => setGuestForm(prev => ({ ...prev, birth }))} />
                                 </div>
 
                                 {parseGuestBirthDate(guestForm.birth)?.isUnder14 && (

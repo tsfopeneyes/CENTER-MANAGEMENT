@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { CATEGORIES, PROGRAM_TYPES, MAX_PROGRAM_HAIFN_REWARD } from '../utils/constants';
+import { CATEGORIES, PROGRAM_TYPES } from '../utils/constants';
 import { fromKstInput, validateRecruitmentForm } from '../../../../utils/programRecruitment';
 
 const INITIAL_NOTICE_STATE = {
@@ -9,10 +9,16 @@ const INITIAL_NOTICE_STATE = {
     is_recruiting: false,
     is_sticky: false,
     send_push: false,
+    recruitment_push_enabled: false,
+    recruitment_push_audience: 'TARGET_REGIONS',
+    recruitment_push_timing: 'OFF',
+    recruitment_push_scheduled_at: '',
+    recruitment_push_plans: [],
     category: CATEGORIES.NOTICE,
     is_private: false,
     is_challenge: false,
     challenge_has_time: false,
+    challenge_format: 'OFFLINE',
     challenge_missions: [],
     challenge_success_message: '',
     challenge_show_haifn_btn: false,
@@ -34,15 +40,16 @@ const INITIAL_NOTICE_STATE = {
     allow_multiple_votes: false,
     poll_deadline: '',
     poll_options: [],
-    haifn_reward: 5,
+    haifn_reward: 0,
     program_start_date: '',
     program_end_date: '',
     program_days: [],
     host_id: '',
     host_ids: [],
     hosts: [],
+    enable_hosts: false,
     host_one_liner: '',
-    guest_properties: { allow_guest: true, require_school: true, require_phone: true },
+    guest_properties: { allow_guest: false, require_school: true, require_phone: true },
     enable_post_program_button: false,
     post_program_button_trigger: 'start_time',
     post_program_button_offset_minutes: 0,
@@ -78,7 +85,7 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
         category: mode,
         is_recruiting: mode === CATEGORIES.PROGRAM,
         max_capacity: mode === CATEGORIES.PROGRAM ? 0 : '',
-        haifn_reward: mode === CATEGORIES.PROGRAM ? MAX_PROGRAM_HAIFN_REWARD : 5
+        haifn_reward: 0
     });
 
     const updateField = useCallback((field, value) => {
@@ -91,7 +98,7 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
             category: targetMode,
             is_recruiting: targetMode === CATEGORIES.PROGRAM,
             max_capacity: targetMode === CATEGORIES.PROGRAM ? 0 : '',
-            haifn_reward: targetMode === CATEGORIES.PROGRAM ? MAX_PROGRAM_HAIFN_REWARD : 5
+            haifn_reward: 0
         });
     }, []);
 
@@ -103,6 +110,14 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
         if (mode === CATEGORIES.PROGRAM) {
             const recruitmentError = validateRecruitmentForm(formData);
             if (recruitmentError) return { isValid: false, message: recruitmentError };
+            const customPushPlans = (formData.recruitment_push_plans || []).filter(plan => plan.timing === 'CUSTOM');
+            for (const plan of customPushPlans) {
+                if (!plan.scheduled_at) {
+                    return { isValid: false, message: '푸시 발송 시간을 선택해주세요.' };
+                }
+                const pushAt = new Date(fromKstInput(plan.scheduled_at)).getTime();
+                if (pushAt <= Date.now()) return { isValid: false, message: '푸시 발송 시간은 현재 이후로 선택해주세요.' };
+            }
             const scheduled = formData.is_recruiting && new Date(fromKstInput(formData.recruitment_start_at)).getTime() > Date.now();
             if (formData.is_challenge) {
                 // 챌린지 프로그램은 모집 여부와 관계없이 시작일/종료일을 사용합니다.
@@ -147,7 +162,7 @@ const useNoticeForm = (mode = CATEGORIES.NOTICE) => {
             if (!scheduled && !formData.is_challenge && !formData.program_duration?.trim()) {
                 return { isValid: false, message: '소요 시간을 입력해주세요.' };
             }
-            if (!scheduled && !formData.program_location?.trim()) {
+            if (!scheduled && !(formData.is_challenge && formData.challenge_format === 'ONLINE') && !formData.program_location?.trim()) {
                 return { isValid: false, message: '장소를 입력해주세요.' };
             }
         }

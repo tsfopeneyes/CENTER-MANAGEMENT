@@ -20,6 +20,7 @@ import { buildGuestPrivacyPreferences, parseGuestBirthDate } from '../utils/gues
 import { getAccountAuthClient, isAccountAuthEnabled } from '../auth/accountAuthRuntime';
 import { createAccountLoginAdapter } from '../auth/accountLoginAdapter';
 import { loadAssignedSurvey } from '../utils/surveyAssignments';
+import DatePicker from '../components/common/DatePicker';
 
 let secureLoginAdapter;
 const getSecureLoginAdapter=()=>secureLoginAdapter??=createAccountLoginAdapter({client:getAccountAuthClient(),auth:supabase.auth});
@@ -791,9 +792,9 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
 
             // 2. Find or create guest user
             let guestUserId = null;
-            const targetName = cleanName.includes('(guest)') ? cleanName : `${cleanName}(guest)`;
+            const legacyGuestName = `${cleanName.replace(/\s*\(guest\)\s*$/i, '').trim()}(guest)`;
             const guestCandidates = await requestSupabaseRest(
-                `users?select=*&name=eq.${encodeURIComponent(targetName)}`
+                `users?select=*&user_group=eq.${encodeURIComponent('게스트')}&or=(name.eq.${encodeURIComponent(cleanName)},name.eq.${encodeURIComponent(legacyGuestName)})`
             );
             const existingGuest = findMatchingGuestAccount(guestCandidates, cleanName, cleanSchool);
             const privacyPreferences = buildGuestPrivacyPreferences(existingGuest?.preferences, birthInfo.isUnder14);
@@ -859,7 +860,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json', Prefer: 'return=representation' },
                         body: JSON.stringify([{
-                        name: `${cleanName}(guest)`,
+                        name: cleanName.replace(/\s*\(guest\)\s*$/i, '').trim(),
                         school: cleanSchool,
                         user_group: '게스트',
                         role: 'student',
@@ -1536,17 +1537,7 @@ const GuestMobileWelcome = ({ isQRCheckin = true }) => {
 
                                 <div>
                                     <label className="block text-[12px] font-bold text-[#4E5968] mb-1 ml-1">생년월일</label>
-                                    <div className="relative">
-                                        <Calendar size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8B95A1]" />
-                                        <input
-                                            type="date"
-                                            required
-                                            max={new Date().toLocaleDateString('en-CA')}
-                                            value={guestBirthDate}
-                                            onChange={(e) => setGuestBirthDate(e.target.value)}
-                                            className="w-full pl-9 pr-3 py-2.5 bg-[#F9FAFB] border border-[#E5E8EB] rounded-xl text-[#191F28] outline-none focus:bg-white focus:border-[#E63946] font-bold text-sm"
-                                        />
-                                    </div>
+                                    <DatePicker label="생년월일" required max={new Date().toLocaleDateString('en-CA')} value={guestBirthDate} onChange={setGuestBirthDate} />
                                 </div>
 
                                 {parseGuestBirthDate(guestBirthDate)?.isUnder14 && (

@@ -4,6 +4,7 @@ import { User, Smartphone, School, Calendar, X } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { findMatchingGuestAccount, normalizeSchoolName } from '../../utils/userUtils';
 import { buildGuestPrivacyPreferences, parseGuestBirthDate } from '../../utils/guestBirthUtils';
+import DatePicker from '../common/DatePicker';
 
 const GuestEntryForm = ({ onSuccess, onCancel }) => {
     const [formData, setFormData] = useState({
@@ -62,7 +63,7 @@ const GuestEntryForm = ({ onSuccess, onCancel }) => {
             const { data: guestCandidates, error: guestLookupError } = await supabase
                 .from('users')
                 .select('*')
-                .eq('name', `${cleanName}(guest)`)
+                .in('name', [cleanName, `${cleanName}(guest)`])
                 .eq('user_group', '게스트');
             if (guestLookupError) throw guestLookupError;
 
@@ -123,9 +124,9 @@ const GuestEntryForm = ({ onSuccess, onCancel }) => {
             const back4 = phoneParts[2];
             const memoText = `[가입일: ${new Date().toLocaleDateString()}] [게스트 입장 완료]`;
 
-            // Append (guest) to name and set user_group
+            // 이름은 원문 그대로 저장하고 회원 유형으로 게스트를 구분한다.
             const { data: newUser, error } = await supabase.from('users').insert([{
-                name: `${cleanName}(guest)`,
+                name: cleanName,
                 gender: 'M', // default filler
                 school: cleanSchool,
                 birth: birthInfo.yymmdd,
@@ -191,10 +192,7 @@ const GuestEntryForm = ({ onSuccess, onCancel }) => {
 
             <div>
                 <label className="block text-xs font-black text-slate-400 mb-1 ml-1 uppercase">생년월일</label>
-                <div className="relative">
-                    <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-300" size={20} />
-                    <input type="date" name="birth" required max={new Date().toLocaleDateString('en-CA')} value={formData.birth} onChange={handleChange} className="w-full pl-10 pr-4 py-3 sm:py-4 bg-slate-50 border border-slate-100 rounded-xl sm:rounded-2xl focus:ring-4 focus:ring-blue-500/10 focus:bg-white outline-none font-bold" />
-                </div>
+                <DatePicker label="생년월일" required max={new Date().toLocaleDateString('en-CA')} value={formData.birth} onChange={(birth) => setFormData(prev => ({ ...prev, birth }))} />
             </div>
 
             {parseGuestBirthDate(formData.birth)?.isUnder14 && (

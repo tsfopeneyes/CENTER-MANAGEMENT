@@ -589,6 +589,9 @@ const NoticeModalContent = ({
                 handleSave={handleSave}
                 handleDelete={onDelete}
                 noticeId={notice.id}
+                shareTitle={notice.title}
+                shareSchedule={formattedSchedule}
+                shareLocation={notice.program_location || location}
             />
 
             <div data-tour={tutorialMode ? 'tutorial-program-detail' : undefined} className="flex-1 overflow-y-auto scrollbar-hide bg-white">
@@ -971,7 +974,7 @@ const NoticeModalContent = ({
                                                 })
                                             )}
                                         </div>
-                                        {notice.community_enabled && responseDetails[notice.id]?.status === 'JOIN' && !fromAdmin && <button type="button" onClick={() => setShowChallengeCommunity(true)} className="mt-4 w-full rounded-2xl bg-tossBlue py-4 text-sm font-black text-white shadow-md shadow-blue-100 flex items-center justify-center gap-2"><MessageSquare size={18}/>챌린지 커뮤니티 입장하기</button>}
+                                        {notice.challenge_format === 'ONLINE' && notice.community_enabled && responseDetails[notice.id]?.status === 'JOIN' && !fromAdmin && <button type="button" onClick={() => setShowChallengeCommunity(true)} className="mt-4 w-full rounded-2xl bg-tossBlue py-4 text-sm font-black text-white shadow-md shadow-blue-100 flex items-center justify-center gap-2"><MessageSquare size={18}/>챌린지 커뮤니티 입장하기</button>}
                                     </div>
                                 </>
                             )})()}

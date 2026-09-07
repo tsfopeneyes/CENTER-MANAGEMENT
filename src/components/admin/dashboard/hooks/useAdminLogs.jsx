@@ -397,7 +397,7 @@ export const useAdminLogs = ({ allLogs, schoolLogs, users, locations, notices, f
                     // Create new guest user
                     const memoText = `[가입일: ${new Date().toLocaleDateString()}] [수기작성을 통한 게스트 등록]`;
                     const { data: newUser, error: createError } = await supabase.from('users').insert([{
-                        name: `${guestName}(guest)`,
+                        name: guestName.trim(),
                         gender: 'M',
                         school: guestSchool,
                         birth: guestBirth,

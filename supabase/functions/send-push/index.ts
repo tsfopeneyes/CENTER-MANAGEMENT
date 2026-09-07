@@ -38,7 +38,8 @@ serve(async (req) => {
   }
 
   try {
-    const { action, title, body, userIds, targetRegions, targetKind, schoolName, noticeId, notificationId, dispatchId: requestedDispatchId, url = '/', manual = false } = await req.json()
+    const { action, title, body, userIds, targetRegions, targetKind, schoolName, noticeId, notificationId, dispatchId: requestedDispatchId, url = '/', manual = false, programAudience, programTiming } = await req.json()
+    const isProgramTest = action === 'test-program-push';
 
     // 1. 보안을 위해 환경변수에서 Firebase 키를 가져옵니다.
     const serviceAccountStr = Deno.env.get('FIREBASE_SERVICE_ACCOUNT');
@@ -128,28 +129,122 @@ serve(async (req) => {
       return Response.json({ dispatches: result }, { headers: corsHeaders });
     }
 
+    if (action === 'preview-program-push') {
+      const audience = String(programAudience || 'INTERESTED');
+      if (!['INTERESTED','TARGET_REGIONS','ALL','APPLICANTS'].includes(audience)) throw new Error('Invalid program audience.');
+      let previewUserIds: string[] | null = null;
+      if (audience === 'INTERESTED') {
+        if (!noticeId) return Response.json({ userCount: 0, pushUserCount: 0, deviceCount: 0 }, { headers: corsHeaders });
+        const { data: interests, error: interestsError } = await supabase.from('program_recruitment_interests').select('auth_user_id').eq('notice_id', noticeId).eq('enabled', true);
+        if (interestsError) throw interestsError;
+        const authIds = [...new Set((interests || []).map(row => row.auth_user_id).filter(Boolean))];
+        const { data: linked, error: linkedError } = authIds.length ? await supabase.from('users').select('id').in('auth_user_id', authIds) : { data: [], error: null };
+        if (linkedError) throw linkedError;
+        previewUserIds = (linked || []).map(row => row.id);
+      } else if (audience === 'APPLICANTS') {
+        if (!noticeId) return Response.json({ userCount: 0, pushUserCount: 0, deviceCount: 0 }, { headers: corsHeaders });
+        const { data: joined, error: joinedError } = await supabase.from('notice_responses').select('user_id').eq('notice_id', noticeId).eq('status', 'JOIN');
+        if (joinedError) throw joinedError;
+        previewUserIds = [...new Set((joined || []).map(row => row.user_id).filter(Boolean))];
+      }
+      let previewQuery = supabase.from('users').select('id,auth_user_id,fcm_token,school,role,status');
+      if (previewUserIds) previewQuery = previewUserIds.length ? previewQuery.in('id', previewUserIds) : previewQuery.eq('id', '00000000-0000-0000-0000-000000000000');
+      const { data: previewRows, error: previewError } = await previewQuery;
+      if (previewError) throw previewError;
+      let previewUsers = (previewRows || []).filter(user => user.status !== 'deleted' && String(user.role || 'user').toLowerCase() !== 'admin');
+      if (programTiming === 'AT_START' && noticeId) {
+        const { data: interests } = await supabase.from('program_recruitment_interests').select('auth_user_id').eq('notice_id', noticeId).eq('enabled', true);
+        const optedIn = new Set((interests || []).map(row => row.auth_user_id));
+        previewUsers = previewUsers.filter(user => !optedIn.has(user.auth_user_id));
+      }
+      if (audience === 'TARGET_REGIONS') {
+        let regions = Array.isArray(targetRegions) ? targetRegions.filter(Boolean) : [];
+        if (noticeId) {
+          const { data: source } = await supabase.from('notices').select('target_regions').eq('id', noticeId).maybeSingle();
+          regions = Array.isArray(source?.target_regions) ? source.target_regions.filter(Boolean) : regions;
+        }
+        if (regions.length === 1) {
+          const { data: schools } = await supabase.from('schools').select('name').in('region', regions);
+          const keys = new Set((schools || []).map(row => normalizeSchoolName(row.name)));
+          previewUsers = previewUsers.filter(user => keys.has(normalizeSchoolName(user.school || '')));
+        }
+      }
+      const previewIds = previewUsers.map(user => user.id);
+      const { data: previewDevices, error: previewDevicesError } = previewIds.length
+        ? await supabase.from('push_devices').select('user_id,id,enabled').in('user_id', previewIds).eq('enabled', true)
+        : { data: [], error: null };
+      if (previewDevicesError && previewDevicesError.code !== '42P01') throw previewDevicesError;
+      const deviceUsers = new Set((previewDevices || []).map(row => row.user_id));
+      const pushUserCount = previewUsers.filter(user => deviceUsers.has(user.id) || Boolean(String(user.fcm_token || '').trim())).length;
+      return Response.json({ userCount: previewUsers.length, pushUserCount, deviceCount: (previewDevices || []).length }, { headers: corsHeaders });
+    }
+
     if (!String(title || '').trim() || !String(body || '').trim()) throw new Error('A title and message are required.');
     if (String(title).length > 50 || String(body).length > 160) throw new Error('The notification is too long.');
     if (targetKind === 'USERS' && (!Array.isArray(userIds) || userIds.length === 0 || userIds.length > 500)) throw new Error('Valid recipients are required.');
+    if (isProgramTest && (targetKind !== 'USERS' || userIds.length !== 1 || !noticeId)) throw new Error('A program test requires one recipient and one program.');
     if (targetKind === 'SCHOOL' && !String(schoolName || '').trim()) throw new Error('A school is required.');
 
     // A notice's target must always come from its saved source record, never
     // from a browser-provided region value. This keeps the push recipient list
     // aligned with the notice even when an old tab has stale form data.
     let effectiveTargetRegions = Array.isArray(targetRegions) ? targetRegions : [];
+    let sourceNotice: any = null;
     if (noticeId) {
-      const { data: sourceNotice, error: sourceNoticeError } = await supabase
+      const { data: savedNotice, error: sourceNoticeError } = await supabase
         .from('notices')
-        .select('target_regions')
+        .select('id,title,category,target_regions,guest_properties')
         .eq('id', noticeId)
         .maybeSingle();
 
-      if (sourceNoticeError || !sourceNotice) {
+      if (sourceNoticeError || !savedNotice) {
         throw new Error('The source notice for this push notification could not be found.');
       }
-      effectiveTargetRegions = Array.isArray(sourceNotice.target_regions)
-        ? sourceNotice.target_regions.filter(Boolean)
+      sourceNotice = savedNotice;
+      effectiveTargetRegions = Array.isArray(savedNotice.target_regions)
+        ? savedNotice.target_regions.filter(Boolean)
         : [];
+
+      // A program test is deliberately server-verified. It exercises the same
+      // delivery transport and deep link as a scheduled program push without
+      // changing the saved plan, job state, or program dispatch result.
+      if (isProgramTest) {
+        if (savedNotice.category !== 'PROGRAM') throw new Error('The selected notice is not a program.');
+        const expectedTitle = programTiming === 'BEFORE_PROGRAM_1D' || programTiming === 'BEFORE_PROGRAM_1H'
+          ? '프로그램 안내가 도착했어요'
+          : '프로그램 모집 알림';
+        const expectedBody = programTiming === 'BEFORE_PROGRAM_1D' || programTiming === 'BEFORE_PROGRAM_1H'
+          ? `${String(savedNotice.title || '프로그램').slice(0, 120)} · 앱에서 확인해보세요.`
+          : `${String(savedNotice.title || '프로그램').slice(0, 120)}\n프로그램 신청이 시작됐어요!`;
+        if (String(title).trim() !== expectedTitle || String(body).trim() !== expectedBody) {
+          throw new Error('The program test message does not match the scheduled message.');
+        }
+        effectiveTargetRegions = [];
+      }
+    }
+
+    const effectiveProgramAudience = !isProgramTest && sourceNotice?.category === 'PROGRAM'
+      ? String(sourceNotice.guest_properties?.recruitment_push_audience || programAudience || 'INTERESTED')
+      : null;
+    let programUserIds: string[] | null = null;
+    if (effectiveProgramAudience === 'INTERESTED') {
+      const { data: interests, error: interestsError } = await supabase.from('program_recruitment_interests')
+        .select('auth_user_id').eq('notice_id', noticeId).eq('enabled', true);
+      if (interestsError) throw interestsError;
+      const authIds = [...new Set((interests || []).map(row => row.auth_user_id).filter(Boolean))];
+      const { data: profiles, error: profilesError } = authIds.length
+        ? await supabase.from('users').select('id').in('auth_user_id', authIds)
+        : { data: [], error: null };
+      if (profilesError) throw profilesError;
+      programUserIds = (profiles || []).map(row => row.id);
+    } else if (effectiveProgramAudience === 'APPLICANTS') {
+      const { data: responses, error: responsesError } = await supabase.from('notice_responses')
+        .select('user_id').eq('notice_id', noticeId).eq('status', 'JOIN');
+      if (responsesError) throw responsesError;
+      programUserIds = [...new Set((responses || []).map(row => row.user_id).filter(Boolean))];
+    }
+    if (effectiveProgramAudience === 'ALL' || ['INTERESTED','APPLICANTS'].includes(effectiveProgramAudience || '')) {
+      effectiveTargetRegions = [];
     }
 
     // No selection or both center regions means a notice for everyone.
@@ -160,7 +255,10 @@ serve(async (req) => {
     // Fetch tokens based on userIds or the verified notice region if provided
     let query = supabase.from('users').select('id, fcm_token, school, role');
     let targetSchoolKeys: Set<string> | null = null;
-    if (targetKind === 'USERS' && userIds && userIds.length > 0) {
+    if (programUserIds) {
+      if (!programUserIds.length) query = query.eq('id', '00000000-0000-0000-0000-000000000000');
+      else query = query.in('id', programUserIds);
+    } else if (targetKind === 'USERS' && userIds && userIds.length > 0) {
       query = query.in('id', userIds);
     } else if (targetKind === 'SCHOOL' && String(schoolName || '').trim()) {
       targetSchoolKeys = new Set([normalizeSchoolName(String(schoolName).trim())]);
@@ -205,6 +303,18 @@ serve(async (req) => {
     const targetCount = tokens.length + registeredWebPush.length;
 
     if (targetCount === 0) {
+      if (effectiveProgramAudience && noticeId) {
+        const dispatchedAt = new Date().toISOString();
+        const notificationRows = [...new Set(users.map(user => user.id).filter(Boolean))].map(id => ({
+          target_group: `USER_${id}`, content: `${String(title).trim()}\n${String(body).trim()}`,
+          notice_id: noticeId, notification_type: 'RECRUITMENT'
+        }));
+        if (notificationRows.length) await supabase.from('app_notifications').insert(notificationRows);
+        await supabase.from('notices').update({guest_properties:{...(sourceNotice.guest_properties||{}),recruitment_push_dispatched_at:dispatchedAt,recruitment_push_immediate_dispatched_at:dispatchedAt,
+          recruitment_push_result:{state:'SENT',target_count:users.length,success_count:0,failure_count:0}}}).eq('id',noticeId);
+        await supabase.from('program_push_jobs').update({state:'SENT',target_count:users.length,success_count:0,failure_count:0,sent_at:dispatchedAt,updated_at:dispatchedAt}).eq('notice_id',noticeId).eq('timing','NOW').in('state',['PENDING','FAILED']);
+        return Response.json({success:true,targetCount:0,successCount:0,failureCount:0,failureReasons:[]},{headers:corsHeaders});
+      }
       return new Response(JSON.stringify({ message: "No valid tokens found" }), { headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
     }
 
@@ -354,6 +464,29 @@ serve(async (req) => {
     const failureReasons = [...new Set(responses.filter(item => !item.ok).map(item =>
       item.result?.error?.status || item.result?.error?.message || 'FCM_SEND_FAILED'
     ))];
+    if (effectiveProgramAudience && noticeId) {
+      const notificationRows = [...new Set(users.map(user => user.id).filter(Boolean))].map(id => ({
+        target_group: `USER_${id}`, content: `${String(title).trim()}\n${String(body).trim()}`,
+        notice_id: noticeId, notification_type: 'RECRUITMENT'
+      }));
+      if (notificationRows.length) {
+        const { error: historyError } = await supabase.from('app_notifications').insert(notificationRows);
+        if (historyError) throw historyError;
+      }
+      const dispatchedAt = new Date().toISOString();
+      const currentProperties = sourceNotice.guest_properties || {};
+      const { error: noticeUpdateError } = await supabase.from('notices').update({
+        guest_properties: { ...currentProperties, recruitment_push_dispatched_at: dispatchedAt, recruitment_push_immediate_dispatched_at: dispatchedAt,
+          recruitment_push_result: { state: failureReasons.length ? 'PARTIAL' : 'SENT', target_count: users.length,
+            success_count: responses.filter(item => item.ok).length, failure_count: responses.filter(item => !item.ok).length } }
+      }).eq('id', noticeId);
+      if (noticeUpdateError) throw noticeUpdateError;
+      await supabase.from('program_push_jobs').update({
+        state: failureReasons.length ? 'PARTIAL' : 'SENT', target_count: users.length,
+        success_count: responses.filter(item => item.ok).length,
+        failure_count: responses.filter(item => !item.ok).length, sent_at: dispatchedAt, updated_at: dispatchedAt
+      }).eq('notice_id', noticeId).eq('timing','NOW').in('state', ['PENDING','FAILED']);
+    }
     return new Response(JSON.stringify({ success: true, dispatchId, targetCount, successCount: responses.filter(item => item.ok).length, failureCount: responses.filter(item => !item.ok).length, failureReasons }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })

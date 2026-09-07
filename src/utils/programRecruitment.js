@@ -28,7 +28,8 @@ export const getRecruitmentStart = (program) => program?.recruitment_start_at ??
 
 export const getMissingProgramDetails = (program) => {
     const missing = [];
-    if (!program.program_location?.trim()) missing.push('장소');
+    const challengeFormat = program.challenge_format || 'OFFLINE';
+    if (!(program.is_challenge && challengeFormat === 'ONLINE') && !program.program_location?.trim()) missing.push('장소');
     if ((!program.is_challenge || program.challenge_has_time) && !String(program.program_duration || '').trim()) missing.push('소요 시간');
     if (!hasProgramDescription(program.content)) missing.push('소개');
     if (program.max_capacity === '' || program.max_capacity == null) missing.push('정원 (무제한은 0)');

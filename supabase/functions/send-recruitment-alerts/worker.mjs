@@ -42,7 +42,7 @@ export function recruitmentMessage(row,origin,now=Date.now()) {
     const url=new URL(origin);
     if(url.protocol!=='https:' || url.origin!==origin)throw new Error('Invalid app origin');
     return {message:{token:row.fcm_token,
-        notification:{title:'모집이 시작됐어요!',body:`${String(row.title||'관심 프로그램').slice(0,150)} · 지금 신청할 수 있어요.`},
+        notification:{title:'모집이 시작됐어요!',body:`${String(row.title||'관심 프로그램').slice(0,150)}\n프로그램 신청이 시작됐어요!`},
         webpush:{headers:{TTL:String(Math.max(0,Math.min(3600,Math.floor((Date.parse(row.recruitment_deadline)-now)/1000)))),Topic:row.id.replaceAll('-','')},
             notification:{tag:`recruitment-${row.id}`},fcm_options:{link:`${origin}/p/${encodeURIComponent(row.notice_id)}`}},
     }};

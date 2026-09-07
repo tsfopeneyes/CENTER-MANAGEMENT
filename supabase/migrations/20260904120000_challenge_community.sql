@@ -2,6 +2,7 @@ ALTER TABLE public.notices ADD COLUMN IF NOT EXISTS community_enabled boolean NO
 ALTER TABLE public.notices ADD COLUMN IF NOT EXISTS community_mission_mode text NOT NULL DEFAULT 'NONE' CHECK (community_mission_mode IN ('NONE','AUTO','REVIEW'));
 ALTER TABLE public.notices ADD COLUMN IF NOT EXISTS community_image_required boolean NOT NULL DEFAULT false;
 ALTER TABLE public.notices ADD COLUMN IF NOT EXISTS community_after_end text NOT NULL DEFAULT 'READ_ONLY' CHECK (community_after_end IN ('READ_ONLY','CLOSED'));
+ALTER TABLE public.notices ADD COLUMN IF NOT EXISTS challenge_format text NOT NULL DEFAULT 'OFFLINE' CHECK (challenge_format IN ('ONLINE','OFFLINE'));
 
 CREATE TABLE IF NOT EXISTS public.community_channels (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(), name text NOT NULL,

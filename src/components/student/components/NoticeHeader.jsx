@@ -10,11 +10,38 @@ const NoticeHeader = ({
     setIsEditing,
     handleSave,
     handleDelete,
-    noticeId
+    noticeId,
+    shareTitle,
+    shareSchedule,
+    shareLocation
 }) => {
     const [isShareModalOpen, setIsShareModalOpen] = useState(false);
     const qrCanvasRef = useRef(null);
     const getShareLink = () => `${window.location.origin}/p/${noticeId}`;
+    const getShareText = () => [
+        shareTitle || 'SCI CENTER 프로그램',
+        shareSchedule ? `일정: ${shareSchedule}` : null,
+        `장소: ${shareLocation || '미정'}`,
+        '프로그램 내용을 확인하고 신청해 보세요!'
+    ].filter(Boolean).join('\n');
+
+    const shareNotice = async () => {
+        const link = getShareLink();
+        if (!navigator.share) {
+            await copyShareLink();
+            return;
+        }
+
+        try {
+            await navigator.share({
+                title: shareTitle || 'SCI CENTER 프로그램',
+                text: getShareText(),
+                url: link
+            });
+        } catch (err) {
+            if (err?.name !== 'AbortError') console.error('Failed to share notice:', err);
+        }
+    };
 
     const copyShareLink = async () => {
         const link = getShareLink();
@@ -131,7 +158,15 @@ const NoticeHeader = ({
                         {getShareLink()}
                     </p>
 
-                    <div className="mt-4 grid grid-cols-2 gap-2">
+                    <button
+                        type="button"
+                        onClick={shareNotice}
+                        className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white transition hover:bg-blue-700"
+                    >
+                        <Share size={16} /> 공유하기
+                    </button>
+
+                    <div className="mt-2 grid grid-cols-2 gap-2">
                         <button
                             type="button"
                             onClick={copyShareLink}
@@ -142,7 +177,7 @@ const NoticeHeader = ({
                         <button
                             type="button"
                             onClick={downloadQr}
-                            className="flex items-center justify-center gap-2 rounded-xl bg-blue-600 px-3 py-3 text-sm font-bold text-white transition hover:bg-blue-700"
+                            className="flex items-center justify-center gap-2 rounded-xl bg-gray-100 px-3 py-3 text-sm font-bold text-gray-700 transition hover:bg-gray-200"
                         >
                             <Download size={16} /> QR 다운로드
                         </button>

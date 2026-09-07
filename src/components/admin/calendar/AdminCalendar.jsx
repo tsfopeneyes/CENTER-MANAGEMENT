@@ -13,7 +13,7 @@ import MobileDayDetailOverlay from './modals/MobileDayDetailOverlay';
 import AdminPageHeader from '../common/AdminPageHeader';
 import DutyRosterEditor from './DutyRosterEditor';
 
-const AdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
+const AdminCalendar = ({ notices, fetchData, setActiveMenu, onOpenProgram }) => {
     const hookData = useAdminCalendar({ notices, fetchData, setActiveMenu });
     const { 
         currentDate, dynamicCategories, calendarCategories, programCategories,
@@ -226,7 +226,7 @@ const AdminCalendar = ({ notices, fetchData, setActiveMenu }) => {
 
             {/* Injected Modals */}
             <AnimatePresence>
-                {showModal && <EventEditModal {...hookData} onProgramSaved={fetchData} />}
+                {showModal && <EventEditModal {...hookData} onProgramSaved={fetchData} onOpenProgram={onOpenProgram} />}
             </AnimatePresence>
 
             <AnimatePresence>

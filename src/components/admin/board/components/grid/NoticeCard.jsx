@@ -1,7 +1,7 @@
 import React from 'react';
 import PropTypes from 'prop-types';
 import { parseISO } from 'date-fns';
-import { Calendar, Clock } from 'lucide-react';
+import { Calendar, Clock, Bell } from 'lucide-react';
 import NoticeCardActions from './NoticeCardActions';
 import { CATEGORIES } from '../../utils/constants';
 import { formatKoreanTimeRange } from '../../../../../utils/dateUtils';
@@ -119,6 +119,33 @@ const NoticeCard = ({
         return null;
     };
 
+    const getPushBadge = () => {
+        if (mode !== CATEGORIES.PROGRAM) return null;
+        const properties = notice.guest_properties || {};
+        const result = properties.recruitment_push_result;
+        if (result) {
+            const failed = Number(result.failure_count || 0);
+            return <span className={`px-2 py-0.5 rounded-md text-[9px] font-semibold ${failed ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'}`}>
+                <Bell size={9} className="mr-1 inline"/>{failed ? `일부 실패 ${failed}기기` : `${result.target_count || 0}명 발송 완료`}
+            </span>;
+        }
+        const plans = Array.isArray(properties.recruitment_push_plans) ? properties.recruitment_push_plans : [];
+        const hasPush = plans.length > 0 || (properties.recruitment_push_enabled === true && properties.recruitment_push_timing !== 'OFF');
+        if (!hasPush) {
+            return null;
+        }
+        if (plans.length > 1) {
+            return <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[9px] font-semibold text-blue-700"><Bell size={9} className="mr-1 inline"/>푸시 {plans.length}개 예약</span>;
+        }
+        const timing = properties.recruitment_push_timing || 'AT_START';
+        const value = timing === 'CUSTOM' ? properties.recruitment_push_scheduled_at : notice.recruitment_start_at;
+        const date = value ? new Date(value) : null;
+        const label = timing === 'NOW' ? '즉시 발송 예정' : date && !Number.isNaN(date.getTime())
+            ? `${date.toLocaleDateString('ko-KR',{month:'numeric',day:'numeric'})} ${date.toLocaleTimeString('ko-KR',{hour:'numeric',minute:'2-digit'})} 예약`
+            : '푸시 예약';
+        return <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[9px] font-semibold text-blue-700"><Bell size={9} className="mr-1 inline"/>{label}</span>;
+    };
+
     return (
         <div className={cardClass}>
             <div className={contentClass}>
@@ -144,6 +171,7 @@ const NoticeCard = ({
                     {viewMode !== 'list' && (
                         <div className="flex items-center gap-1.5 mb-2.5 flex-wrap">
                             {getTargetBadge()}
+                            {getPushBadge()}
                             {notice.is_sticky && <span className="px-2 py-0.5 bg-[#fff0e6] text-[#ff6b00] rounded-md text-[9px] font-semibold tracking-tight">📌 공지</span>}
                             {isUpcoming ? (
                                 <span className="px-2 py-0.5 bg-[#fff7e6] text-[#b45f06] rounded-md text-[9px] font-semibold tracking-tight uppercase">Upcoming</span>

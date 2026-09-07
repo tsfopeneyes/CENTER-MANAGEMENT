@@ -355,6 +355,25 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                 </div>
             </div>
 
+            {formData.is_challenge && (
+                <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-sm space-y-3">
+                    <div><p className="text-sm font-black text-slate-800">챌린지 참여 방식</p><p className="text-xs font-semibold text-slate-400 mt-1">참여 장소에 따라 필요한 설정을 구분합니다.</p></div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <button type="button" onClick={() => updateField('challenge_format', 'ONLINE')} className={`p-4 rounded-2xl border-2 text-left ${formData.challenge_format === 'ONLINE' ? 'border-blue-600 bg-blue-50' : 'border-slate-100'}`}>
+                            <p className="text-sm font-black text-slate-800">온라인 챌린지</p><p className="mt-1 text-xs text-slate-500">기간 안에 어디서든 커뮤니티로 참여</p>
+                        </button>
+                        <button type="button" onClick={() => {
+                            updateField('challenge_format', 'OFFLINE');
+                            updateField('community_enabled', false);
+                            updateField('community_mission_mode', 'NONE');
+                            updateField('community_image_required', false);
+                        }} className={`p-4 rounded-2xl border-2 text-left ${(formData.challenge_format || 'OFFLINE') === 'OFFLINE' ? 'border-blue-600 bg-blue-50' : 'border-slate-100'}`}>
+                            <p className="text-sm font-black text-slate-800">오프라인 챌린지</p><p className="mt-1 text-xs text-slate-500">정해진 장소에서 미션 수행 후 인증</p>
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* 1. 진행 일정 카드 */}
             <div className="bg-white border border-slate-100 rounded-3xl p-6 shadow-[0_4px_20px_rgba(0,0,0,0.015)] space-y-4">
                 <div className="flex items-center gap-2 pb-3 border-b border-slate-100/80">
@@ -393,7 +412,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                 <p className="text-[11px] text-slate-400 font-medium mt-1.5 ml-1 block leading-normal">챌린지가 진행되는 전체 기간입니다.</p>
                             </div>
 
-                            <label className="flex items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-200/70 rounded-xl cursor-pointer hover:bg-slate-100/70 transition-colors">
+                            {formData.challenge_format !== 'ONLINE' && <label className="flex items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-200/70 rounded-xl cursor-pointer hover:bg-slate-100/70 transition-colors">
                                 <input
                                     type="checkbox"
                                     checked={formData.challenge_has_time === true}
@@ -410,9 +429,9 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                     <p className="text-xs font-bold text-slate-700">시작 시간 및 소요 시간 설정</p>
                                     <p className="text-[11px] text-slate-400 mt-0.5">정해진 시간에 진행되는 챌린지일 때 사용합니다.</p>
                                 </div>
-                            </label>
+                            </label>}
 
-                            {formData.challenge_has_time && (
+                            {formData.challenge_format !== 'ONLINE' && formData.challenge_has_time && (
                                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 animate-fade-in">
                                     <div className="space-y-1.5">
                                         <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">시작 시간</label>
@@ -589,7 +608,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
 
                 <div className={formData.is_recruiting ? 'grid grid-cols-1 lg:grid-cols-2 gap-4' : 'space-y-4'}>
                     {/* 진행 장소 드롭다운 */}
-                    <div className="min-w-0 space-y-1.5">
+                    {!(formData.is_challenge && formData.challenge_format === 'ONLINE') && <div className="min-w-0 space-y-1.5">
                         <label className="text-xs font-bold text-slate-500 mb-1.5 ml-1 block">진행 장소</label>
                         <div className="flex flex-col sm:flex-row gap-3">
                             <div className="flex-1 min-w-0 min-h-11 h-11 relative flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3.5">
@@ -646,7 +665,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                             {localMain === '기타' && "입력하신 텍스트가 그대로 표기됩니다. (예: '오아센터')"}
                             {!localMain && "공간 유형을 선택해 주세요."}
                         </p>
-                    </div>
+                    </div>}
 
                     {/* 장소 옆의 정원, 아래 전체 너비의 모집 기간 (신청 프로그램만 노출) */}
                     {formData.is_recruiting && (
@@ -1251,6 +1270,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
             {/* 6. 챌린지 미션 설정 카드 */}
             {formData.is_challenge && (
                 <div className="space-y-4">
+                {formData.challenge_format === 'ONLINE' && (
                 <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4">
                     <div className="flex items-center justify-between gap-4">
                         <div><p className="text-sm font-black text-slate-800">챌린지 커뮤니티</p><p className="text-xs font-semibold text-slate-400 mt-1">참여자끼리 글·사진·댓글·이모지 반응을 나눕니다.</p></div>
@@ -1270,6 +1290,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                         <label className="md:col-span-2 flex items-center gap-2 rounded-xl bg-slate-50 p-3 text-xs font-bold text-slate-600"><input type="checkbox" checked={formData.community_image_required === true} onChange={e => updateField('community_image_required', e.target.checked)}/>미션 인증 게시글은 사진을 필수로 받기</label>
                     </div>}
                 </div>
+                )}
                 <div className="bg-white border border-slate-100 rounded-2xl p-5 shadow-sm space-y-4">
                     <div className="flex items-center gap-2 pb-3 border-b border-slate-100">
                         <Target size={18} className="text-blue-600" />
@@ -1320,7 +1341,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                                 </div>
                                             </div>
 
-                                            <div className="flex flex-col gap-1">
+                                            {formData.challenge_format !== 'ONLINE' && <div className="flex flex-col gap-1">
                                                 <label className="text-xs font-bold text-slate-500 mb-1 block">수행 장소</label>
                                                 <div className="flex flex-col sm:flex-row gap-2">
                                                     <div className="flex-1 h-10 relative flex items-center bg-slate-50 border border-slate-200/60 rounded-xl overflow-hidden focus-within:border-blue-600 focus-within:bg-white transition-all px-3">
@@ -1371,7 +1392,7 @@ const ProgramInfoSection = ({ formData, updateField, flat = false }) => {
                                                         </div>
                                                     )}
                                                 </div>
-                                            </div>
+                                            </div>}
 
                                             <div className="flex flex-col gap-1">
                                                 <label className="text-xs font-bold text-slate-500 mb-1 block">세부 내용</label>

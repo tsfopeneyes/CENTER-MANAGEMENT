@@ -130,18 +130,23 @@ const StudentDashboard = () => {
 
     const [showVerificationWrite, setShowVerificationWrite] = useState(false);
     const [showRegisterModal, setShowRegisterModal] = useState(false);
+    const [registrationSuccess, setRegistrationSuccess] = useState(null);
     const [showAccountReconnect, setShowAccountReconnect] = useState(false);
     const [recruitmentSavedPreview, setRecruitmentSavedPreview] = useState(null);
 
     useEffect(() => {
-        if (!user?.id || hookData.impersonatedUser) return;
+        const isGuestAccount = user?.user_group === '게스트' || String(user?.role || '').toLowerCase() === 'guest';
+        if (!user?.id || hookData.impersonatedUser || isGuestAccount) {
+            setShowAccountReconnect(false);
+            return;
+        }
         let active = true;
         recruitmentInterestsApi.status(null).then(status => {
             if (!active || status.userId) return;
             setShowAccountReconnect(true);
         }).catch(() => {});
         return () => { active = false; };
-    }, [user?.id, hookData.impersonatedUser]);
+    }, [user?.id, user?.user_group, user?.role, hookData.impersonatedUser]);
     const [editVerificationPost, setEditVerificationPost] = useState(null);
     const [refreshTrigger, setRefreshTrigger] = useState(0);
     const [showMenuDrawer, setShowMenuDrawer] = useState(false);
@@ -1823,19 +1828,20 @@ const StudentDashboard = () => {
                             </div>
                             
                             <SignUpForm 
-                                onSuccess={() => {
+                                onSuccess={({ under14 } = {}) => {
                                     setShowRegisterModal(false);
-                                    localStorage.removeItem('user');
-                                    supabase.auth.signOut().then(() => {
-                                        alert('하이픈 정식 등록이 완료되었습니다!\n방금 가입하신 정보로 다시 로그인해 주세요.');
-                                        window.location.href = '/';
-                                    });
+                                    setRegistrationSuccess({ under14: Boolean(under14) });
                                 }}
                                 onCancel={() => setShowRegisterModal(false)}
                                 guestUserId={user.id}
                                 prefilledData={{
                                     name: user.name.replace('(guest)', ''),
-                                    school: user.school
+                                    school: user.school,
+                                    birth: user.birth || '',
+                                    phone: user.phone?.startsWith('000-0000-') ? '' : (user.phone || ''),
+                                    guardianName: user.guardian_name || '',
+                                    guardianPhone: user.guardian_phone || '',
+                                    guardianRelation: user.guardian_relation || ''
                                 }}
                             />
                         </motion.div>
@@ -1918,6 +1924,17 @@ const StudentDashboard = () => {
                             }
                         }}
                     />
+                )}
+
+                {registrationSuccess && (
+                    <div className="fixed inset-0 z-[230] flex items-center justify-center bg-black/50 p-5 backdrop-blur-sm">
+                        <div role="dialog" aria-modal="true" aria-labelledby="registration-success-title" className="w-full max-w-sm rounded-[28px] bg-white p-6 text-center shadow-2xl">
+                            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-blue-50 text-2xl">🎉</div>
+                            <h2 id="registration-success-title" className="mt-4 text-xl font-black text-tossGrey900">{registrationSuccess.under14 ? '가입 신청이 완료되었습니다!' : '회원가입이 완료되었습니다!'}</h2>
+                            <p className="mt-2 text-sm font-medium leading-6 text-tossGrey600">{registrationSuccess.under14 ? <>보호자 동의 확인 후 정식 회원으로 승인됩니다.<br />방금 설정한 정보로 다시 로그인해 주세요.</> : <>하이픈 정식 회원이 되신 것을 환영해요.<br />방금 설정한 정보로 다시 로그인해 주세요.</>}</p>
+                            <button type="button" onClick={async () => { localStorage.removeItem('user'); await supabase.auth.signOut(); window.location.href = '/'; }} className="mt-6 h-13 w-full rounded-2xl bg-tossBlue px-4 py-3.5 text-sm font-extrabold text-white">로그인하기</button>
+                        </div>
+                    </div>
                 )}
 
                 {showPendingRequestList && (

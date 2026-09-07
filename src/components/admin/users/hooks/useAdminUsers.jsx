@@ -40,6 +40,7 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
         };
 
         const rawFiltered = users.filter(user => {
+            if (user.status === 'withdrawn') return false;
             // Calculate Age from YYMMDD
             let age = '';
             if (user.birth && user.birth.length === 6) {
@@ -186,26 +187,33 @@ const useAdminUsers = ({ users, allLogs, locations, fetchData }) => {
     };
 
     const handleDeleteUser = async (targetUser) => {
-        if (!targetUser) return;
+        if (!targetUser) return false;
         const currentUser = JSON.parse(localStorage.getItem('user'));
         if (currentUser && currentUser.id === targetUser.id) {
             alert('본인 계정은 삭제할 수 없습니다.');
-            return;
+            return false;
         }
 
-        if (!confirm(`정말 '${targetUser.name}' 회원을 삭제하시겠습니까?\n연관된 모든 데이터(로그, 메시지 등)가 함께 삭제되며, 이 작업은 되돌릴 수 없습니다.`)) return;
+        if (!confirm(`정말 '${targetUser.name}' 이용자를 삭제하시겠습니까?\n로그인 정보와 이름·연락처 등 개인정보는 삭제되며 복구할 수 없습니다.\n출결·프로그램 참여 등 운영 기록은 개인을 식별할 수 없는 형태로 보존됩니다.`)) return false;
         try {
-            const { error } = await supabase.from('users').delete().eq('id', targetUser.id);
-            if (error) {
-                if (error.code === '23503') {
-                    throw new Error('이 사용자와 연결된 데이터가 있어 삭제할 수 없습니다. DB의 on delete cascade 제약 조건을 확인해주세요.');
-                }
-                throw error;
+            if (isAccountAuthEnabled()) await getAccountAuthClient().members.withdraw({ profileId: targetUser.id });
+            else {
+                const label = `삭제된 회원 (${targetUser.id.slice(0, 8)})`;
+                const { error } = await supabase.from('users').update({
+                    name: label, gender: null, school: null, church: null, birth: null, phone: '',
+                    phone_back4: '', password: null, guardian_name: null, guardian_phone: null,
+                    guardian_relation: null, profile_image_url: null, fcm_token: null, bio: null,
+                    grade: null, memo: null,
+                    auth_user_id: null, status: 'withdrawn',
+                    preferences: { withdrawn_at: new Date().toISOString(), anonymized: true }
+                }).eq('id', targetUser.id);
+                if (error) throw error;
             }
             alert('회원이 삭제되었습니다.');
             setEditingUser(null);
             fetchData();
-        } catch (err) { console.error(err); alert('삭제 실패: ' + err.message); }
+            return true;
+        } catch (err) { console.error(err); alert('삭제 실패: ' + err.message); return false; }
     };
 
     const handleResetPassword = async (targetUser) => {

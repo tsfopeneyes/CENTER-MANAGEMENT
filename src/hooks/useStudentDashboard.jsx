@@ -507,6 +507,12 @@ export const useStudentDashboard = () => {
     };
 
     const isVisibleForStudentRegion = (notice) => {
+        // 본인이 신청한 프로그램은 비공개이거나 다른 대상 지역이어도
+        // 홈의 신청 내역에서 계속 확인할 수 있어야 한다.
+        if (notice.category === CATEGORIES.PROGRAM && ['JOIN', 'WAITLIST'].includes(responses[notice.id])) {
+            return true;
+        }
+
         const targets = Array.isArray(notice.target_regions) ? notice.target_regions.filter(Boolean) : [];
         if (targets.length === 0 || targets.length >= 2) return true;
 
@@ -538,7 +544,7 @@ export const useStudentDashboard = () => {
 
     const allPrograms = notices.filter(n => {
         if (n.category !== CATEGORIES.PROGRAM) return false;
-        if (n.is_private && responses[n.id] !== 'JOIN') return false;
+        if (n.is_private && !['JOIN', 'WAITLIST'].includes(responses[n.id])) return false;
         return isVisibleForStudentRegion(n);
     });
 

@@ -11,7 +11,7 @@ export async function recruitmentBellNotification(row) {
         target_group: `AUTH_${row.auth_user_id}`,
         notification_type: 'RECRUITMENT',
         notice_id: row.notice_id,
-        content: `관심 프로그램 모집이 시작됐어요!\n${String(row.title || '관심 프로그램').slice(0,150)} · 지금 신청할 수 있어요.`,
+        content: `${String(row.title || '관심 프로그램').slice(0,150)}\n프로그램 신청이 시작됐어요!`,
     };
 }
 

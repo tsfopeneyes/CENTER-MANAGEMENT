@@ -216,28 +216,42 @@ export const noticesApi = {
                     data: {
                         noticeId: noticeId,
                         url: noticeUrl
-                    }
+                    },
+                    programAudience: noticeObj?.category === 'PROGRAM'
+                        ? noticeObj?.guest_properties?.recruitment_push_plans?.find(plan => plan.timing === 'NOW')?.audience
+                            || noticeObj?.guest_properties?.recruitment_push_audience || 'TARGET_REGIONS'
+                        : undefined
                 }
             });
-            if (pushError) console.error("푸쉬 알림 전송 에러:", pushError);
+            if (pushError) throw pushError;
 
-            const adminInfo = JSON.parse(localStorage.getItem('admin_user')) || { id: 'd3885f86-f127-448c-8517-578964d509f7' };
-            await supabase.from('app_notifications').insert([{
-                sender_id: adminInfo.id,
-                target_group: notificationTarget,
-                content: appNotificationContent,
-                notice_id: noticeId || null,
-                notification_type: 'NOTICE'
-            }]);
+            if (noticeObj?.category !== 'PROGRAM') {
+                const adminInfo = JSON.parse(localStorage.getItem('admin_user')) || { id: 'd3885f86-f127-448c-8517-578964d509f7' };
+                await supabase.from('app_notifications').insert([{
+                    sender_id: adminInfo.id,
+                    target_group: notificationTarget,
+                    content: appNotificationContent,
+                    notice_id: noticeId || null,
+                    notification_type: 'NOTICE'
+                }]);
+            }
 
         } catch (ex) {
             console.error("푸쉬 알림 API 호출 실패:", ex);
+            throw ex;
         }
     },
 
     async update(id, updates) {
         const payload = { ...updates };
-        const shouldSendPush = payload.send_push;
+        // Programs use the recruitment-start interest worker. A stale form or
+        // older client must never turn a program save into an immediate blast.
+        const shouldSendPush = payload.send_push === true && (
+            payload.category !== 'PROGRAM' || (
+                payload.guest_properties?.recruitment_push_plans?.some(plan => plan.timing === 'NOW') &&
+                !payload.guest_properties?.recruitment_push_immediate_dispatched_at
+            )
+        );
         
         // Remove non-table / joined / computed keys that cause Supabase schema errors
         const nonTableKeys = [
@@ -285,7 +299,11 @@ export const noticesApi = {
 
     async create(notice) {
         const payload = { ...notice };
-        const shouldSendPush = payload.send_push;
+        // Programs use the recruitment-start interest worker. A stale form or
+        // older client must never turn a program save into an immediate blast.
+        const shouldSendPush = payload.send_push === true && (
+            payload.category !== 'PROGRAM' || payload.guest_properties?.recruitment_push_plans?.some(plan => plan.timing === 'NOW')
+        );
         delete payload.send_push; // Prevent schema error if column doesn't exist
         
         const { data, error } = await supabase

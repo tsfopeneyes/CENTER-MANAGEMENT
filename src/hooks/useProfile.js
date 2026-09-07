@@ -238,14 +238,16 @@ export const useProfile = (initialUser) => {
                 await supabase.from('user_challenges').delete().eq('user_id', u.id);
             }
 
-            // Anonymize user row while retaining name as '이름 (탈퇴 회원)'
-            const rawName = (u.name || '').replace(/\(탈퇴 회원\)$/, '').trim();
-            const anonymizedName = `${rawName} (탈퇴 회원)`;
+            const anonymizedName = `삭제된 회원 (${u.id.slice(0, 8)})`;
 
             const anonymizedData = {
                 name: anonymizedName,
-                phone: null,
-                phone_back4: null,
+                gender: null,
+                birth: null,
+                school: null,
+                church: null,
+                phone: '',
+                phone_back4: '',
                 password: null,
                 guardian_name: null,
                 guardian_phone: null,
@@ -254,10 +256,10 @@ export const useProfile = (initialUser) => {
                 fcm_token: null,
                 status: 'withdrawn',
                 bio: null,
-                preferences: {
-                    ...(u.preferences || {}),
-                    withdrawn_at: new Date().toISOString()
-                }
+                grade: null,
+                memo: null,
+                auth_user_id: null,
+                preferences: { withdrawn_at: new Date().toISOString(), anonymized: true }
             };
 
             const { error: updateErr } = await supabase

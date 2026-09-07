@@ -14,6 +14,7 @@ import {createStorageGateway} from './storageGateway.mjs';
 import {createMediaUploadService} from './mediaUploadService.mjs';
 import {createLegacyCredentialBridge} from './legacyCredentialBridge.mjs';
 import {createMemberAdminService} from './memberAdminService.mjs';
+import {createMemberWithdrawalService} from './memberWithdrawalService.mjs';
 import {createAccountMergeService} from './accountMergeService.mjs';
 
 export async function createAccountAuthRuntime({basePool,supabaseUrl,publishableKey,serviceRoleKey,lookupSecret,legacyBridgeSecret,pepper,
@@ -47,7 +48,8 @@ export async function createAccountAuthRuntime({basePool,supabaseUrl,publishable
         gateway:createStorageGateway({supabaseUrl,serviceRoleKey,fetcher}),readiness});
     const setRole=createMemberAdminService({pool:memberAdminPool,authorize,readiness});
     const mergeService=createAccountMergeService({pool:mergePool,authorize,readiness});
-    const memberAdminService=Object.freeze({setRole,...mergeService});
+    const withdraw=createMemberWithdrawalService({pool:memberAdminPool,authorize,readiness});
+    const memberAdminService=Object.freeze({setRole,withdraw,...mergeService});
     return createAccountAuthService({readerPool,loginPool,supabaseUrl,publishableKey,lookupSecret,legacyBridge,resolveClientKey,readiness,
         assuranceTtlMs,allowedOrigins,credentialService,profileService,registrationService,uploadService,memberAdminService,basePath,fetcher});
 }

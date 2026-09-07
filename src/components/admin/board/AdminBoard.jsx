@@ -38,7 +38,7 @@ const isNoticeFutureOrOngoing = (notice) => {
     return true;
 };
 
-const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
+const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu, initialNoticeId, onInitialNoticeOpened }) => {
     const [notices, setNotices] = useState([]);
     const [loading, setLoading] = useState(true);
     
@@ -103,6 +103,14 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
     // Deep-linking: Open notice from URL query parameter
     useEffect(() => {
         if (notices.length > 0) {
+            if (initialNoticeId) {
+                const target = notices.find(n => String(n.id) === String(initialNoticeId));
+                if (target) {
+                    setViewNotice(target);
+                    onInitialNoticeOpened?.();
+                    return;
+                }
+            }
             const params = new URLSearchParams(window.location.search);
             const queryNoticeId = params.get('noticeId');
             if (queryNoticeId) {
@@ -113,7 +121,7 @@ const AdminBoard = ({ mode = CATEGORIES.NOTICE, setActiveMenu }) => {
                 }
             }
         }
-    }, [notices]);
+    }, [notices, initialNoticeId, onInitialNoticeOpened]);
 
     const handleFormSave = useCallback((noticeData) => {
         setEditNoticeId(null);

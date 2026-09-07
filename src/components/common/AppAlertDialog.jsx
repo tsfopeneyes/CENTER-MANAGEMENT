@@ -8,8 +8,11 @@ const AppAlertDialog = () => {
     useEffect(() => {
         const nativeAlert = window.alert;
         const showAppAlert = (message) => {
-            const text = String(message || '안내할 내용이 없습니다.');
-            setMessages((current) => [...current, { id: `${Date.now()}-${Math.random()}`, text }]);
+            const detail = message && typeof message === 'object' ? message : { message };
+            const text = String(detail.message || detail.text || '안내할 내용이 없습니다.');
+            const title = String(detail.title || '안내');
+            const highlight = detail.highlight ? String(detail.highlight) : '';
+            setMessages((current) => [...current, { id: `${Date.now()}-${Math.random()}`, title, text, highlight }]);
         };
         const handleAppAlert = (event) => showAppAlert(event.detail);
 
@@ -30,8 +33,13 @@ const AppAlertDialog = () => {
         <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-[2px]" onClick={close}>
             <div className="w-full max-w-sm rounded-3xl border border-tossGrey100 bg-white p-6 text-center shadow-2xl" onClick={(event) => event.stopPropagation()}>
                 <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-tossBlue/10 text-2xl">💬</div>
-                <h2 className="mt-4 text-lg font-black text-tossGrey900">안내</h2>
+                <h2 className="mt-4 break-keep text-lg font-black text-tossGrey900">{activeMessage.title}</h2>
                 <p className="mt-2 whitespace-pre-line break-keep text-sm font-semibold leading-relaxed text-tossGrey600">{activeMessage.text}</p>
+                {activeMessage.highlight && (
+                    <p className="mt-4 rounded-xl bg-tossBlueLight px-4 py-3 text-sm font-black text-tossBlue">
+                        {activeMessage.highlight}
+                    </p>
+                )}
                 <button type="button" onClick={close} className="mt-5 w-full rounded-xl bg-tossBlue py-3 text-sm font-bold text-white">
                     확인
                 </button>

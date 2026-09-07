@@ -98,7 +98,7 @@ const AttendanceSection = ({
                                     >
                                         {user.name?.replace('(guest)', '').trim()}
                                     </button>
-                                    {user.name?.includes('(guest)') && (
+                                    {(user.user_group === '게스트' || user.name?.includes('(guest)')) && (
                                         <span className="px-1.5 py-0.5 bg-purple-50 text-purple-600 border border-purple-100 rounded-md text-[9px] font-bold shrink-0">
                                             게스트
                                         </span>
@@ -190,7 +190,7 @@ const AttendanceSection = ({
                                         title="회원 정보 카드 보기"
                                     >
                                         {u.name?.replace('(guest)', '').trim()}
-                                        {u.name?.includes('(guest)') && (
+                                    {(u.user_group === '게스트' || u.name?.includes('(guest)')) && (
                                             <span className="px-1 py-0.2 bg-purple-50 text-purple-500 border border-purple-100 rounded text-[8px] font-bold shrink-0">
                                                 게스트
                                             </span>

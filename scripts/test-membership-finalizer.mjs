@@ -93,7 +93,7 @@ try {
     assert.equal(childState.profile.status,'pending');assert.equal(childState.account.status,'active');assert.equal(childState.login.enabled,true);
     const guestId=crypto.randomUUID();
     await admin(()=>query(`INSERT INTO public.users(id,name,birth,phone,phone_back4,user_group,role,status,preferences,password,memo)
-        VALUES($1,'기존게스트','100101','010-3333-4444','4444','게스트','user','approved','{"is_temporary":true}',NULL,'기존 메모')`,[guestId]));
+        VALUES($1,'기존게스트(guest)','100101','010-3333-4444','4444','게스트','user','approved','{"is_temporary":true}',NULL,'기존 메모')`,[guestId]));
     const guestUpgrade=await prepare({guestUserId:guestId,name:'기존게스트',birth:'100101',phone:'01033334444'});
     assert.deepEqual(await finalize(guestUpgrade),{protocol:1,status:'registered'});
     const upgraded=(await admin(()=>query('SELECT * FROM public.users WHERE id=$1',[guestId]))).rows[0];

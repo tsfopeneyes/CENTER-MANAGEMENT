@@ -6,6 +6,16 @@ import { normalizeSchoolName } from '../../../utils/userUtils';
 import { isVisitorOrTemporary } from '../../../utils/memberAccountType';
 import { getAccountAuthClient, isAccountAuthEnabled } from '../../../auth/accountAuthRuntime';
 
+const SIGN_UP_ERROR_MESSAGES = {
+    terms_changed: '약관 정보가 갱신되었습니다. 화면을 새로고침한 뒤 약관에 다시 동의해 주세요.',
+    password_policy: '비밀번호 조건을 확인해 주세요. 비밀번호는 6자 이상이어야 합니다.',
+    invalid_registration: '입력한 가입 정보를 다시 확인해 주세요.',
+    registration_pending: '가입 처리가 진행 중입니다. 잠시 후 다시 시도해 주세요.',
+    registration_review_required: '가입 정보를 확인할 수 없습니다. 관리자에게 문의해 주세요.',
+    try_later: '요청이 많습니다. 잠시 후 다시 시도해 주세요.',
+    temporarily_unavailable: '가입 서비스를 일시적으로 사용할 수 없습니다. 잠시 후 다시 시도해 주세요.'
+};
+
 export const useSignUp = (onSuccess, guestUserId = null) => {
     const [formData, setFormData] = useState({
         name: '', gender: '', school: '', church: '', birth: '', phone: '', user_group: '청소년',
@@ -88,9 +98,9 @@ export const useSignUp = (onSuccess, guestUserId = null) => {
                     }
                 });
 
-                if (under14) alert('만 14세 미만 회원은 임시 가입되었습니다. 관리자가 보호자 동의 확인 후 정식 회원으로 승인됩니다.');
+                if (onSuccess) onSuccess({ under14 });
+                else if (under14) alert('만 14세 미만 회원은 임시 가입되었습니다. 관리자가 보호자 동의 확인 후 정식 회원으로 승인됩니다.');
                 else alert('가입이 완료되었습니다! 로그인해 주세요.');
-                if (onSuccess) onSuccess();
                 return;
             }
 
@@ -191,14 +201,17 @@ export const useSignUp = (onSuccess, guestUserId = null) => {
                 if (insertError) throw insertError;
             }
 
-            if (under14) alert('만 14세 미만 회원은 임시 가입되었습니다. 관리자가 보호자 동의 확인 후 정식 회원으로 승인됩니다.');
+            if (onSuccess) onSuccess({ under14 });
+            else if (under14) alert('만 14세 미만 회원은 임시 가입되었습니다. 관리자가 보호자 동의 확인 후 정식 회원으로 승인됩니다.');
             else alert('가입이 완료되었습니다! 로그인해 주세요.');
-
-            if (onSuccess) onSuccess();
 
         } catch (err) {
             console.error('Sign Up Error Details:', err);
-            alert(`가입 중 오류가 발생했습니다.\n내용: ${err.message || err.error_description || JSON.stringify(err)}`);
+            const errorCode = err?.code || err?.message;
+            const message = SIGN_UP_ERROR_MESSAGES[errorCode]
+                || err?.error_description
+                || '알 수 없는 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
+            alert(`가입 중 오류가 발생했습니다.\n${message}`);
         } finally {
             setLoading(false);
         }

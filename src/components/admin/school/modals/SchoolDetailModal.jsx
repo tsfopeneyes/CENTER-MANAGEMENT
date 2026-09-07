@@ -10,7 +10,10 @@ import SnackHistoryView from '../views/SnackHistoryView';
 
 import LogFormModal from './LogFormModal';
 import LogDetailModal from './LogDetailModal';
-import StudentDetailModal from './StudentDetailModal';
+import UserEditModal from '../../users/modals/UserEditModal';
+import UserMergeModal from '../../users/modals/UserMergeModal';
+import ImageOverlayModal from '../../users/modals/ImageOverlayModal';
+import useAdminUsers from '../../users/hooks/useAdminUsers';
 import LogSelectorModal from '../LogSelectorModal';
 const SchoolDetailModal = ({ school, logs, staffList, onClose, isSettingsMode, setIsSettingsMode, onSaveMetadata, onToggleLeader, refreshLogs, refreshDashboardData, allUsers }) => {
     if (!school) return null;
@@ -28,6 +31,16 @@ const SchoolDetailModal = ({ school, logs, staffList, onClose, isSettingsMode, s
         newTempStudentPhone, setNewTempStudentPhone,
         addingTempStudent, handleAddTempStudent
     } = hookData;
+    const refreshAllUserData = useCallback(async () => {
+        await refreshLogs?.();
+        await refreshDashboardData?.();
+    }, [refreshLogs, refreshDashboardData]);
+    const memberCard = useAdminUsers({ users: allUsers || [], allLogs: [], locations: [], fetchData: refreshAllUserData });
+    const setMemberCardUser = useCallback((user) => {
+        setSelectedStudent(user);
+        memberCard.setEditingUser(user);
+    }, [setSelectedStudent, memberCard.setEditingUser]);
+    const detailHookData = useMemo(() => ({ ...hookData, setSelectedStudent: setMemberCardUser }), [hookData, setMemberCardUser]);
 
     return (
         <>
@@ -96,13 +109,13 @@ const SchoolDetailModal = ({ school, logs, staffList, onClose, isSettingsMode, s
                         setIsSettingsMode={setIsSettingsMode}
                         onSaveMetadata={onSaveMetadata}
                         onToggleLeader={onToggleLeader}
-                        hookData={hookData}
+                        hookData={detailHookData}
                     />
 
                     <div className="flex-1 overflow-y-auto custom-scrollbar p-5 md:p-8 bg-white flex flex-col gap-6 md:gap-8">
-                        {activeTab === 'logs' && <SchoolLogsView school={school} logs={logs} staffList={staffList} allUsers={allUsers} hookData={hookData} />}
-                        {activeTab === 'calling_forest' && <CallingForestView school={school} logs={logs} hookData={hookData} />}
-                        {activeTab === 'snacks' && <SnackHistoryView onSaveMetadata={onSaveMetadata} hookData={hookData} />}
+                        {activeTab === 'logs' && <SchoolLogsView school={school} logs={logs} staffList={staffList} allUsers={allUsers} hookData={detailHookData} />}
+                        {activeTab === 'calling_forest' && <CallingForestView school={school} logs={logs} hookData={detailHookData} />}
+                        {activeTab === 'snacks' && <SnackHistoryView onSaveMetadata={onSaveMetadata} hookData={detailHookData} />}
                     </div>
                 </div>
             </motion.div>
@@ -178,29 +191,32 @@ const SchoolDetailModal = ({ school, logs, staffList, onClose, isSettingsMode, s
                 {/* Student Detail Modal */}
                 <AnimatePresence>
                     {selectedStudent && (
-                        <StudentDetailModal
-                            student={selectedStudent}
-                            onClose={() => setSelectedStudent(null)}
-                            onSave={async (updates) => {
-                                try {
-                                    const { error } = await supabase.from('users').update(updates).eq('id', selectedStudent.id);
-                                    if (error) throw error;
-                                    await refreshLogs();
-                                    if (refreshDashboardData) await refreshDashboardData(); // Refresh global user data
-                                    setSelectedStudent(null);
-                                } catch (err) {
-                                    alert('학생 정보 저장 실패: ' + err.message);
-                                }
+                        <UserEditModal
+                            editingUser={selectedStudent}
+                            setEditingUser={setMemberCardUser}
+                            handleDeleteUser={async (user) => {
+                                if (await memberCard.handleDeleteUser(user)) setMemberCardUser(null);
                             }}
-                            onMergeComplete={async () => {
-                                await refreshLogs();
-                                if (refreshDashboardData) await refreshDashboardData();
-                                setSelectedStudent(null);
-                            }}
-                            allUsers={allUsers}
+                            handleResetPassword={memberCard.handleResetPassword}
+                            handleToggleAdminRole={memberCard.handleToggleAdminRole}
+                            handleApproveUser={memberCard.handleApproveUser}
+                            userStats={null}
+                            fetchData={refreshAllUserData}
+                            setIsMergeModalOpen={memberCard.setIsMergeModalOpen}
+                            setViewerImage={memberCard.setViewerImage}
+                            locations={[]}
                         />
                     )}
                 </AnimatePresence>
+                <UserMergeModal
+                    isMergeModalOpen={memberCard.isMergeModalOpen}
+                    setIsMergeModalOpen={memberCard.setIsMergeModalOpen}
+                    editingUser={selectedStudent}
+                    setEditingUser={setMemberCardUser}
+                    users={allUsers || []}
+                    fetchData={refreshAllUserData}
+                />
+                <ImageOverlayModal viewerImage={memberCard.viewerImage} setViewerImage={memberCard.setViewerImage} />
 
                 {/* Log Selector Modal for Calling Forest */}
                 <AnimatePresence>

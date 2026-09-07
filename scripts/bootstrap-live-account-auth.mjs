@@ -80,7 +80,7 @@ try{
     const secrets=[
       `ACCOUNT_LOOKUP_SECRET=${lookupSecret}`,`ACCOUNT_LEGACY_BRIDGE_SECRET=${bridgeSecret}`,
       `ACCOUNT_TEMPORARY_PEPPER=${pepper}`,'ACCOUNT_ALLOWED_ORIGINS=https://app.schoolchurchimpact.org,https://sci-center-6f265.web.app,https://sci-center-6f265.firebaseapp.com',
-      'ACCOUNT_TERMS_VERSION=current','ACCOUNT_LOGIN_DOMAIN=account.schoolchurchimpact.org','ACCOUNT_AUTH_READY=true'];
+      'ACCOUNT_TERMS_VERSION=2024-03-05','ACCOUNT_LOGIN_DOMAIN=account.schoolchurchimpact.org','ACCOUNT_AUTH_READY=true'];
     const set=spawnSync(command,['/d','/s','/c',
         ['npx','supabase','secrets','set','--project-ref',project,...secrets].join(' ')],
         {stdio:['ignore','ignore','ignore'],timeout:120000});
