@@ -100,7 +100,7 @@ const StandaloneLiveChat = () => {
         const trimmed = guestNameInput.trim();
         if (!trimmed) return;
 
-        const formattedName = trimmed.endsWith('(guest)') || trimmed.endsWith('게스트') ? trimmed : `${trimmed}(guest)`;
+        const formattedName = trimmed.replace(/\s*\(guest\)\s*$/i, '').trim();
         const guestUuid = getGuestUuid();
         const guestUser = {
             id: guestUuid,
